@@ -162,14 +162,19 @@ class InfoAsync(APIAsync):
     async def subscribe(self, subscription: Subscription, callback: Callable[[Any], None]) -> int:
         self._remap_coin_subscription(subscription)
         if self.ws_manager is None:
-            raise RuntimeError("Cannot call subscribe since skip_ws was used")
+            raise RuntimeError("impossible d'appeler subscribe sans ws manager")
         return await self.ws_manager.subscribe(subscription, callback)
 
     async def unsubscribe(self, subscription: Subscription, subscription_id: int) -> bool:
         self._remap_coin_subscription(subscription)
         if self.ws_manager is None:
-            raise RuntimeError("Cannot call unsubscribe since skip_ws was used")
+            raise RuntimeError("impossible d'appeler unsubscribe sans ws manager")
         return await self.ws_manager.unsubscribe(subscription, subscription_id)
+    
+    async def unsubscribe_all(self) -> None:
+        if self.ws_manager is None:
+            raise RuntimeError("impossible d'appeler unsubscribe_all sans ws manager")
+        await self.ws_manager.unsubscribe_all()
 
     def name_to_asset(self, name: str) -> int:
         return self.coin_to_asset[self.name_to_coin[name]]

@@ -70,9 +70,17 @@ class WebsocketManagerAsync:
     async def _pong(self):
         while not self.stop_event.is_set():
             await asyncio.sleep(10)
-            if asyncio.get_event_loop().time() - self.last_pong > 90:
+            if asyncio.get_event_loop().time() - self.last_pong > 40:
                 logging.error("Pong timeout reached, reconnecting...")
                 await self._reconnect()
+
+    async def _sub(self, identifier: str, subscription: Dict[str, Any], subscription_id: int):
+        try:
+            await self.ws.send(json.dumps({"method": "subscribe", "subscription": subscription}))
+            logging.info(f"Subscription validée pour {identifier} (id={subscription_id})")
+        except (ConnectionError, asyncio.TimeoutError) as e:
+            logging.error(f"Erreur lors du subscribe de {identifier} (id={subscription_id}): {e}")
+            raise
 
     async def _subqueue(self):
         for subscription, active_sub in self.queued_subscriptions:
@@ -103,19 +111,17 @@ class WebsocketManagerAsync:
         for identifier, subs_list in self.active_subscriptions.items():
             for sub in subs_list:
                 try:
-                    await self.ws.send(json.dumps({"method": "subscribe", "subscription": sub.subscription}))
-                    logging.info(f"Resubscription envoyée pour {identifier} (id={sub.subscription_id})")
+                    await self._sub(identifier, sub.subscription, sub.subscription_id)
                 except Exception as e:
-                    logging.error(f"Erreur lors de la resubscription de {identifier} (id={sub.subscription_id}): {e}")
+                    logging.erreur(f" Erreur daans le resubscribe de {identifier} : {e}")
 
     async def _receive(self):
         try:
             async for message in self.ws:
-                if message == "Websocket connection established.":
-                    continue
                 try:
                     ws_msg = json.loads(message)
-                except Exception:
+                except Exception as e:
+                    logging.warning(f"Erreur lors du parsing JSON : {e} - Message: {message}")
                     continue
                 identifier = ws_msg_to_identifier(ws_msg)
                 if identifier == "pong":
@@ -123,13 +129,13 @@ class WebsocketManagerAsync:
                     continue
                 if not identifier:
                     continue
-
                 for active_sub in self.active_subscriptions.get(identifier, []):
                     await self.callback_queue.put((active_sub.callback, ws_msg))
         except (websockets.ConnectionClosedError, websockets.ConnectionClosedOK) as e:
             logging.warning(f"WebSocket closed: {e}")
         except Exception as e:
-            logging.exception("Unexpected error in _receive()")
+            logging.error(f"Unexpected error in _receive() : {e}")
+
 
     async def subscribe(self, subscription: Dict[str, Any], callback: Callable[[Any], Any], subscription_id: Optional[int] = None) -> int:
         if subscription_id is None:
@@ -139,6 +145,10 @@ class WebsocketManagerAsync:
         if identifier in {"userEvents", "orderUpdates"} and self.active_subscriptions[identifier]:
             logging.warning(f"Tentative de multiples abonnements interdits pour {identifier}")
             raise NotImplementedError(f"Multiple subscriptions to {identifier} not allowed")
+        for sub in self.active_subscriptions.get(identifier, []):
+            if sub.subscription == subscription:
+                logging.info(f"Souscription déjà active pour {identifier}, aucun nouvel envoi (id existant={sub.subscription_id})")
+                return sub.subscription_id
         active_sub = Subscription(subscription, callback, subscription_id)
         if not self.ws_ready.is_set():
             logging.info(f"WS pas prête, mise en file d'attente de l'abonnement {identifier} (id={subscription_id})")
@@ -146,10 +156,8 @@ class WebsocketManagerAsync:
         else:
             self.active_subscriptions[identifier].append(active_sub)
             try:
-                await self.ws.send(json.dumps({"method": "subscribe", "subscription": subscription}))
-                logging.info(f"Subscription envoyée pour {identifier} (id={subscription_id})")
-            except (ConnectionError, asyncio.TimeoutError) as e:
-                logging.error(f"Erreur lors de l'envoi du message subscribe pour {identifier} (id={subscription_id}): {e}")
+                await self._sub(identifier, subscription, subscription_id)
+            except (ConnectionError, asyncio.TimeoutError):
                 self.queued_subscriptions.append((subscription, active_sub))
                 raise
         return subscription_id
@@ -176,6 +184,21 @@ class WebsocketManagerAsync:
         except Exception as e:
             logging.error(f"Erreur inattendue dans unsubscribe: {e}")
             raise
+
+    async def unsubscribe_all(self) -> None:
+        if not self.ws_ready.is_set():
+            raise RuntimeError("Websocket is not ready; cannot unsubscribe all.")
+        for identifier, subs_list in list(self.active_subscriptions.items()):
+            for sub in subs_list:
+                try:
+                    await self.ws.send(json.dumps({
+                        "method": "unsubscribe",
+                        "subscription": sub.subscription
+                    }))
+                except Exception as e:
+                    logging.error(f"Erreur pendant l'unsubscribe de {identifier} (id={sub.subscription_id}): {e}")
+            self.active_subscriptions[identifier] = []
+        logging.info("toutes les subscriptions ont été supprimées")
 
     async def start(self):
         asyncio.create_task(self._callback())
@@ -210,9 +233,9 @@ class WebsocketManagerAsync:
         if self.ws:
             try:
                 await self.ws.close()
-                logging.info("✅ Connexion WebSocket fermée.")
+                logging.debug("✅ Connexion WebSocket fermée.")
             except Exception as e:
                 logging.error(f"❌ Erreur pendant la fermeture de la connexion : {e}")
         self.ws = None
         self.ws_ready.clear()
-        logging.info("🚫 WebSocketManager arrêté proprement.")
+        logging.info(" WebSocketManager arrêté proprement.")

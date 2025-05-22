@@ -1,0 +1,3 @@
+pip install websockets
+pip install aiohttp
+pip install typing_extensions
