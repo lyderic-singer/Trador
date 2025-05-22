@@ -45,7 +45,7 @@ def ws_msg_to_identifier(ws_msg: Dict[str, Any]) -> Optional[str]:
     if c == "bbo": return f'bbo:{d["coin"].lower()}'
     return None
 
-class WebsocketManagerAsync:
+class WebsocketManager:
     def __init__(self, base_url: str):
         self.subscription_id_counter = 0
         self.queued_subscriptions: List[Tuple[Dict[str, Any], Subscription]] = []
@@ -135,7 +135,6 @@ class WebsocketManagerAsync:
             logging.warning(f"WebSocket closed: {e}")
         except Exception as e:
             logging.error(f"Unexpected error in _receive() : {e}")
-
 
     async def subscribe(self, subscription: Dict[str, Any], callback: Callable[[Any], Any], subscription_id: Optional[int] = None) -> int:
         if subscription_id is None:

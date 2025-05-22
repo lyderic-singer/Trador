@@ -8,7 +8,7 @@ from hyperliquid.utils.error import ClientError, ServerError
 from hyperliquid.utils.types import Any
 
 
-class APIAsync:
+class API:
     def __init__(self, base_url=None):
         self.base_url = base_url or MAINNET_API_URL
         self._logger = logging.getLogger(__name__)

@@ -1,10 +1,10 @@
-from core.api_async import APIAsync
+from core.api import API
 import asyncio
 from hyperliquid.utils.types import (Any, Callable, Cloid, List, Meta, Optional, SpotMeta, SpotMetaAndAssetCtxs, Subscription, cast)
-from core.websocket_manager_async import WebsocketManagerAsync
+from core.websocket_manager import WebsocketManager
 
 
-class InfoAsync(APIAsync):
+class Info(API):
     def __init__(
         self,
         base_url: Optional[str] = None,
@@ -19,14 +19,14 @@ class InfoAsync(APIAsync):
         self.spot_meta_arg = spot_meta
         self.perp_dexs_arg = perp_dexs
 
-        self.ws_manager: Optional[WebsocketManagerAsync] = None
+        self.ws_manager: Optional[WebsocketManager] = None
         self.coin_to_asset = {}
         self.name_to_coin = {}
         self.asset_to_sz_decimals = {}
 
     async def start(self):
         if not self.skip_ws:
-            self.ws_manager = WebsocketManagerAsync(self.base_url)
+            self.ws_manager = WebsocketManager(self.base_url)
             asyncio.create_task(self.ws_manager.start())
 
         spot_meta = self.spot_meta_arg or await self.spot_meta()
