@@ -135,10 +135,12 @@ class Exchange(API):
         is_buy: bool,
         sz: float,
         px: Optional[float] = None,
-        slippage: float = self.DEFAULT_SLIPPAGE,
+        slippage: float = None,
         cloid: Optional[Cloid] = None,
         builder: Optional[BuilderInfo] = None,
     ) -> Any:
+        if slippage is None:
+            slippage = self.DEFAULT_SLIPPAGE
         px = self._slippage_price(name, is_buy, slippage, px)
         return await self.order(
             name, is_buy, sz, px, order_type={"limit": {"tif": "Ioc"}}, reduce_only=False, cloid=cloid, builder=builder
@@ -149,10 +151,12 @@ class Exchange(API):
         coin: str,
         sz: Optional[float] = None,
         px: Optional[float] = None,
-        slippage: float = self.DEFAULT_SLIPPAGE,
+        slippage: float = None,
         cloid: Optional[Cloid] = None,
         builder: Optional[BuilderInfo] = None,
     ) -> Any:
+        if slippage is None:
+            slippage = self.DEFAULT_SLIPPAGE
         address: str = self.wallet.address
         if self.account_address:
             address = self.account_address

@@ -3,19 +3,15 @@ from __future__ import annotations
 from typing import Any, Callable, Dict, List, Literal, NamedTuple, Optional, Tuple, TypedDict, Union, cast
 from typing_extensions import NotRequired
 
-Any = Any
-Option = Optional
-cast = cast
-Callable = Callable
-NamedTuple = NamedTuple
-NotRequired = NotRequired
-
 AssetInfo = TypedDict("AssetInfo", {"name": str, "szDecimals": int})
 Meta = TypedDict("Meta", {"universe": List[AssetInfo]})
 Side = Union[Literal["A"], Literal["B"]]
 SIDES: List[Side] = ["A", "B"]
 
-SpotAssetInfo = TypedDict("SpotAssetInfo", {"name": str, "tokens": List[int], "index": int, "isCanonical": bool})
+SpotAssetInfo = TypedDict(
+    "SpotAssetInfo",
+    {"name": str, "tokens": List[int], "index": int, "isCanonical": bool},
+)
 SpotTokenInfo = TypedDict(
     "SpotTokenInfo",
     {
@@ -29,10 +25,20 @@ SpotTokenInfo = TypedDict(
         "fullName": Optional[str],
     },
 )
-SpotMeta = TypedDict("SpotMeta", {"universe": List[SpotAssetInfo], "tokens": List[SpotTokenInfo]})
+SpotMeta = TypedDict(
+    "SpotMeta",
+    {"universe": List[SpotAssetInfo], "tokens": List[SpotTokenInfo]},
+)
 SpotAssetCtx = TypedDict(
     "SpotAssetCtx",
-    {"dayNtlVlm": str, "markPx": str, "midPx": Optional[str], "prevDayPx": str, "circulatingSupply": str, "coin": str},
+    {
+        "dayNtlVlm": str,
+        "markPx": str,
+        "midPx": Optional[str],
+        "prevDayPx": str,
+        "circulatingSupply": str,
+        "coin": str,
+    },
 )
 SpotMetaAndAssetCtxs = Tuple[SpotMeta, List[SpotAssetCtx]]
 
@@ -46,10 +52,11 @@ CandleSubscription = TypedDict("CandleSubscription", {"type": Literal["candle"],
 OrderUpdatesSubscription = TypedDict("OrderUpdatesSubscription", {"type": Literal["orderUpdates"], "user": str})
 UserFundingsSubscription = TypedDict("UserFundingsSubscription", {"type": Literal["userFundings"], "user": str})
 UserNonFundingLedgerUpdatesSubscription = TypedDict(
-    "UserNonFundingLedgerUpdatesSubscription", {"type": Literal["userNonFundingLedgerUpdates"], "user": str}
+    "UserNonFundingLedgerUpdatesSubscription",
+    {"type": Literal["userNonFundingLedgerUpdates"], "user": str},
 )
 WebData2Subscription = TypedDict("WebData2Subscription", {"type": Literal["webData2"], "user": str})
-# If adding new subscription types that contain coin's don't forget to handle automatically rewrite name to coin in info.subscribe
+
 Subscription = Union[
     AllMidsSubscription,
     BboSubscription,
@@ -93,11 +100,12 @@ Fill = TypedDict(
         "feeToken": str,
     },
 )
-# TODO: handle other types of user events
+
 UserEventsData = TypedDict("UserEventsData", {"fills": List[Fill]}, total=False)
 UserEventsMsg = TypedDict("UserEventsMsg", {"channel": Literal["user"], "data": UserEventsData})
 UserFillsData = TypedDict("UserFillsData", {"user": str, "isSnapshot": bool, "fills": List[Fill]})
 UserFillsMsg = TypedDict("UserFillsMsg", {"channel": Literal["userFills"], "data": UserFillsData})
+
 OtherWsMsg = TypedDict(
     "OtherWsMsg",
     {
@@ -112,9 +120,9 @@ OtherWsMsg = TypedDict(
     },
     total=False,
 )
+
 WsMsg = Union[AllMidsMsg, BboMsg, L2BookMsg, TradesMsg, UserEventsMsg, PongMsg, UserFillsMsg, OtherWsMsg]
 
-# b is the public address of the builder, f is the amount of the fee in tenths of basis points. e.g. 10 means 1 basis point
 BuilderInfo = TypedDict("BuilderInfo", {"b": str, "f": int})
 
 PerpDexSchemaInput = TypedDict(
@@ -149,3 +157,4 @@ class Cloid:
 
     def to_raw(self):
         return self._raw_cloid
+
