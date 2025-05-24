@@ -1,7 +1,7 @@
-from core.api import API
+from .api import API
 import asyncio
-from hyperliquid.utils.types import (Any, Callable, Cloid, List, Meta, Optional, SpotMeta, SpotMetaAndAssetCtxs, Subscription, cast)
-from core.websocket_manager import WebsocketManager
+from utils.types import (Any, Callable, Cloid, List, Meta, Optional, SpotMeta, SpotMetaAndAssetCtxs, Subscription, cast)
+from .websocket_manager import WebsocketManager
 
 
 class Info(API):
