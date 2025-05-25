@@ -1,6 +1,6 @@
 from .api import API
 import asyncio
-from utils.types import (Any, Callable, Cloid, List, Meta, Optional, SpotMeta, SpotMetaAndAssetCtxs, Subscription, cast)
+from .utils.types import (Any, Callable, Cloid, List, Meta, Optional, SpotMeta, SpotMetaAndAssetCtxs, Subscription, cast)
 from .websocket_manager import WebsocketManager
 
 

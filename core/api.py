@@ -2,9 +2,9 @@ import json
 import logging
 from json import JSONDecodeError
 import aiohttp
-from utils.constants import MAINNET_API_URL
-from utils.error import ClientError, ServerError
-from utils.types import Any
+from .utils.constants import MAINNET_API_URL
+from .utils.error import ClientError, ServerError
+from .utils.types import Any
 
 
 class API:
@@ -29,10 +29,6 @@ class API:
             except aiohttp.ContentTypeError:
                 text = await response.text()
                 return {"error": f"Could not parse JSON: {text}"}
-            
-    async def get_all_coins(self) -> list[str]:
-        res = await self.post("/info")
-        return [coin["name"] for coin in res["universe"]]
 
     async def _handle_exception(self, response):
         status_code = response.status
