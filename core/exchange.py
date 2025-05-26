@@ -5,7 +5,6 @@ import secrets
 import eth_account
 from eth_account.signers.local import LocalAccount
 
-from .api import API
 from .info import Info
 from .utils.constants import MAINNET_API_URL
 from .utils.signing import CancelByCloidRequest, CancelRequest, ModifyRequest, OidOrCloid, OrderRequest, OrderType, OrderWire, ScheduleCancelAction, float_to_usd_int, get_timestamp_ms, order_request_to_order_wire, order_wires_to_order_action, sign_agent, sign_approve_builder_fee, sign_convert_to_multi_sig_user_action, sign_l1_action, sign_multi_sig_action, sign_perp_dex_class_transfer_action, sign_spot_transfer_action, sign_token_delegate_action, sign_usd_class_transfer_action, sign_usd_transfer_action, sign_withdraw_from_bridge_action
@@ -15,14 +14,12 @@ class Exchange:
     DEFAULT_SLIPPAGE = 0.05
     def __init__(
         self,
-        api : API,
         info: Info,
         wallet: LocalAccount,
         vault_address: Optional[str] = None,
         account_address: Optional[str] = None ):
-        self.api = api
         self.wallet = wallet
-        self.base_url = api.base_url
+        self.base_url = info.base_url
         self.vault_address = vault_address
         self.account_address = account_address
         self.info = info
@@ -37,7 +34,7 @@ class Exchange:
             "expiresAfter": self.expires_after,
         }
         logging.debug(payload)
-        return await self.api.post("/exchange", payload)
+        return await self.info.api.post("/exchange", payload)
 
     async def _slippage_price(self, name: str, is_buy: bool, slippage: float, px: Optional[float] = None) -> float:
         coin = self.info.name_to_coin[name]

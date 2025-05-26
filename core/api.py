@@ -1,27 +1,21 @@
 import json
-import logging
 from json import JSONDecodeError
 import aiohttp
 from .utils.constants import MAINNET_API_URL
 from .utils.error import ClientError, ServerError
 from .utils.types import Any
+from .session_manager import SessionManager
 
 
 class API:
-    def __init__(self, base_url=None):
+    def __init__(self, session : SessionManager, base_url=None):
         self.base_url = base_url or MAINNET_API_URL
-        self._logger = logging.getLogger(__name__)
-        self._session = None
-
-    async def _get_session(self):
-        if self._session is None:
-            self._session = aiohttp.ClientSession(headers={"Content-Type": "application/json"})
-        return self._session
+        self.session = session
 
     async def post(self, url_path: str, payload: Any = None) -> Any:
         payload = payload or {}
         url = self.base_url + url_path
-        session = await self._get_session()
+        session = await self.session.get_session()
         async with session.post(url, json=payload) as response:
             await self._handle_exception(response)
             try:
@@ -47,6 +41,4 @@ class API:
         raise ServerError(status_code, text)
 
     async def close(self):
-        if self._session:
-            await self._session.close()
-            self._session = None
+        await self.session.close()
