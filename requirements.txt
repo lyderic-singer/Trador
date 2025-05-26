@@ -1,6 +1,6 @@
-pip install websockets
-pip install aiohttp
-pip install typing_extensions
-pip install eth_account
-pip install ta
-pip install python-telegram-bot
+websockets
+aiohttp
+typing_extensions
+eth_account
+ta
+python-telegram-bot
