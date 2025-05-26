@@ -4,21 +4,21 @@ from .utils.types import (Any, Callable, Cloid, List, Meta, Optional, SpotMeta, 
 from .websocket_manager import WebsocketManager
 
 
-class Info(API):
+class Info:
     def __init__(
         self,
-        base_url: Optional[str] = None,
+        api : API,
         skip_ws: Optional[bool] = False,
         meta: Optional[Meta] = None,
         spot_meta: Optional[SpotMeta] = None,
         perp_dexs: Optional[List[str]] = None,
     ):
-        super().__init__(base_url)
         self.skip_ws = skip_ws
         self.meta_arg = meta
         self.spot_meta_arg = spot_meta
+        self.base_url = api.base_url
         self.perp_dexs_arg = perp_dexs
-
+        self.api = api
         self.ws_manager: Optional[WebsocketManager] = None
         self.coin_to_asset = {}
         self.name_to_coin = {}
@@ -70,90 +70,88 @@ class Info(API):
         if self.ws_manager is None:
             raise RuntimeError("Cannot call disconnect since skip_ws was used")
         await self.ws_manager.stop()
-        if self._session:  # si tu utilises aussi ta session HTTP dans info_async
-            await self._session.close()
-            self._session = None
+        await self.api.close()
 
     async def user_state(self, address: str, dex: str = "") -> Any:
-        return await self.post("/info", {"type": "clearinghouseState", "user": address, "dex": dex})
+        return await self.api.post("/info", {"type": "clearinghouseState", "user": address, "dex": dex})
 
     async def spot_user_state(self, address: str) -> Any:
-        return await self.post("/info", {"type": "spotClearinghouseState", "user": address})
+        return await self.api.post("/info", {"type": "spotClearinghouseState", "user": address})
 
     async def open_orders(self, address: str, dex: str = "") -> Any:
-        return await self.post("/info", {"type": "openOrders", "user": address, "dex": dex})
+        return await self.api.post("/info", {"type": "openOrders", "user": address, "dex": dex})
 
     async def frontend_open_orders(self, address: str, dex: str = "") -> Any:
-        return await self.post("/info", {"type": "frontendOpenOrders", "user": address, "dex": dex})
+        return await self.api.post("/info", {"type": "frontendOpenOrders", "user": address, "dex": dex})
     
     async def all_mids(self, dex: str = "") -> Any:
-        return await self.post("/info", {"type": "allMids", "dex": dex})
+        return await self.api.post("/info", {"type": "allMids", "dex": dex})
 
     async def user_fills(self, address: str) -> Any:
-        return await self.post("/info", {"type": "userFills", "user": address})
+        return await self.api.post("/info", {"type": "userFills", "user": address})
 
     async def user_fills_by_time(self, address: str, start_time: int, end_time: Optional[int] = None) -> Any:
-        return await self.post("/info", {"type": "userFillsByTime", "user": address, "startTime": start_time, "endTime": end_time})
+        return await self.api.post("/info", {"type": "userFillsByTime", "user": address, "startTime": start_time, "endTime": end_time})
 
     async def meta(self, dex: str = "") -> Meta:
-        return cast(Meta, await self.post("/info", {"type": "meta", "dex": dex}))
+        return cast(Meta, await self.api.post("/info", {"type": "meta", "dex": dex}))
 
     async def meta_and_asset_ctxs(self) -> Any:
-        return await self.post("/info", {"type": "metaAndAssetCtxs"})
+        return await self.api.post("/info", {"type": "metaAndAssetCtxs"})
 
     async def perp_dexs(self) -> Any:
-        return await self.post("/info", {"type": "perpDexs"})
+        return await self.api.post("/info", {"type": "perpDexs"})
 
     async def spot_meta(self) -> SpotMeta:
-        return cast(SpotMeta, await self.post("/info", {"type": "spotMeta"}))
+        return cast(SpotMeta, await self.api.post("/info", {"type": "spotMeta"}))
     
     async def spot_meta_and_asset_ctxs(self) -> SpotMetaAndAssetCtxs:
-        return cast(SpotMetaAndAssetCtxs, await self.post("/info", {"type": "spotMetaAndAssetCtxs"}))
+        return cast(SpotMetaAndAssetCtxs, await self.api.post("/info", {"type": "spotMetaAndAssetCtxs"}))
 
     async def funding_history(self, name: str, startTime: int, endTime: Optional[int] = None) -> Any:
         coin = self.name_to_coin[name]
         if endTime is not None:
-            return await self.post("/info", {"type": "fundingHistory", "coin": coin, "startTime": startTime, "endTime": endTime})
-        return await self.post("/info", {"type": "fundingHistory", "coin": coin, "startTime": startTime})
+            return await self.api.post("/info", {"type": "fundingHistory", "coin": coin, "startTime": startTime, "endTime": endTime})
+        return await self.api.post("/info", {"type": "fundingHistory", "coin": coin, "startTime": startTime})
 
     async def user_funding_history(self, user: str, startTime: int, endTime: Optional[int] = None) -> Any:
         if endTime is not None:
-            return await self.post("/info", {"type": "userFunding", "user": user, "startTime": startTime, "endTime": endTime})
-        return await self.post("/info", {"type": "userFunding", "user": user, "startTime": startTime})
+            return await self.api.post("/info", {"type": "userFunding", "user": user, "startTime": startTime, "endTime": endTime})
+        return await self.api.post("/info", {"type": "userFunding", "user": user, "startTime": startTime})
 
     async def l2_snapshot(self, name: str) -> Any:
-        return await self.post("/info", {"type": "l2Book", "coin": self.name_to_coin[name]})
+        return await self.api.post("/info", {"type": "l2Book", "coin": self.name_to_coin[name]})
 
     async def candles_snapshot(self, name: str, interval: str, startTime: int, endTime: int) -> Any:
         req = {"coin": self.name_to_coin[name], "interval": interval, "startTime": startTime, "endTime": endTime}
-        return await self.post("/info", {"type": "candleSnapshot", "req": req})
+        return await self.api.post("/info", {"type": "candleSnapshot", "req": req})
 
     async def user_fees(self, address: str) -> Any:
-        return await self.post("/info", {"type": "userFees", "user": address})
+        return await self.api.post("/info", {"type": "userFees", "user": address})
 
     async def user_staking_summary(self, address: str) -> Any:
-        return await self.post("/info", {"type": "delegatorSummary", "user": address})
+        return await self.api.post("/info", {"type": "delegatorSummary", "user": address})
 
     async def user_staking_delegations(self, address: str) -> Any:
-        return await self.post("/info", {"type": "delegations", "user": address})
+        return await self.api.post("/info", {"type": "delegations", "user": address})
 
     async def user_staking_rewards(self, address: str) -> Any:
-        return await self.post("/info", {"type": "delegatorRewards", "user": address})
+        return await self.api.post("/info", {"type": "delegatorRewards", "user": address})
 
     async def query_order_by_oid(self, user: str, oid: int) -> Any:
-        return await self.post("/info", {"type": "orderStatus", "user": user, "oid": oid})
+        return await self.api.post("/info", {"type": "orderStatus", "user": user, "oid": oid})
 
     async def query_order_by_cloid(self, user: str, cloid: Cloid) -> Any:
-        return await self.post("/info", {"type": "orderStatus", "user": user, "oid": cloid.to_raw()})
+        return await self.api.post("/info", {"type": "orderStatus", "user": user, "oid": cloid.to_raw()})
 
     async def query_referral_state(self, user: str) -> Any:
-        return await self.post("/info", {"type": "referral", "user": user})
+        return await self.api.post("/info", {"type": "referral", "user": user})
 
     async def query_sub_accounts(self, user: str) -> Any:
-        return await self.post("/info", {"type": "subAccounts", "user": user})
+        return await self.api.post("/info", {"type": "subAccounts", "user": user})
 
     async def query_user_to_multi_sig_signers(self, multi_sig_user: str) -> Any:
-        return await self.post("/info", {"type": "userToMultiSigSigners", "user": multi_sig_user})
+        return await self.api.post("/info", {"type": "userToMultiSigSigners", "user": multi_sig_user})
 
     def _remap_coin_subscription(self, subscription: Subscription) -> None:
         if subscription["type"] in {"l2Book", "trades", "candle", "bbo"}:
