@@ -159,7 +159,6 @@ class WebsocketManager:
             except (ConnectionError, asyncio.TimeoutError):
                 self.queued_subscriptions.append((subscription, active_sub))
                 raise
-        logging.info(f" inscription a {identifier} reussie")
         return subscription_id
 
     async def unsubscribe(self, subscription: Dict[str, Any], subscription_id: int) -> bool:
