@@ -5,6 +5,9 @@ import time
 from datetime import datetime, timezone
 from enum import Enum
 
+def get_file(objet):
+    return os.path.basename(inspect.getfile(objet.__class__))
+
 class LogLevel(str, Enum):
     INFO = "info"
     WARNING = "warning"
@@ -12,49 +15,69 @@ class LogLevel(str, Enum):
     DEBUG = "debug"
     CRITICAL = "critical"
     EXCEPTION = "exception"
+    SUCCESS = "success"
 
-class Log:
-    def __init__(self, message: str, level : LogLevel, context : str = "", send_tg : bool = False, save: bool = False):
+class Message:
+    def __init__(self, level: LogLevel, context: str, message: str, save: bool = False, send_tg: bool = False):
         self.timestamp = time.time()
         self.iso_timestamp = datetime.fromtimestamp(self.timestamp, tz=timezone.utc).isoformat()
-        self.message = message
-        self.send_tg = send_tg
         self.level = level
         self.context = context
+        self.message = message
         self.save = save
-    
+        self.send_tg = send_tg
+
 class MessageManager:
     def __init__(self):
         self.messages = asyncio.Queue()
 
-    def _get_context(self):
-        frame = inspect.stack()[2]
-        filename = os.path.basename(frame.filename)
-        return filename
-
-    async def _put( self, message: str, level : LogLevel, context : str, send_tg : bool = False, save: bool = False):
-        log = Log(message, level, context, send_tg, save)
+    async def _put(self, level: LogLevel, context: str, message: str, save: bool, send_tg: bool):
+        log = Message(level, context, message, save, send_tg)
         await self.messages.put(log)
 
-    async def info(self, message: str, context: str, send_tg: bool = False, save: bool = False):
-        await self._put(message, LogLevel.INFO, context, send_tg, save)
+    async def info(self, context: str, message: str, save: bool = False, send_tg: bool = False):
+        await self._put(LogLevel.INFO, context, message, save, send_tg)
 
-    async def warning(self, message: str, context: str, send_tg: bool = False, save: bool = False):
-        await self._put(message, LogLevel.WARNING, context, send_tg, save)
+    async def warning(self, context: str, message: str, save: bool = True, send_tg: bool = True):
+        await self._put(LogLevel.WARNING, context, message, save, send_tg)
 
-    async def error(self, message: str, context: str, send_tg: bool = False, save: bool = False):
-        await self._put(message, LogLevel.ERROR, context, send_tg, save)
+    async def error(self, context: str, message: str, save: bool = True, send_tg: bool = True):
+        await self._put(LogLevel.ERROR, context, message, save, send_tg)
 
-    async def critical(self, message: str, context: str, send_tg: bool = False, save: bool = False):
-        await self._put(message, LogLevel.CRITICAL, context, send_tg, save)
+    async def critical(self, context: str, message: str, save: bool = True, send_tg: bool = True):
+        await self._put(LogLevel.CRITICAL, context, message, save, send_tg)
 
-    async def debug(self, message: str, context: str, send_tg: bool = False, save: bool = False):
-        await self._put(message, LogLevel.DEBUG, context, send_tg, save)
+    async def debug(self, context: str, message: str, save: bool = False, send_tg: bool = False):
+        await self._put(LogLevel.DEBUG, context, message, save, send_tg)
 
-    async def exception(self, message: str, context: str, send_tg: bool = False, save: bool = False):
-        await self._put(message, LogLevel.EXCEPTION, context, send_tg, save)
+    async def exception(self, context: str, message: str, save: bool = True, send_tg: bool = True):
+        await self._put(LogLevel.EXCEPTION, context, message, save, send_tg)
+
+    async def success(self, context: str, message: str, save: bool = True, send_tg: bool = True):
+        await self._put(LogLevel.SUCCESS, context, message, save, send_tg)
 
 class Logger():
-    def __init__(self, message_manager : MessageManager):
+    def __init__(self, message_manager: MessageManager, objet):
         self.message_manager = message_manager
-        self.filepath = 
+        self.filepath = get_file(objet)
+
+    async def info(self, message: str, save: bool = False, send_tg: bool = False):
+        await self.message_manager.info(self.filepath, message, save, send_tg)
+
+    async def warning(self, message: str, save: bool = True, send_tg: bool = True):
+        await self.message_manager.warning(self.filepath, message, save, send_tg)
+
+    async def error(self, message: str, save: bool = True, send_tg: bool = True):
+        await self.message_manager.error(self.filepath, message, save, send_tg)
+
+    async def critical(self, message: str, save: bool = True, send_tg: bool = True):
+        await self.message_manager.critical(self.filepath, message, save, send_tg)
+
+    async def debug(self, message: str, save: bool = False, send_tg: bool = False):
+        await self.message_manager.debug(self.filepath, message, save, send_tg)
+
+    async def exception(self, message: str, save: bool = True, send_tg: bool = True):
+        await self.message_manager.exception(self.filepath, message, save, send_tg)
+
+    async def success(self, message: str, save: bool = True, send_tg: bool = True):
+        await self.message_manager.success(self.filepath, message, save, send_tg)
