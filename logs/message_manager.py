@@ -2,7 +2,8 @@ import asyncio
 import inspect
 import os
 import time
-from datetime import datetime, timezone
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from enum import Enum
 
 def get_file(objet):
@@ -20,7 +21,9 @@ class LogLevel(str, Enum):
 class Message:
     def __init__(self, level: LogLevel, context: str, message: str, save: bool = False, send_tg: bool = False):
         self.timestamp = time.time()
-        self.iso_timestamp = datetime.fromtimestamp(self.timestamp, tz=timezone.utc).isoformat()
+        now = datetime.now(ZoneInfo("Europe/Paris")).replace(microsecond=0)
+        offset_hours = int(now.utcoffset().total_seconds() // 3600)
+        self.custom_timestamp = now.strftime(f"%Y-%m-%d %H:%M:%S ({f"UTC{offset_hours:+d}"})")
         self.level = level
         self.context = context
         self.message = message
@@ -57,7 +60,7 @@ class MessageManager:
         await self._put(LogLevel.SUCCESS, context, message, save, send_tg)
 
 class Logger():
-    def __init__(self, message_manager: MessageManager, objet):
+    def __init__(self, objet, message_manager: MessageManager):
         self.message_manager = message_manager
         self.filepath = get_file(objet)
 
@@ -81,3 +84,11 @@ class Logger():
 
     async def success(self, message: str, save: bool = True, send_tg: bool = True):
         await self.message_manager.success(self.filepath, message, save, send_tg)
+
+t = time.time()
+for i in range(1000000):
+    m = Message( LogLevel.DEBUG, "pourtroll", "aller les négros", True , True)
+
+e = time.time()
+
+print(f"temps d'ex : {e -t}")
