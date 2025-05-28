@@ -1,13 +1,21 @@
 import asyncio
 import inspect
 import os
+import sys
 import time
-from datetime import datetime
-from zoneinfo import ZoneInfo
 from enum import Enum
 
 def get_file(objet):
     return os.path.basename(inspect.getfile(objet.__class__))
+
+def _callfunname(): # retourne la fonction appelante de rang 2
+    try:
+        return sys._getframe(2).f_code.co_name  # 2 car on veut le grand-parent
+    except Exception:
+        try:
+            return inspect.stack()[2].function
+        except Exception:
+            return "<unknown>"
 
 class LogLevel(str, Enum):
     INFO = "info"
@@ -21,14 +29,30 @@ class LogLevel(str, Enum):
 class Message:
     def __init__(self, level: LogLevel, context: str, message: str, save: bool = False, send_tg: bool = False):
         self.timestamp = time.time()
-        now = datetime.now(ZoneInfo("Europe/Paris")).replace(microsecond=0)
-        offset_hours = int(now.utcoffset().total_seconds() // 3600)
-        self.custom_timestamp = now.strftime(f"%Y-%m-%d %H:%M:%S ({f"UTC{offset_hours:+d}"})")
+        self.iso_timestamp = None
         self.level = level
         self.context = context
         self.message = message
         self.save = save
         self.send_tg = send_tg
+
+    def _get_iso(self):
+        if self.iso_timestamp is None:
+            self.iso_timestamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(self.timestamp))
+        return self.iso_timestamp
+
+    def format(self) -> str:
+        return f"[{self._get_iso()}] [{self.level.value.upper()}] [{self.context}] {self.message}"
+
+    def format_tg(self) -> str:
+        emoji = {
+            'debug': '🔧',
+            'info': 'ℹ️',
+            'warning': '⚠️',
+            'error': '❌',
+            'critical': '🔥'
+        }.get(self.level.value.lower(), '📌')
+        return f"{emoji} [{self.context}]: {self.message}"
 
 class MessageManager:
     def __init__(self):
@@ -68,27 +92,19 @@ class Logger():
         await self.message_manager.info(self.filepath, message, save, send_tg)
 
     async def warning(self, message: str, save: bool = True, send_tg: bool = True):
-        await self.message_manager.warning(self.filepath, message, save, send_tg)
+        await self.message_manager.warning(self.filepath + " in " + _callfunname(), message, save, send_tg)
 
     async def error(self, message: str, save: bool = True, send_tg: bool = True):
-        await self.message_manager.error(self.filepath, message, save, send_tg)
+        await self.message_manager.error(self.filepath + " in " + _callfunname(), message, save, send_tg)
 
     async def critical(self, message: str, save: bool = True, send_tg: bool = True):
-        await self.message_manager.critical(self.filepath, message, save, send_tg)
+        await self.message_manager.critical(self.filepath + " in " + _callfunname(), message, save, send_tg)
 
     async def debug(self, message: str, save: bool = False, send_tg: bool = False):
         await self.message_manager.debug(self.filepath, message, save, send_tg)
 
     async def exception(self, message: str, save: bool = True, send_tg: bool = True):
-        await self.message_manager.exception(self.filepath, message, save, send_tg)
+        await self.message_manager.exception(self.filepath + " in " + _callfunname(), message, save, send_tg)
 
     async def success(self, message: str, save: bool = True, send_tg: bool = True):
         await self.message_manager.success(self.filepath, message, save, send_tg)
-
-t = time.time()
-for i in range(1000000):
-    m = Message( LogLevel.DEBUG, "pourtroll", "aller les négros", True , True)
-
-e = time.time()
-
-print(f"temps d'ex : {e -t}")
