@@ -1,34 +1,47 @@
 import json
 from json import JSONDecodeError
 import aiohttp
+
 from .utils.constants import MAINNET_API_URL
 from .utils.error import ClientError, ServerError
 from .utils.types import Any
 from .session_manager import SessionManager
+from logs.message_manager import Logger
 
 
 class API:
-    def __init__(self, session : SessionManager, base_url=None):
+    def __init__(self, session: SessionManager, base_url=None):
         self.base_url = base_url or MAINNET_API_URL
         self.session = session
+        self._logging = Logger(self, session)
+        self._logging.info(f"API initialized with base URL: {self.base_url}")
 
     async def post(self, url_path: str, payload: Any = None) -> Any:
         payload = payload or {}
         url = self.base_url + url_path
-        session = await self.session.get_session()
-        async with session.post(url, json=payload) as response:
-            await self._handle_exception(response)
-            try:
-                return await response.json()
-            except aiohttp.ContentTypeError:
-                text = await response.text()
-                return {"error": f"Could not parse JSON: {text}"}
+        self._logging.debug(f"POST {url} | Payload: {payload}")
+        try:
+            session = await self.session.get_session()
+            async with session.post(url, json=payload) as response:
+                await self._handle_exception(response)
+                try:
+                    data = await response.json()
+                    self._logging.debug(f"Response JSON: {data}")
+                    return data
+                except aiohttp.ContentTypeError:
+                    text = await response.text()
+                    self._logging.warning(f"Invalid JSON response: {text}")
+                    return {"error": f"Could not parse JSON: {text}"}
+        except Exception as e:
+            self._logging.error(f"POST request failed: {e}")
+            raise
 
     async def _handle_exception(self, response):
         status_code = response.status
         if status_code < 400:
             return
         text = await response.text()
+        self._logging.warning(f"HTTP {status_code} | Response text: {text}")
         if 400 <= status_code < 500:
             try:
                 err = json.loads(text)
@@ -41,4 +54,5 @@ class API:
         raise ServerError(status_code, text)
 
     async def close(self):
+        self._logging.info("Closing API session.")
         await self.session.close()
