@@ -8,18 +8,18 @@ class SessionManager:
 
     async def get_session(self) -> aiohttp.ClientSession:
         if self.session is None:
-            self._logging.debug("Creating new aiohttp session.")
+            await self._logging.debug("Creating new aiohttp session.")
             self.session = aiohttp.ClientSession(headers={"Content-Type": "application/json"})
         elif self.session.closed:
-            self._logging.debug("Session was closed. Creating a new one.")
+            await self._logging.debug("Session was closed. Creating a new one.")
             self.session = aiohttp.ClientSession(headers={"Content-Type": "application/json"})
         else:
-            self._logging.debug("Reusing existing aiohttp session.")
+            await self._logging.debug("Reusing existing aiohttp session.")
         return self.session
 
     async def close(self):
         if self.session and not self.session.closed:
-            self._logging.debug("Closing aiohttp session.")
+            await self._logging.debug("Closing aiohttp session.")
             await self.session.close()
         else:
-            self._logging.debug("Session already closed or does not exist.")
+            await self._logging.debug("Session already closed or does not exist.")
