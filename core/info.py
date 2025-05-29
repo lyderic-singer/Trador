@@ -1,12 +1,12 @@
 from .api import API
 import asyncio
-import logging
 from .utils.types import (Any, Callable, List, Cloid, Meta, Optional, SpotMeta, SpotMetaAndAssetCtxs, Subscription, cast)
 from .websocket_manager import WebsocketManager
 from logs.message_manager import Logger
 
 class Info:
     def __init__(self, api: API, message_manager, skip_ws: Optional[bool] = False, meta: Optional[Meta] = None, spot_meta: Optional[SpotMeta] = None, perp_dexs: Optional[List[str]] = None,):
+        self.message_manager = message_manager
         self.skip_ws = skip_ws
         self.meta_arg = meta
         self.spot_meta_arg = spot_meta
@@ -23,7 +23,7 @@ class Info:
         await self._logging.info("Démarrage de la connexion websocket...")
 
         if not self.skip_ws:
-            self.ws_manager = WebsocketManager(self.base_url)
+            self.ws_manager = WebsocketManager(self.base_url, self.message_manager)
             asyncio.create_task(self.ws_manager.start())
             await self._logging.success("WebsocketManager lancé avec succès.")
         else:
@@ -50,10 +50,10 @@ class Info:
 
         if self.perp_dexs_arg is not None:
             perp_dex_list = await self.perp_dexs()
-            await self._logging.info(f"Récupération des perp_dexs : {perp_dex_list}")
+            await self._logging.info(f"Récupération des perp_dexs")
             for i, perp_dex in enumerate(perp_dex_list[1:]):
                 perp_dex_to_offset[perp_dex["name"]] = 110000 + i * 10000
-            await self._logging.debug(f"Offsets perp_dexs calculés : {perp_dex_to_offset}")
+            await self._logging.debug(f"Offsets perp_dexs calculés")
 
         for perp_dex in perp_dexs:
             offset = perp_dex_to_offset[perp_dex]
@@ -84,7 +84,7 @@ class Info:
         await self._logging.success("API fermée.")
 
     async def user_state(self, address: str, dex: str = "") -> Any:
-        await self._logging.debug(f"Appel user_state avec address={address}, dex={dex}")
+        await self._logging.debug(f"Appel de user_state")
         return await self.api.post("/info", {"type": "clearinghouseState", "user": address, "dex": dex})
 
     async def spot_user_state(self, address: str) -> Any:
@@ -189,6 +189,10 @@ class Info:
         await self._logging.debug(f"Appel query_user_to_multi_sig_signers pour multi_sig_user={multi_sig_user}")
         return await self.api.post("/info", {"type": "userToMultiSigSigners", "user": multi_sig_user})
 
+    def _remap_coin_subscription(self, subscription: Subscription) -> None:
+        if subscription["type"] in {"l2Book", "trades", "candle", "bbo"}:
+            subscription["coin"] = self.name_to_coin[subscription["coin"]]
+
     async def subscribe(self, subscription: Subscription, callback: Callable[[Any], None]) -> int:
         self._remap_coin_subscription(subscription)
         if self.ws_manager is None:
@@ -216,3 +220,6 @@ class Info:
             raise RuntimeError("impossible d'appeler unsubscribe_all sans ws manager")
         await self.ws_manager.unsubscribe_all()
         await self._logging.success("Tous les abonnements ont été désabonnés.")
+
+    def name_to_asset(self, name: str) -> int:
+        return self.coin_to_asset[self.name_to_coin[name]]

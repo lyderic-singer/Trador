@@ -238,4 +238,3 @@ class WebsocketManager:
         self.ws = None
         self.ws_ready.clear()
         await self._logging.success("WebSocketManager arrêté proprement.")
-

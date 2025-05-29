@@ -86,7 +86,10 @@ class MessageManager:
 class Logger():
     def __init__(self, objet, message_manager: MessageManager):
         self.message_manager = message_manager
-        self.filepath = get_file(objet)
+        if isinstance(objet, str):
+            self.filepath = objet
+        else:
+            self.filepath = get_file(objet)
 
     async def info(self, message: str, save: bool = False, send_tg: bool = False):
         await self.message_manager.info(self.filepath, message, save, send_tg)

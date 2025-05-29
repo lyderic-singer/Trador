@@ -2,7 +2,6 @@ import json
 from json import JSONDecodeError
 import aiohttp
 
-from .utils.constants import MAINNET_API_URL
 from .utils.error import ClientError, ServerError
 from .utils.types import Any
 from .session_manager import SessionManager
@@ -10,8 +9,8 @@ from logs.message_manager import Logger
 
 
 class API:
-    def __init__(self, session : SessionManager, message_manager, base_url=None):
-        self.base_url = base_url or MAINNET_API_URL
+    def __init__(self, base_url: str, message_manager, session : SessionManager):
+        self.base_url = base_url
         self.session = session
         self._logging = Logger(self, message_manager)
 
@@ -25,12 +24,12 @@ class API:
                 await self._handle_exception(response)
                 try:
                     data = await response.json()
-                    await self._logging.debug(f"Response JSON: {data}")
+                    await self._logging.debug(f"Response JSON recue")
                     return data
                 except aiohttp.ContentTypeError:
                     text = await response.text()
-                    await self._logging.warning(f"Invalid JSON response: {text}")
-                    return {"error": f"Could not parse JSON: {text}"}
+                    await self._logging.warning(f"Invalid JSON response")
+                    return {"error": f"Could not parse JSON"}
         except Exception as e:
             await self._logging.error(f"POST request failed: {e}")
             raise
