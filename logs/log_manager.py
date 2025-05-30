@@ -12,7 +12,7 @@ class LogManager:
         self.filepath = filepath
         self.tg_manager = tg_manager
         self._running = False
-        self.file_handle = open(filepath, "a", buffering=1) if filepath else None
+        self.file_handle = open(filepath, "a", buffering=1, encoding="utf-8") if filepath else None
         self._task = None
     
     async def _save_to_file(self, message):
