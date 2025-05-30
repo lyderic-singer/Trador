@@ -17,9 +17,15 @@ class TelegramManager:
         self._task = None
         self._app: Application = ApplicationBuilder().token(self.token).build()
         self._app.add_handler(CommandHandler("ping", self._on_ping))
+        self._app.add_handler(CommandHandler("run", self._on_run))
 
     async def _on_ping(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("pong 🏓")
+
+    async def _on_run(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await update.message.reply_text("lancement du bot HL demandé")
+        await self.orchester.run()
+        await update.message.reply_text("bot lancé")
 
     async def _worker(self):
         try:

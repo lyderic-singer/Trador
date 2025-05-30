@@ -9,11 +9,11 @@ from .api import API
 from .info import Info
 from .exchange import Exchange
 from logs.message_manager import Logger
-from logs.telegram_manager import TelegramManager
-from logs.log_manager import LogManager
 
-def load_account(key_path: str) -> tuple[LocalAccount, str]:
-    config_path = os.path.join(os.path.dirname(__file__), key_path)
+def load_account(config_path):
+    if not os.path.isabs(config_path):
+        base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))  # <- tu remontes à HL_bot/
+        config_path = os.path.join(base_dir, config_path)
     with open(config_path, "r") as f:
         config = json.load(f)
     secret_key = config.get("secret_key")
