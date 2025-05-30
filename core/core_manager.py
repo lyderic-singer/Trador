@@ -8,7 +8,7 @@ from .session_manager import SessionManager
 from .api import API
 from .info import Info
 from .exchange import Exchange
-from logs.message_manager import MessageManager, Logger
+from logs.message_manager import Logger
 from logs.telegram_manager import TelegramManager
 from logs.log_manager import LogManager
 
@@ -24,30 +24,26 @@ def load_account(key_path: str) -> tuple[LocalAccount, str]:
     return account, address
 
 class CoreManager:
-    def __init__(self, base_url, key_path, skip_ws):
-        self.message_manager = MessageManager()
-        self._logging = Logger(self, self.message_manager)
+    def __init__(self, base_url, message_manager, key_path, skip_ws):
+        self.message_manager = message_manager
+        self._logging = Logger(self, message_manager)
         account, address = load_account(key_path)
         self.account = account
         self.address = address
         self.base_url = base_url
-        self.session_manager = SessionManager(self.message_manager)
-        self.api = API(base_url, self.message_manager, self.session_manager)
-        self.info = Info(self.api, self.message_manager, skip_ws)
+        self.session_manager = SessionManager(message_manager)
+        self.api = API(base_url, message_manager, self.session_manager)
+        self.info = Info(self.api, message_manager, skip_ws)
         self.ws_manager = self.info.ws_manager
-        self.exchange = Exchange(self.info, self.message_manager, account)
-        self.tg_manager = TelegramManager(self, self.message_manager)
-        self.log_manager = LogManager(self.message_manager, filepath= "logs/logs.txt")
+        self.exchange = Exchange(self.info, message_manager, account)
         self._running = False
 
-    async def start(self):
+    async def start(self) -> None:
         if not self._running:
             try:
-                await self.log_manager.start()
                 await self._logging.info("tentative de demarrage du core")
                 await self.session_manager.get_session()
                 await self.info.start()
-                await self.tg_manager.start()
                 await self._logging.success("core démarré")
                 self._running = True
             except Exception as e:
@@ -55,14 +51,12 @@ class CoreManager:
         else:
             await self._logging.warning("le core est deja lancé")
 
-    async def stop(self):
+    async def stop(self) -> None:
         if self._running:
             try:
                 await self._logging.info("demande d'arret du core")
                 await self.info.unsubscribe_all()
                 await self.info.disconnect()
-                await self.tg_manager.stop()
-                await self.log_manager.stop()
                 await self._logging.success("core arreté et deconnecté")
                 self._running = False
             except Exception as e:

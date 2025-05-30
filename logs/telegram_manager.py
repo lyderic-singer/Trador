@@ -7,10 +7,10 @@ from logs.message_manager import Logger
 
 
 class TelegramManager:
-    def __init__(self, core_manager, message_manager, config_path="config/telegram.json"):
+    def __init__(self, orchester, config_path="config/telegram.json"):
         self.config = json.loads(Path(config_path).read_text())
-        self.exchange = core_manager
-        self._logging = Logger(self, message_manager)
+        self.orchester = orchester
+        self._logging = Logger(self, orchester.message_manager)
         self.token = self.config["TG_TOKEN"]
         self.chat_id = self.config["TG_CHAT_ID"]
         self.messages = asyncio.Queue()

@@ -17,7 +17,7 @@ class Info:
         self.ws_manager: Optional[WebsocketManager] = None
         self.coin_to_asset = {}
         self.name_to_coin = {}
-        self.asset_to_sz_decimals = {}
+        self.sz_decimals = {}
 
     async def start(self):
         await self._logging.info("Démarrage de la connexion websocket...")
@@ -39,7 +39,7 @@ class Info:
             base, quote = spot_info["tokens"]
             base_info = spot_meta["tokens"][base]
             quote_info = spot_meta["tokens"][quote]
-            self.asset_to_sz_decimals[asset] = base_info["szDecimals"]
+            self.sz_decimals[asset] = base_info["szDecimals"]
             name = f'{base_info["name"]}/{quote_info["name"]}'
             if name not in self.name_to_coin:
                 self.name_to_coin[name] = spot_info["name"]
@@ -70,7 +70,7 @@ class Info:
             asset += offset
             self.coin_to_asset[asset_info["name"]] = asset
             self.name_to_coin[asset_info["name"]] = asset_info["name"]
-            self.asset_to_sz_decimals[asset] = asset_info["szDecimals"]
+            self.sz_decimals[asset] = asset_info["szDecimals"]
 
     async def disconnect(self):
         if self.ws_manager is None:
