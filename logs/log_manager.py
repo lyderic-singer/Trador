@@ -21,10 +21,13 @@ class LogManager:
         await loop.run_in_executor(None, self._write_file, line)
 
     def _write_file(self, line: str):
+        if self.file_handle is None:
+            return
         try:
             self.file_handle.write(line)
         except Exception as e:
             shell(f"[ERROR][Logger] Failed to write to log file: {e}")
+
 
     async def _send_telegram(self, message):
         try:

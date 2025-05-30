@@ -5,7 +5,6 @@ from telegram import Update
 from telegram.ext import Application, ApplicationBuilder, CommandHandler, ContextTypes
 from logs.message_manager import Logger
 
-
 class TelegramManager:
     def __init__(self, orchester, config_path="config/telegram.json"):
         self.config = json.loads(Path(config_path).read_text())
@@ -14,7 +13,8 @@ class TelegramManager:
         self.token = self.config["TG_TOKEN"]
         self.chat_id = self.config["TG_CHAT_ID"]
         self.messages = asyncio.Queue()
-        self._task = None
+        self._worker_task = None
+        self._polling_task = None
         self._app: Application = ApplicationBuilder().token(self.token).build()
         self._app.add_handler(CommandHandler("ping", self._on_ping))
         self._app.add_handler(CommandHandler("run", self._on_run))
@@ -41,23 +41,29 @@ class TelegramManager:
 
     async def start(self):
         try:
-            await self._app.initialize()
-            await self._app.start()
-            await self._app.updater.start_polling()
-            self._task = asyncio.create_task(self._worker())
+            self._worker_task = asyncio.create_task(self._worker())
+            self._polling_task = asyncio.create_task(self._app.run_polling(close_loop=False))
         except Exception as e:
             await self._logging.error(f"[Telegram] start failed: {e}")
 
     async def stop(self):
-        if self._task:
-            self._task.cancel()
+        if self._worker_task:
+            self._worker_task.cancel()
             try:
-                await self._task
+                await self._worker_task
             except asyncio.CancelledError:
                 pass
-            self._task = None
+            self._worker_task = None
+
+        if self._polling_task:
+            self._polling_task.cancel()
+            try:
+                await self._polling_task
+            except asyncio.CancelledError:
+                pass
+            self._polling_task = None
+
         try:
-            await self._app.stop()
             await self._app.shutdown()
         except Exception as e:
             await self._logging.error(f"[Telegram] stop failed: {e}")
