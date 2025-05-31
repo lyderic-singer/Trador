@@ -41,10 +41,11 @@ class TelegramManager:
 
     async def start(self):
         try:
+            await self._app.initialize()
             self._worker_task = asyncio.create_task(self._worker())
-            self._polling_task = asyncio.create_task(self._app.run_polling(close_loop=False))
+            await self._app.start()
         except Exception as e:
-            await self._logging.error(f"[Telegram] start failed: {e}")
+            await self._logging.error(f"[Telegram] start failed: {type(e).__name__}: {str(e)}")
 
     async def stop(self):
         if self._worker_task:
@@ -64,12 +65,18 @@ class TelegramManager:
             self._polling_task = None
 
         try:
+            await self._app.stop()
             await self._app.shutdown()
         except Exception as e:
             await self._logging.error(f"[Telegram] stop failed: {e}")
+            try:
+                await self._app.shutdown()
+            except Exception as e:
+                await self._logging.error(f"[Telegram] stop failed: {e}")
 
     async def send(self, msg: str):
         try:
             await self.messages.put(msg)
         except Exception as e:
             await self._logging.error(f"[Telegram] enqueue failed: {e}")
+

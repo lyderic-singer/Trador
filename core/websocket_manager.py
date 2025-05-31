@@ -209,7 +209,7 @@ class WebsocketManager:
                 self.ws = await websockets.connect(self.uri)
                 self.ws_ready.set()
                 self.last_pong = asyncio.get_event_loop().time()
-                await self._logging.success("✅ Connecté au WebSocket.")
+                await self._logging.success("✅ Connecté au WebSocket.",send_tg=False)
                 await self._subqueue()
                 await self._resubscribe()
                 recv_task = asyncio.create_task(self._receive())

@@ -21,13 +21,15 @@ class Orchester:
     async def start(self):
         await self.core_manager.start()
         self.strategy.init(self.core_manager)
-        self._tg_task = asyncio.create_task(self.tg_manager.start())
-        self._strategy_task = asyncio.create_task(self.strategy.run())
+        await self.tg_manager.start()
         self._running = True
         await self._logging.info("orchestrator demarré")
 
+    def run(self):
+        self._strategy_task = asyncio.create_task(self.strategy.run())
+
     async def stop(self):
-        await self._logging.info("orchestrator arrêt en cours...")
+        await self._logging.info("orchester arrêt en cours...")
         await self.tg_manager.stop()
         await self.strategy.stop()
         for task in [self._tg_task, self._strategy_task]:
@@ -40,5 +42,5 @@ class Orchester:
         await self.core_manager.stop()
         await self.log_manager.stop()
         self._running = False
-        await self._logging.info("orchestrator arrêté")
+        await self._logging.info("orchestor arrêté")
 

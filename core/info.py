@@ -28,7 +28,6 @@ class Info:
         if not self.skip_ws:
             self.ws_manager = WebsocketManager(self.base_url, self.message_manager)
             asyncio.create_task(self.ws_manager.start())
-            await self._logging.success("WebsocketManager lancé avec succès.")
         else:
             await self._logging.warning("skip_ws est activé, websocket non lancé.")
 
@@ -53,7 +52,7 @@ class Info:
 
         if self.perp_dexs_arg is not None:
             perp_dex_list = await self.perp_dexs()
-            await self._logging.info(f"Récupération des perp_dexs")
+            await self._logging.debug(f"Récupération des perp_dexs")
             for i, perp_dex in enumerate(perp_dex_list[1:]):
                 perp_dex_to_offset[perp_dex["name"]] = 110000 + i * 10000
             await self._logging.debug(f"Offsets perp_dexs calculés")
@@ -62,11 +61,11 @@ class Info:
             offset = perp_dex_to_offset[perp_dex]
             if perp_dex == "" and self.meta_arg is not None:
                 self.set_perp_meta(self.meta_arg, 0)
-                await self._logging.success("Meta perp initialisée avec meta_arg et offset 0.")
+                await self._logging.debug("Meta perp initialisée avec meta_arg et offset 0.")
             else:
                 fresh_meta = await self.meta(dex=perp_dex)
                 self.set_perp_meta(fresh_meta, offset)
-                await self._logging.success(f"Meta perp mise à jour pour dex '{perp_dex}' avec offset {offset}.")
+                await self._logging.debug(f"Meta perp mise à jour pour dex '{perp_dex}' avec offset {offset}.")
 
     def set_perp_meta(self, meta: Meta, offset: int) -> None:
         for asset, asset_info in enumerate(meta["universe"]):
@@ -222,7 +221,6 @@ class Info:
             await self._logging.error("unsubscribe_all appelé sans ws_manager")
             raise RuntimeError("impossible d'appeler unsubscribe_all sans ws manager")
         await self.ws_manager.unsubscribe_all()
-        await self._logging.success("Tous les abonnements ont été désabonnés.")
 
     def name_to_asset(self, name: str) -> int:
         return self.coin_to_asset[self.name_to_coin[name]]
