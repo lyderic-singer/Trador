@@ -12,7 +12,7 @@ from logs.message_manager import Logger
 
 def load_account(config_path):
     if not os.path.isabs(config_path):
-        base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))  # <- tu remontes à HL_bot/
+        base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
         config_path = os.path.join(base_dir, config_path)
     with open(config_path, "r") as f:
         config = json.load(f)
@@ -44,7 +44,7 @@ class CoreManager:
                 await self._logging.info("tentative de demarrage du core")
                 await self.session_manager.get_session()
                 await self.info.start()
-                await self._logging.success("core démarré")
+                await self._logging.success("core démarré", )
                 self._running = True
             except Exception as e:
                 await self._logging.error(f"erreur dans le demarrage du core : {e}")

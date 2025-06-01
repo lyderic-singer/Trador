@@ -36,7 +36,8 @@ class LogManager:
             shell(f"[ERROR][Logger] Telegram error: {e}")
 
     async def _log(self, message):
-        shell(message.format())
+        if message.level != "debug":
+            shell(message.format())
         if message.save and self.file_handle:
             await self._save_to_file(message)
         if message.send_tg and self.tg_manager:

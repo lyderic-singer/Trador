@@ -50,9 +50,10 @@ class Message:
             'info': 'ℹ️',
             'warning': '⚠️',
             'error': '❌',
-            'critical': '🔥'
+            'critical': '🔥',
+            'success': '✅'
         }.get(self.level.value.lower(), '📌')
-        return f"{emoji} [{self.context}]: {self.message}"
+        return f"{emoji} {self.message}"
 
 class MessageManager:
     def __init__(self):
@@ -80,7 +81,7 @@ class MessageManager:
     async def exception(self, context: str, message: str, save: bool = True, send_tg: bool = True):
         await self._put(LogLevel.EXCEPTION, context, message, save, send_tg)
 
-    async def success(self, context: str, message: str, save: bool = True, send_tg: bool = True):
+    async def success(self, context: str, message: str, save: bool = True, send_tg: bool = False):
         await self._put(LogLevel.SUCCESS, context, message, save, send_tg)
 
 class Logger():
@@ -109,5 +110,5 @@ class Logger():
     async def exception(self, message: str, save: bool = True, send_tg: bool = True):
         await self.message_manager.exception(self.filepath + " in " + _callfunname(), message, save, send_tg)
 
-    async def success(self, message: str, save: bool = True, send_tg: bool = True):
+    async def success(self, message: str, save: bool = True, send_tg: bool = False):
         await self.message_manager.success(self.filepath, message, save, send_tg)

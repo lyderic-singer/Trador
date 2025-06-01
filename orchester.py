@@ -10,6 +10,7 @@ class Orchester:
         self.message_manager = MessageManager()
         self._logging = Logger(self, self.message_manager)
         self.core_manager = CoreManager(base_url, self.message_manager, key_path, skip_ws)
+        self.address = self.core_manager.address
         self.tg_manager = TelegramManager(self)
         self.strategy = strategy
         self.log_manager = LogManager(self.message_manager, self.tg_manager, "logs/logs.txt")
@@ -23,10 +24,10 @@ class Orchester:
         self.strategy.init(self.core_manager)
         await self.tg_manager.start()
         self._running = True
-        await self._logging.info("orchestrator demarré")
+        await self._logging.success("orchester demarré", send_tg= True)
 
     async def stop(self):
-        await self._logging.info("orchester arrêt en cours...")
+        await self._logging.info("orchester arrêt en cours...", send_tg= True)
         await self.tg_manager.stop()
         await self.strategy.stop()
         for task in [self._tg_task, self._strategy_task]:
@@ -37,7 +38,7 @@ class Orchester:
                 except asyncio.CancelledError:
                     pass
         await self.core_manager.stop()
-        await self._logging.success("orchestor arrêté")
+        await self._logging.success("orchester arrêté")
         await self.log_manager.stop()
         self._running = False
 
