@@ -28,7 +28,6 @@ class Orchester:
 
     async def stop(self):
         await self._logging.info("orchester arrêt en cours...", send_tg= True)
-        await self.tg_manager.stop()
         await self.strategy.stop()
         for task in [self._tg_task, self._strategy_task]:
             if task:
@@ -39,6 +38,7 @@ class Orchester:
                     pass
         await self.core_manager.stop()
         await self._logging.success("orchester arrêté")
+        await self.tg_manager.stop()
         await self.log_manager.stop()
         self._running = False
 

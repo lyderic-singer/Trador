@@ -222,47 +222,5 @@ class Info:
             raise RuntimeError("impossible d'appeler unsubscribe_all sans ws manager")
         await self.ws_manager.unsubscribe_all()
 
-    async def inventory(self, address: str) -> dict:
-        await self._logging.info(f"Calcul de l'inventaire ")
-        spot_state = await self.spot_user_state(address)
-        perp_state = await self.user_state
-        mids = await self.all_mids()
-        def get_mid_price(name: str) -> float:
-            coin = self.name_to_coin.get(name)
-            return mids.get(coin, {}).get("mid", 0.0)
-        def est_usd(name: str, qty: float) -> float:
-            if name.endswith("/USD") or name == "USD":
-                return qty
-            elif name.endswith("/USDC"):
-                return qty
-            else:
-                return qty * get_mid_price(name)
-        balances = spot_state.get("tokenPositions", {})
-        spot_inventory = {}
-        spot_value_usd = 0.0
-
-        for token, info in balances.items():
-            qty = float(info.get("balance", 0))
-            name = self.spot_meta_arg["tokens"][token]["name"] if self.spot_meta_arg else token
-            spot_inventory[name] = qty
-            spot_value_usd += est_usd(name, qty)
-        collateral = float(perp_state.get("collateral", 0))
-        positions = perp_state.get("positions", [])
-        perp_inventory = {}
-        perp_value_usd = collateral
-        for pos in positions:
-            name = pos["name"]
-            pos_qty = float(pos.get("positionSize", 0))
-            perp_inventory[name] = pos_qty
-            perp_value_usd += est_usd(name, pos_qty)
-        total_inventory = {**spot_inventory, **perp_inventory}
-        total_value_usd = spot_value_usd + perp_value_usd
-
-        return {
-            "spot_usd": round(spot_value_usd, 2),
-            "perp_usd": round(perp_value_usd, 2),
-            "total_usd": round(total_value_usd, 2),
-            "inventory": total_inventory, }
-
     def name_to_asset(self, name: str) -> int:
         return self.coin_to_asset[self.name_to_coin[name]]

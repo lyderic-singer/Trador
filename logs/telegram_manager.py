@@ -2,12 +2,7 @@ import asyncio
 import json
 from pathlib import Path
 from telegram import Update
-from telegram.ext import (
-    Application,
-    ApplicationBuilder,
-    CommandHandler,
-    ContextTypes,
-)
+from telegram.ext import Application, ApplicationBuilder, CommandHandler, ContextTypes
 from logs.message_manager import Logger
 
 
@@ -17,7 +12,6 @@ class TelegramManager:
         self.token = self.config["TG_TOKEN"]
         self.chat_id = self.config["TG_CHAT_ID"]
         self.orchester = orchester
-        self.info = orchester.core_manager.info
         self._logging = Logger(self, orchester.message_manager)
         self.messages = asyncio.Queue()
         self._app: Application = ApplicationBuilder().token(self.token).build()
@@ -28,12 +22,16 @@ class TelegramManager:
     def _add_handlers(self):
         self._app.add_handler(CommandHandler("ping", self._on_ping))
         self._app.add_handler(CommandHandler("run", self._on_run))
-        self._app.add_handler(CommandHandler("inventory", self._on_inventory))
+        self._app.add_handler(CommandHandler("perpinventory", self._on_perp_inventory))
+        self._app.add_handler(CommandHandler("wait", self._on_wait))
 
     async def _on_ping(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         await self._logging.info("ping received")
         if update.message:
             await update.message.reply_text("pong 🏓")
+
+    async def _on_wait(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await asyncio.sleep(30)
 
     async def _on_run(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if update.message:
@@ -47,11 +45,14 @@ class TelegramManager:
             if update.message:
                 await update.message.reply_text("Erreur lors du lancement du bot.")
 
-    async def _on_inventory(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    async def _on_perp_inventory(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         await self._logging.info(f"inventaire demandé")
         try:
-            inventory = await self.info.inventory(self.orchester.address)
-            await self._logging.success(f" inventaire : {inventory}")
+            data = await self.orchester.core_manager.info.user_state(self.orchester.address)
+            value = round(float(data['marginSummary']['accountValue']), 2)
+            positions = round(float(data['marginSummary']['totalNtlPos']), 2)
+            await update.message.reply_text(f"(perp inventory) valeur totale : {value}, valeur des positions : {positions}")
+            await self._logging.success(f" inventaire : {data}")
         except Exception as e:
             await self._logging.error(f"{e}")
 
