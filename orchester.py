@@ -11,6 +11,7 @@ class Orchester:
         self._logging = Logger(self, self.message_manager)
         self.core_manager = CoreManager(base_url, self.message_manager, key_path, skip_ws)
         self.address = self.core_manager.address
+        self.coin_manager = CoinManager("UBTC/USDC", self.core_manager, 500000)
         self.tg_manager = TelegramManager(self)
         self.strategy = strategy
         self.log_manager = LogManager(self.message_manager, self.tg_manager, "logs/logs.txt")
@@ -21,6 +22,7 @@ class Orchester:
 
     async def start(self):
         await self.core_manager.start()
+        await self.coin_manager.start()
         self.strategy.init(self.core_manager)
         await self.tg_manager.start()
         self._running = True

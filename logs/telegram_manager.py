@@ -1,7 +1,7 @@
 import asyncio
 import json
 from pathlib import Path
-from telegram import Update
+from telegram import Update, InputFile
 from telegram.ext import Application, ApplicationBuilder, CommandHandler, ContextTypes
 from logs.message_manager import Logger
 
@@ -24,6 +24,7 @@ class TelegramManager:
         self._app.add_handler(CommandHandler("run", self._on_run))
         self._app.add_handler(CommandHandler("perpinventory", self._on_perp_inventory))
         self._app.add_handler(CommandHandler("spotinventory", self._on_spot_inventory))
+        self._app.add_handler(CommandHandler("graph", self._on_graph))
 
     async def _on_ping(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         await self._logging.info("ping received")
@@ -61,6 +62,11 @@ class TelegramManager:
             await self._logging.success(f" inventaire spot : {data}")
         except Exception as e:
             await self._logging.error(f"{e}")
+
+    async def _on_graph(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await self.orchester.coin_manager.plot()
+        with open(f"data/pictures/plot.jpg", "rb") as f:
+            await update.message.reply_photo(photo=InputFile(f), caption="Voici le graphique 📈")
 
     async def _worker(self):
         try:
