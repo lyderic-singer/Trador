@@ -23,15 +23,12 @@ class TelegramManager:
         self._app.add_handler(CommandHandler("ping", self._on_ping))
         self._app.add_handler(CommandHandler("run", self._on_run))
         self._app.add_handler(CommandHandler("perpinventory", self._on_perp_inventory))
-        self._app.add_handler(CommandHandler("wait", self._on_wait))
+        self._app.add_handler(CommandHandler("spotinventory", self._on_spot_inventory))
 
     async def _on_ping(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         await self._logging.info("ping received")
         if update.message:
             await update.message.reply_text("pong 🏓")
-
-    async def _on_wait(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        await asyncio.sleep(30)
 
     async def _on_run(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if update.message:
@@ -53,6 +50,15 @@ class TelegramManager:
             positions = round(float(data['marginSummary']['totalNtlPos']), 2)
             await update.message.reply_text(f"(perp inventory) valeur totale : {value}, valeur des positions : {positions}")
             await self._logging.success(f" inventaire : {data}")
+        except Exception as e:
+            await self._logging.error(f"{e}")
+    
+    async def _on_spot_inventory(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await self._logging.info(f"inventaire demandé")
+        try:
+            data = await self.orchester.core_manager.info.spot_user_state(self.orchester.address)
+            await update.message.reply_text(f"inventaire spot : {data}")
+            await self._logging.success(f" inventaire spot : {data}")
         except Exception as e:
             await self._logging.error(f"{e}")
 

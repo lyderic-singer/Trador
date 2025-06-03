@@ -28,6 +28,7 @@ class Orchester:
 
     async def stop(self):
         await self._logging.info("orchester arrêt en cours...", send_tg= True)
+        await asyncio.sleep(1)
         await self.strategy.stop()
         for task in [self._tg_task, self._strategy_task]:
             if task:

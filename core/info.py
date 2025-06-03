@@ -132,6 +132,12 @@ class Info:
     async def spot_meta_and_asset_ctxs(self) -> SpotMetaAndAssetCtxs:
         await self._logging.debug("Appel spot_meta_and_asset_ctxs")
         return cast(SpotMetaAndAssetCtxs, await self.api.post("/info", {"type": "spotMetaAndAssetCtxs"}))
+    
+    async def get_price(self, name: str, dex = ""):
+        self._logging.info(f"prix demandé pour {name}")
+        prices = await self.all_mids(dex)
+        coin = self.name_to_coin[name]
+        return prices[coin]
 
     async def funding_history(self, name: str, startTime: int, endTime: Optional[int] = None) -> Any:
         await self._logging.debug(f"Appel funding_history avec name={name}, startTime={startTime}, endTime={endTime}")
@@ -190,6 +196,12 @@ class Info:
     async def query_user_to_multi_sig_signers(self, multi_sig_user: str) -> Any:
         await self._logging.debug(f"Appel query_user_to_multi_sig_signers pour multi_sig_user={multi_sig_user}")
         return await self.api.post("/info", {"type": "userToMultiSigSigners", "user": multi_sig_user})
+    
+    async def single_meta(self, name: str, dex: str = "") -> dict:
+        await self._logging.info(f"Appel single_meta avec name={name}, dex={dex}")
+        coin = self.name_to_coin.get(name, name)  # fallback au name brut
+        return await self.api.post("/info", {"type": "meta", "dex": dex, "coin": coin})
+
 
     def _remap_coin_subscription(self, subscription: Subscription) -> None:
         if subscription["type"] in {"l2Book", "trades", "candle", "bbo"}:

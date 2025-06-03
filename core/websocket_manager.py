@@ -205,11 +205,11 @@ class WebsocketManager:
 
         while not self.stop_event.is_set():
             try:
-                await self._logging.info("🔌 Tentative de connexion au WebSocket...")
+                await self._logging.info("Tentative de connexion au WebSocket...")
                 self.ws = await websockets.connect(self.uri)
                 self.ws_ready.set()
                 self.last_pong = asyncio.get_event_loop().time()
-                await self._logging.success("✅ Connecté au WebSocket.",send_tg=False)
+                await self._logging.success("Connecté au WebSocket.")
                 await self._subqueue()
                 await self._resubscribe()
                 recv_task = asyncio.create_task(self._receive())
@@ -227,14 +227,14 @@ class WebsocketManager:
                     await asyncio.sleep(5)
 
     async def stop(self):
-        await self._logging.info("🛑 Arrêt du WebSocketManager demandé.")
+        await self._logging.info("Arrêt du WebSocketManager demandé.")
         self.stop_event.set()
         if self.ws:
             try:
                 await self.ws.close()
-                await self._logging.success("✅ Connexion WebSocket fermée.")
+                await self._logging.success("Connexion WebSocket fermée.")
             except Exception as e:
-                await self._logging.error(f"❌ Erreur pendant la fermeture de la connexion : {e}")
+                await self._logging.error(f"Erreur pendant la fermeture de la connexion au websocket : {e}")
         self.ws = None
         self.ws_ready.clear()
         await self._logging.success("WebSocketManager arrêté proprement.")
