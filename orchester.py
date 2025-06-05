@@ -1,9 +1,11 @@
 import asyncio
+import time
 from logs.message_manager import MessageManager, Logger
 from logs.log_manager import LogManager
 from logs.telegram_manager import TelegramManager
 from core.core_manager import CoreManager
 from data.coin_manager import CoinManager
+
 class Orchester:
     def __init__(self, base_url, key_path, skip_ws, strategy):
         self.base_url = base_url
@@ -21,12 +23,13 @@ class Orchester:
         self._strategy_task = None
 
     async def start(self):
+        t = time.time()
         await self.core_manager.start()
         await self.coin_manager.start()
         self.strategy.init(self.core_manager)
         await self.tg_manager.start()
         self._running = True
-        await self._logging.success("orchester demarré", send_tg= True)
+        await self._logging.success(f"orchester demarré en {(time.time()-t):.2f} s", send_tg= True)
 
     async def stop(self):
         await self._logging.info("orchester arrêt en cours...", send_tg= True)

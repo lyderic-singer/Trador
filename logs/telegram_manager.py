@@ -27,13 +27,12 @@ class TelegramManager:
         self._app.add_handler(CommandHandler("graph", self._on_graph))
 
     async def _on_ping(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        await self._logging.info("ping received")
+        await self._logging.info("ping demandé")
         if update.message:
             await update.message.reply_text("pong 🏓")
 
     async def _on_run(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        if update.message:
-            await update.message.reply_text("lancement du bot HL demandé")
+        await self._logging.info("lancement du bot HL demandé")
         try:
             await self.orchester.run()
             if update.message:
@@ -44,7 +43,7 @@ class TelegramManager:
                 await update.message.reply_text("Erreur lors du lancement du bot.")
 
     async def _on_perp_inventory(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        await self._logging.info(f"inventaire demandé")
+        await self._logging.info(f"inventaire perp demandé")
         try:
             data = await self.orchester.core_manager.info.user_state(self.orchester.address)
             value = round(float(data['marginSummary']['accountValue']), 2)
@@ -55,7 +54,7 @@ class TelegramManager:
             await self._logging.error(f"{e}")
     
     async def _on_spot_inventory(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        await self._logging.info(f"inventaire demandé")
+        await self._logging.info(f"inventaire spot demandé")
         try:
             data = await self.orchester.core_manager.info.spot_user_state(self.orchester.address)
             await update.message.reply_text(f"inventaire spot : {data}")
@@ -64,6 +63,7 @@ class TelegramManager:
             await self._logging.error(f"{e}")
 
     async def _on_graph(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await self._logging.info("graph demandé")
         await self.orchester.coin_manager.plot()
         with open(f"data/pictures/plot.jpg", "rb") as f:
             await update.message.reply_photo(photo=InputFile(f), caption="Voici le graphique 📈")
@@ -83,25 +83,30 @@ class TelegramManager:
             await self._logging.error(f"[Telegram] message worker exception: {e}")
 
     async def _polling(self):
-        try:
-            await self._app.initialize()
-            await self._app.start()
-            await self._app.updater.start_polling()
-            await self._logging.info("[Telegram] bot démarré")
-            while True:
-                await asyncio.sleep(3600)
-        except asyncio.CancelledError:
-            await self._logging.warning("[Telegram] polling loop cancelled")
-        except Exception as e:
-            await self._logging.error(f"[Telegram] polling loop exception: {e}")
-        finally:
+        await self._logging.info("démarrage du polling")
+        while True:
             try:
-                await self._app.updater.stop()
-                await self._app.stop()
-                await self._app.shutdown()
-                await self._logging.info("[Telegram] bot arrêté proprement")
+                await self._app.initialize()
+                await self._app.start()
+                await self._app.updater.start_polling()
+                await self._logging.success("polling lancé")
+                while True:
+                    await asyncio.sleep(3600)
+            except asyncio.CancelledError:
+                await self._logging.warning("polling annulé")
+                break
+
             except Exception as e:
-                await self._logging.error(f"[Telegram] erreur lors de l'arrêt: {e}")
+                await self._logging.error(f"polling crashed : {e}")
+                await self._logging.warning("tentative de reconnexion dans 5s...")
+                try:
+                    await self._app.updater.stop()
+                    await self._app.stop()
+                    await self._app.shutdown()
+                except Exception as stop_error:
+                    await self._logging.warning(f"erreur durant l'arrêt : {stop_error}")
+                await asyncio.sleep(5)
+        await self._logging.info("polling terminé")
 
     async def start(self):
         self._worker_task = asyncio.create_task(self._worker())
