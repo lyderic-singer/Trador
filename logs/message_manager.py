@@ -92,7 +92,7 @@ class Logger():
         else:
             self.filepath = get_file(objet)
 
-    async def info(self, message: str, save: bool = False, send_tg: bool = False):
+    async def info(self, message: str, save: bool = True, send_tg: bool = False):
         await self.message_manager.info(self.filepath, message, save, send_tg)
 
     async def warning(self, message: str, save: bool = True, send_tg: bool = True):
@@ -104,7 +104,7 @@ class Logger():
     async def critical(self, message: str, save: bool = True, send_tg: bool = True):
         await self.message_manager.critical(self.filepath + " in " + _callfunname(), message, save, send_tg)
 
-    async def debug(self, message: str, save: bool = False, send_tg: bool = False):
+    async def debug(self, message: str, save: bool = True, send_tg: bool = False):
         await self.message_manager.debug(self.filepath, message, save, send_tg)
 
     async def exception(self, message: str, save: bool = True, send_tg: bool = True):

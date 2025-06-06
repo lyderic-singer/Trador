@@ -30,6 +30,9 @@
 # AWS User-specific
 .idea/**/aws.xml
 
+*.jpg
+*.png
+
 # Generated files
 .idea/**/contentModel.xml
 
