@@ -202,7 +202,6 @@ class Info:
         coin = self.name_to_coin.get(name, name)  # fallback au name brut
         return await self.api.post("/info", {"type": "meta", "dex": dex, "coin": coin})
 
-
     def _remap_coin_subscription(self, subscription: Subscription) -> None:
         if subscription["type"] in {"l2Book", "trades", "candle", "bbo"}:
             subscription["coin"] = self.name_to_coin[subscription["coin"]]

@@ -5,3 +5,4 @@ eth_account
 ta
 python-telegram-bot
 msgpack
+matplotlib

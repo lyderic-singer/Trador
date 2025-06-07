@@ -7,7 +7,7 @@ from core.core_manager import CoreManager
 from data.coin_manager import CoinManager
 
 class Orchester:
-    def __init__(self, base_url, key_path, skip_ws, strategy):
+    def __init__(self, base_url, key_path, skip_ws = True, strategy = None):
         self.base_url = base_url
         self.message_manager = MessageManager()
         self._logging = Logger(self, self.message_manager)
@@ -26,7 +26,8 @@ class Orchester:
         t = time.time()
         await self.core_manager.start()
         await self.coin_manager.start()
-        self.strategy.init(self.core_manager)
+        if self.strategy:
+            await self.strategy.start(self.core_manager)
         await self.tg_manager.start()
         self._running = True
         await self._logging.success(f"orchester demarré en {(time.time()-t):.2f} s", send_tg= True)
@@ -34,7 +35,8 @@ class Orchester:
     async def stop(self):
         await self._logging.info("orchester arrêt en cours...", send_tg= True)
         await asyncio.sleep(1)
-        await self.strategy.stop()
+        if self.strategy:
+            await self.strategy.stop()
         for task in [self._tg_task, self._strategy_task]:
             if task:
                 task.cancel()
