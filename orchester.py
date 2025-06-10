@@ -25,7 +25,7 @@ class Orchester:
     async def start(self):
         t = time.time()
         await self.core_manager.start()
-        await self.coin_manager.start()
+        # await self.coin_manager.start()
         if self.strategy:
             await self.strategy.start(self.core_manager)
         await self.tg_manager.start()
