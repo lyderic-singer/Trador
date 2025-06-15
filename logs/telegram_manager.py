@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 from pathlib import Path
 from telegram import Update, InputFile
 from telegram.ext import Application, ApplicationBuilder, CommandHandler, ContextTypes
@@ -24,6 +25,8 @@ class TelegramManager:
         self._app.add_handler(CommandHandler("run", self._on_run))
         self._app.add_handler(CommandHandler("perpinventory", self._on_perp_inventory))
         self._app.add_handler(CommandHandler("spotinventory", self._on_spot_inventory))
+        self._app.add_handler(CommandHandler("stop", self._on_stop))
+        self._app.add_handler(CommandHandler("kill", self._on_kill))
         self._app.add_handler(CommandHandler("graph", self._on_graph))
 
     async def _on_ping(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -39,6 +42,17 @@ class TelegramManager:
                 await update.message.reply_text("bot lancé")
         except Exception as e:
             await self._logging.error(f"[Telegram] erreur dans /run: {e}")
+            if update.message:
+                await update.message.reply_text("Erreur lors du lancement du bot.")
+
+    async def _on_stop(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await self._logging.info("arret du bot HL demandé")
+        try:
+            await self.orchester.strategy.stop()
+            if update.message:
+                await update.message.reply_text("bot arrété")
+        except Exception as e:
+            await self._logging.error(f"{e}")
             if update.message:
                 await update.message.reply_text("Erreur lors du lancement du bot.")
 
@@ -61,6 +75,11 @@ class TelegramManager:
             await self._logging.success(f" inventaire spot : {data}")
         except Exception as e:
             await self._logging.error(f"{e}")
+
+    async def _on_kill(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await self._logging.info("arret complet demandé")
+        await self.orchester.stop()
+        os._exit(0)
 
     async def _on_graph(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         await self._logging.info("graph demandé")

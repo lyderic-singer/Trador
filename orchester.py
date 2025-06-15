@@ -27,7 +27,7 @@ class Orchester:
         await self.core_manager.start()
         # await self.coin_manager.start()
         if self.strategy:
-            await self.strategy.start(self.core_manager)
+            asyncio.create_task(self.strategy.start(self.core_manager))
         await self.tg_manager.start()
         self._running = True
         await self._logging.success(f"orchester demarré en {(time.time()-t):.2f} s", send_tg= True)

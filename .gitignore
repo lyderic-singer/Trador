@@ -319,3 +319,6 @@ pip-selfcheck.json
 #!! ERROR: vscode is undefined. Use list command to see defined gitignore types !!#
 
 # End of https://www.toptal.com/developers/gitignore/api/python,venv,vscode,pycharm,linux
+
+logs/logs.txt
+data/pictures/
