@@ -322,3 +322,4 @@ pip-selfcheck.json
 
 logs/logs.txt
 data/pictures/
+.vscode/
