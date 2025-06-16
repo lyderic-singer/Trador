@@ -137,7 +137,7 @@ class Info:
         self._logging.info(f"prix demandé pour {name}")
         prices = await self.all_mids(dex)
         coin = self.name_to_coin[name]
-        return prices[coin]
+        return float(prices[coin])
 
     async def funding_history(self, name: str, startTime: int, endTime: Optional[int] = None) -> Any:
         await self._logging.debug(f"Appel funding_history avec name={name}, startTime={startTime}, endTime={endTime}")
