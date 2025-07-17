@@ -11,6 +11,21 @@ from .utils.signing import CancelByCloidRequest, CancelRequest, ModifyRequest, O
 from .utils.types import Any, BuilderInfo, Cloid, Dict, List, Optional, PerpDexSchemaInput, Tuple
 from logs.message_manager import Logger
 
+max_decimal_perp = 6
+max_decimal_spot = 5
+
+def format_price(px, max_decimal):
+    if px > 100_000:
+        return round(px)
+    px = round(float(f"{px:.5g}"), max_decimal)
+    return px
+
+def format_price_perp(px):
+    return format_price(px, max_decimal_perp)
+
+def format_price_spot(px):
+    return format_price(px, max_decimal_spot)
+
 class Exchange:
     DEFAULT_SLIPPAGE = 0.05
     def __init__(self, info: Info, message_manager, wallet: LocalAccount, vault_address: str = None, account_address: str = None):
@@ -69,6 +84,37 @@ class Exchange:
             order["cloid"] = cloid
         await self._logging.debug(f"Placing single order: {order}")
         return await self.bulk_orders([order], builder)
+
+    async def _handle_order(self, coin: str, is_buy: bool, size: float, price: float, price_formatter ) -> bool:
+        rounded_size = round(size, self.info.sz_decimals[coin])
+        formatted_price = price_formatter(price)
+        order_type = {"limit": {"tif": "Alo"}}
+
+        result = await self.order(coin, is_buy, rounded_size, formatted_price, order_type)
+
+        if result.get("status") != "ok":
+            await self._logging.error(f"Order error: {result.get('error', 'Unknown error')}")
+            return False
+
+        status = result["response"]["data"]["statuses"]
+        if not status:
+            await self._logging.error("No status returned.")
+            return False
+
+        order_info = status[0].get("resting")
+        action = "Buy" if is_buy else "Sell"
+        if order_info:
+            await self._logging.info(f"{action} placed at {price:.2f}")
+            return True
+        else:
+            await self._logging.warning(f"{action} order at {price:.2f} rejected")
+            return False
+
+    async def perp_order(self, coin: str, is_buy: bool, size: float, price: float) -> bool:
+        return await self._handle_order(coin, is_buy, size, price, format_price_perp)
+
+    async def spot_order(self, coin: str, is_buy: bool, size: float, price: float) -> bool:
+        return await self._handle_order(coin, is_buy, size, price, format_price_spot)
 
     async def bulk_orders(self, order_requests: List[OrderRequest], builder: Optional[BuilderInfo] = None) -> Any:
         try:
