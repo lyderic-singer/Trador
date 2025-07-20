@@ -6,3 +6,4 @@ ta
 python-telegram-bot
 msgpack
 matplotlib
+python-dotenv

@@ -1,5 +1,6 @@
 import os
 import json
+from dotenv import load_dotenv
 
 from eth_account import Account
 from eth_account.signers.local import LocalAccount
@@ -10,24 +11,28 @@ from .info import Info
 from .exchange import Exchange
 from logs.message_manager import Logger
 
-def load_account(config_path):
-    if not os.path.isabs(config_path):
-        base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-        config_path = os.path.join(base_dir, config_path)
-    with open(config_path, "r") as f:
-        config = json.load(f)
-    secret_key = config.get("secret_key")
+load_dotenv()
+
+def load_account_from_env(is_mainnet):
+    private = "MAINNET_PRIVATE_API_KEY"
+    public = "MAINNET_PUBLIC_KEY"
+    if not is_mainnet:
+        private = "TESTNET_PRIVATE_API_KEY"
+        public = "TESTNET_PUBLIC_KEY"
+    secret_key = os.getenv(private)
     if not secret_key:
-        raise ValueError("Le fichier de config doit contenir une clé 'secret_key' valide.")
+        raise ValueError("Le fichier de config doit contenir une clé {private} valide.")
     account: LocalAccount = Account.from_key(secret_key)
-    address = config.get("account_address") or account.address
+    address = os.getenv(public)
+    if not address:
+        raise ValueError("Le fichier de config doit contenir une clé {public} valide.")
     return account, address
 
 class CoreManager:
-    def __init__(self, base_url, message_manager, key_path, skip_ws):
+    def __init__(self, base_url, message_manager, skip_ws, is_mainnet):
         self.message_manager = message_manager
         self._logging = Logger(self, message_manager)
-        account, address = load_account(key_path)
+        account, address = load_account_from_env(is_mainnet)
         self.account = account
         self.address = address
         self.base_url = base_url

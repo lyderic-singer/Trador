@@ -1,5 +1,6 @@
 import asyncio
 import time
+from core.utils.constants import MAINNET_API_URL, TESTNET_API_URL
 from logs.message_manager import MessageManager, Logger
 from logs.log_manager import LogManager
 from logs.telegram_manager import TelegramManager
@@ -7,13 +8,12 @@ from core.core_manager import CoreManager
 from data.coin_manager import CoinManager
 
 class Orchester:
-    def __init__(self, base_url, key_path, skip_ws = True, strategy = None):
-        self.base_url = base_url
+    def __init__(self, is_mainnet, strategy = None, skip_ws = True):
+        self.base_url = MAINNET_API_URL if is_mainnet else TESTNET_API_URL
         self.message_manager = MessageManager()
         self._logging = Logger(self, self.message_manager)
-        self.core_manager = CoreManager(base_url, self.message_manager, key_path, skip_ws)
+        self.core_manager = CoreManager(self.base_url, self.message_manager, skip_ws, is_mainnet)
         self.address = self.core_manager.address
-        self.coin_manager = CoinManager("BTC", self.core_manager, 500000)
         self.tg_manager = TelegramManager(self)
         self.strategy = strategy
         self.log_manager = LogManager(self.message_manager, self.tg_manager, "logs/logs.txt")

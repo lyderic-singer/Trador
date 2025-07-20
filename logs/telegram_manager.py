@@ -1,17 +1,18 @@
 import asyncio
-import json
+import os
+from dotenv import load_dotenv
 import os
 from pathlib import Path
 from telegram import Update, InputFile
 from telegram.ext import Application, ApplicationBuilder, CommandHandler, ContextTypes
 from logs.message_manager import Logger
 
+load_dotenv()
 
 class TelegramManager:
     def __init__(self, orchester, config_path="config/telegram.json"):
-        self.config = json.loads(Path(config_path).read_text())
-        self.token = self.config["TG_TOKEN"]
-        self.chat_id = self.config["TG_CHAT_ID"]
+        self.token = str(os.getenv("TG_TOKEN"))
+        self.chat_id = int(os.getenv("TG_CHAT_ID"))
         self.orchester = orchester
         self._logging = Logger(self, orchester.message_manager)
         self.messages = asyncio.Queue()
