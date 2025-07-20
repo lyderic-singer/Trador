@@ -78,10 +78,8 @@ class Info:
         if self.ws_manager is None:
             await self._logging.error("Tentative de disconnect alors que skip_ws est activé.")
             raise RuntimeError("Cannot call disconnect since skip_ws was used")
-        await self._logging.debug("Arrêt du WebSocketManager...")
         await self.ws_manager.stop()
         await self._logging.debug("WebSocketManager arrêté.")
-        await self._logging.debug("Fermeture de l'API...")
         await self.api.close()
         await self._logging.debug("API fermée.")
 

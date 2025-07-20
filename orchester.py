@@ -48,5 +48,6 @@ class Orchester:
         await self._logging.success("orchester arrêté")
         await self.tg_manager.stop()
         await self.log_manager.stop()
+        await asyncio.sleep(0)
         self._running = False
 
