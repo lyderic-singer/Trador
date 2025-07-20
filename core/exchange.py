@@ -85,36 +85,16 @@ class Exchange:
         await self._logging.debug(f"Placing single order: {order}")
         return await self.bulk_orders([order], builder)
 
-    async def _handle_order(self, coin: str, is_buy: bool, size: float, price: float, price_formatter ) -> bool:
-        rounded_size = round(size, self.info.sz_decimals[coin])
-        formatted_price = price_formatter(price)
-        order_type = {"limit": {"tif": "Alo"}}
-
-        result = await self.order(coin, is_buy, rounded_size, formatted_price, order_type)
-
-        if result.get("status") != "ok":
-            await self._logging.error(f"Order error: {result.get('error', 'Unknown error')}")
-            return False
-
-        status = result["response"]["data"]["statuses"]
-        if not status:
-            await self._logging.error("No status returned.")
-            return False
-
-        order_info = status[0].get("resting")
-        action = "Buy" if is_buy else "Sell"
-        if order_info:
-            await self._logging.info(f"{action} placed at {price:.2f}")
-            return True
-        else:
-            await self._logging.warning(f"{action} order at {price:.2f} rejected")
-            return False
-
     async def perp_order(self, coin: str, is_buy: bool, size: float, price: float) -> bool:
-        return await self._handle_order(coin, is_buy, size, price, format_price_perp)
+        size = round(size, self.info.sz_decimals[coin])
+        price = format_price_perp(price)
+        return await self.order(coin, is_buy, size, price, {"limit": {"tif": "Alo"}})
 
-    async def spot_order(self, coin: str, is_buy: bool, size: float, price: float) -> bool:
-        return await self._handle_order(coin, is_buy, size, price, format_price_spot)
+    async def spot_order(self, name: str, is_buy: bool, size: float, price: float) -> bool:
+        coin = self.info.name_to_coin[name]
+        price = format_price_spot(price)
+        size = round( size, self.info.asset_to_sz_decimals[self.info.name_to_asset(name)])
+        return await self.order( coin, is_buy, size, price, {"limit": {"tif": "Alo"}})
 
     async def bulk_orders(self, order_requests: List[OrderRequest], builder: Optional[BuilderInfo] = None) -> Any:
         try:
