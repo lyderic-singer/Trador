@@ -38,7 +38,7 @@ class TelegramManager:
     async def _on_run(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         await self._logging.info("lancement du bot HL demandé")
         try:
-            await self.orchester.strategy.run()
+            asyncio.create_task( self.orchester.strategy.run())
             if update.message:
                 await update.message.reply_text("bot lancé")
         except Exception as e:
