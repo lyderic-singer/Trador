@@ -59,11 +59,11 @@ class WebsocketManager:
 
     async def _ping(self):
         while not self.stop_event.is_set():
-            await asyncio.sleep(30)
+            await asyncio.sleep(2)
             if self.ws:
                 try:
                     await self.ws.send(json.dumps({"method": "ping"}))
-                    await self._logging.debug("Ping sent")
+                    await self._logging.debug("Ping sent", save = False)
                 except Exception as e:
                     await self._logging.warning(f"Failed to send ping: {e}")
 

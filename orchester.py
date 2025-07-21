@@ -8,7 +8,7 @@ from core.core_manager import CoreManager
 from data.coin_manager import CoinManager
 
 class Orchester:
-    def __init__(self, is_mainnet, strategy = None, skip_ws = True):
+    def __init__(self, is_mainnet, strategy = None, skip_ws = False):
         self.base_url = MAINNET_API_URL if is_mainnet else TESTNET_API_URL
         self.message_manager = MessageManager()
         self._logging = Logger(self, self.message_manager)
@@ -25,9 +25,8 @@ class Orchester:
     async def start(self):
         t = time.time()
         await self.core_manager.start()
-        # await self.coin_manager.start()
         if self.strategy:
-            asyncio.create_task(self.strategy.start(self.core_manager))
+            self.strategy.init(self.core_manager)
         await self.tg_manager.start()
         self._running = True
         await self._logging.success(f"orchester demarré en {(time.time()-t):.2f} s", send_tg= True)
