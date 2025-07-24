@@ -84,6 +84,10 @@ class TelegramManager:
         await self.orchester.stop()
         os._exit(0)
 
+    async def _on_address(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await self._logging.info("addresse demandée")
+        await update.message.reply_text(f"addresse : {self.orchester.address}")
+
     async def _on_graph(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         await self._logging.info("graph demandé")
         await self.orchester.coin_manager.plot()
