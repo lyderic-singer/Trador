@@ -1,6 +1,6 @@
 import asyncio
 import json
-import logging
+from time import time
 from collections import defaultdict
 from typing import Any, Callable, Dict, List, NamedTuple, Optional, Tuple
 from logs.message_manager import Logger
@@ -56,6 +56,7 @@ class WebsocketManager:
         self.last_pong = asyncio.get_event_loop().time()
         self.callback_queue: asyncio.Queue = asyncio.Queue()
         self._logging = Logger(self, message_manager)
+        self.last_useful_message = None
 
     async def _ping(self):
         while not self.stop_event.is_set():
@@ -130,6 +131,7 @@ class WebsocketManager:
                 if not identifier:
                     continue
                 for active_sub in self.active_subscriptions.get(identifier, []):
+                    self.last_useful_message = int(time())
                     await self.callback_queue.put((active_sub.callback, ws_msg))
         except (websockets.ConnectionClosedError, websockets.ConnectionClosedOK) as e:
             await self._logging.warning(f"WebSocket closed: {e}")
