@@ -2,6 +2,7 @@ import asyncio
 import os
 from dotenv import load_dotenv
 import os
+from time import time
 from pathlib import Path
 from telegram import Update, InputFile
 from telegram.ext import Application, ApplicationBuilder, CommandHandler, ContextTypes
@@ -34,7 +35,7 @@ class TelegramManager:
         await self._logging.info("ping demandé")
         if update.message:
             last_message_time = self.orchester.core_manager.ws_manager.last_useful_message
-            await update.message.reply_text(f"pong 🏓, dernier message utile recu " + f"il y a {last_message_time:.2f}s" if last_message_time else "jamais")
+            await update.message.reply_text(f"pong 🏓 dernier message utile recu " + f"il y a {round( time() - last_message_time, 2) }s" if last_message_time else "jamais")
 
     async def _on_run(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         await self._logging.info("lancement du bot HL demandé")

@@ -39,7 +39,7 @@ class CoreManager:
         self.session_manager = SessionManager(message_manager)
         self.api = API(base_url, message_manager, self.session_manager)
         self.info = Info(self.api, message_manager, skip_ws)
-        self.ws_manager = self.info.ws_manager
+        self.ws_manager = None
         self.exchange = Exchange(self.info, message_manager, account)
         self._running = False
 
@@ -49,6 +49,7 @@ class CoreManager:
                 await self._logging.info("tentative de demarrage du core")
                 await self.session_manager.get_session()
                 await self.info.start()
+                self.ws_manager = self.info.ws_manager
                 await self._logging.success("core démarré", )
                 self._running = True
             except Exception as e:
