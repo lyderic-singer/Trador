@@ -26,7 +26,13 @@ class Orchester:
         t = time.time()
         await self.core_manager.start()
         if self.strategy:
-            self.strategy.init(self.core_manager)
+            try:
+                if asyncio.iscoroutinefunction(self.strategy.init):
+                    await self.strategy.init(self.core_manager)
+                else:
+                    self.strategy.init(self.core_manager)
+            except Exception as e:
+                await self._logging.error(f"Error in callback : {e}")
         await self.tg_manager.start()
         self._running = True
         await self._logging.success(f"orchester demarré en {(time.time()-t):.2f} s", send_tg= True)
