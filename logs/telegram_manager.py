@@ -30,6 +30,7 @@ class TelegramManager:
         self._app.add_handler(CommandHandler("stop", self._on_stop))
         self._app.add_handler(CommandHandler("kill", self._on_kill))
         self._app.add_handler(CommandHandler("graph", self._on_graph))
+        self._app.add_handler(CommandHandler("graph", self._on_adress))
 
     async def _on_ping(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         await self._logging.info("ping demandé")
@@ -84,7 +85,7 @@ class TelegramManager:
         await self.orchester.stop()
         os._exit(0)
 
-    async def _on_address(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    async def _on_adress(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         await self._logging.info("addresse demandée")
         await update.message.reply_text(f"addresse : {self.orchester.address}")
 
