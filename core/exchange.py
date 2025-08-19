@@ -129,7 +129,7 @@ class Exchange:
         return await self.bulk_modify_order([modifyrequest])
 
     async def bulk_modify_order(self, modify_requests: List[ModifyRequest]) -> Any:
-        try:
+        try: 
             timestamp = get_timestamp_ms()
             modify_wires = [{
                 "oid": modify["oid"].to_raw() if isinstance(modify["oid"], Cloid) else modify["oid"],
