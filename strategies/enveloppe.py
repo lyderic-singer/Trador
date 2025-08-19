@@ -3,6 +3,7 @@ from logs.message_manager import Logger
 from time import time
 import random
 from data.market import Market
+from data.portfolio import Portfolio
 
 class Enveloppe:
     def __init__(self, asset, spread_min=0.001, spread_max = 0.01, period = "1m", sma_period = 9, levels = 4):
@@ -18,6 +19,7 @@ class Enveloppe:
         self.levels = levels
         self._stop = asyncio.Event()
         self.last = time()
+        self.orders = 
 
     async def init(self, core):
         self.core = core
