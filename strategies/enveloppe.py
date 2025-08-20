@@ -3,10 +3,9 @@ from logs.message_manager import Logger
 from time import time
 import random
 from data.market import Market
-from data.portfolio import Portfolio
 
 class Enveloppe:
-    def __init__(self, asset, spread_min=0.001, spread_max = 0.01, period = "1m", sma_period = 9, levels = 4):
+    def __init__(self, asset, spread_min=0.0005, spread_max = 0.003, period = "1m", sma_period = 9, levels = 4):
         self.core = None
         self.exchange = None
         self._logging = None
@@ -19,7 +18,7 @@ class Enveloppe:
         self.levels = levels
         self._stop = asyncio.Event()
         self.last = time()
-        self.orders = 
+        self.orders = []
 
     async def init(self, core):
         self.core = core
@@ -42,15 +41,31 @@ class Enveloppe:
             coin_balance = 0
         return usd_balance, coin_balance
 
+    def get_orders(self):
+        sma = self.market.sma()
+        orders = []
+        if self.levels > 1:
+            for i in range(self.levels):
+                ask = sma * (1 + (((self.spread_max - self.spread_min) * (i / (self.levels - 1))) + self.spread_min))
+                bid = sma * (1 - (((self.spread_max - self.spread_min) * (i / (self.levels - 1))) + self.spread_min))
+                orders.append(ask)
+                orders.append(bid)
+        else:
+            ask = sma * (1 + self.spread_max)
+            bid = sma * (1 - self.spread_max)
+            orders.append(ask)
+            orders.append(bid)
+        return orders
+
     async def run(self):
         await asyncio.sleep(3)
         while not self._stop.is_set():
             try:
-                data = await self.core.info.spot_user_state(self.core.address)
+                data, orders = await asyncio.gather(self.core.info.spot_user_state(self.core.address), self.core.info.open_orders(self.core.address))
                 usd, coin_balance = self.get_balance(data["balances"])
-                   # la liquidité doit etre partagée par niveau
-                await self.core.exchange.spot_order(self.coin, True, size, bid_price) # methode de placage ordre
-                await self.core.exchange.edit(a, b) # edit l'ordre a en b
+                value = usd + (coin_balance * self.market.mid)
+                
+
             except Exception as e:
                 await self._logging.error(f"probleme dans l'execution : {e}")
             finally:
