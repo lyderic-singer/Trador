@@ -70,8 +70,8 @@ class Exchange:
     def set_expires_after(self, expires_after: Optional[int]) -> None:
         self.expires_after = expires_after
 
-    async def order(self, name: str, is_buy: bool, sz: float, limit_px: float, order_type: OrderType,
-                    reduce_only: bool = False, cloid: Optional[Cloid] = None, builder: Optional[BuilderInfo] = None) -> Any:
+    def get_order(self, name: str, is_buy: bool, sz: float, limit_px: float, order_type: OrderType,
+                    reduce_only: bool = False, cloid: Optional[Cloid] = None, builder: Optional[BuilderInfo] = None) -> OrderRequest:
         order: OrderRequest = {
             "coin": name,
             "is_buy": is_buy,
@@ -82,6 +82,11 @@ class Exchange:
         }
         if cloid:
             order["cloid"] = cloid
+        return order
+
+    async def order(self, name: str, is_buy: bool, sz: float, limit_px: float, order_type: OrderType,
+                    reduce_only: bool = False, cloid: Optional[Cloid] = None, builder: Optional[BuilderInfo] = None) -> Any:
+        order = self.get_order(name, is_buy, sz, limit_px, order_type, reduce_only, cloid, builder)
         await self._logging.debug(f"Placing single order: {order}")
         return await self.bulk_orders([order], builder)
 

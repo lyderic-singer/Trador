@@ -5,7 +5,7 @@ import random
 from data.market import Market
 
 class Enveloppe:
-    def __init__(self, asset, spread_min=0.0005, spread_max = 0.003, period = "1m", sma_period = 9, levels = 4):
+    def __init__(self, asset, spread_min=0.0005, spread_max = 0.003, period = "1m", sma_period = 9, levels = 4, min_order_value = 10):
         self.core = None
         self.exchange = None
         self._logging = None
@@ -15,6 +15,7 @@ class Enveloppe:
         self.name = asset + "/USDC"
         self.spread_min = spread_min
         self.spread_max = spread_max
+        self.min_order_value = min_order_value
         self.levels = levels
         self._stop = asyncio.Event()
         self.last = time()
@@ -63,8 +64,8 @@ class Enveloppe:
             try:
                 data, orders = await asyncio.gather(self.core.info.spot_user_state(self.core.address), self.core.info.open_orders(self.core.address))
                 usd, coin_balance = self.get_balance(data["balances"])
-                value = usd + (coin_balance * self.market.mid)
-                
+                value_coin_balance = self.market.mid * coin_balance
+                usd_per_ask = 
 
             except Exception as e:
                 await self._logging.error(f"probleme dans l'execution : {e}")
