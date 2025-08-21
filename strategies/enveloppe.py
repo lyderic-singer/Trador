@@ -88,7 +88,7 @@ class Enveloppe:
         while not self._stop.is_set():
             try:
                 data, prev_orders = await asyncio.gather(self.core.info.spot_user_state(self.core.address), self.core.info.open_orders(self.core.address))
-                usd_balance, coin_balance = self.get_balance(data["balances"])
+                usd_balance, coin_balance = self.get_balances(data["balances"])
                 coin_balance_value = self.market.mid * coin_balance
                 new_orders, modified_orders = self.get_orders(prev_orders, usd_balance, coin_balance_value)
                 result_new, result_modified = await asyncio.gather(self.core.exchange.bulk_orders(new_orders), self.core.exchange.bulk_modify_orders(modified_orders))
