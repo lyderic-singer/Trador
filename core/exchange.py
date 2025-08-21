@@ -75,8 +75,8 @@ class Exchange:
         order: OrderRequest = {
             "coin": name,
             "is_buy": is_buy,
-            "sz": sz,
-            "limit_px": limit_px,
+            "sz": round( sz, self.info.asset_to_sz_decimals[self.info.name_to_asset(name)]),
+            "limit_px": format_price_spot(limit_px),
             "order_type": order_type,
             "reduce_only": reduce_only,
         }

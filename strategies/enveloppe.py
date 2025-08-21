@@ -73,7 +73,11 @@ class Enveloppe:
         new_asks, new_bids = self.new_orders(sma, mid, usd_balance, coin_balance_value)
         modified_orders = []
         for order in prev_orders:
-
+            if order['side'] == 'A':
+                new_order = new_asks.pop()
+            else:
+                new_order = new_bids.pop()
+            modify_request = self.core.exchange.get_modifyRequest(order, new_order[''])
         return new_orders, modified_orders
 
     async def run(self):
