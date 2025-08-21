@@ -63,9 +63,10 @@ class Enveloppe:
         while not self._stop.is_set():
             try:
                 data, orders = await asyncio.gather(self.core.info.spot_user_state(self.core.address), self.core.info.open_orders(self.core.address))
-                usd, coin_balance = self.get_balance(data["balances"])
+                usd_balance, coin_balance = self.get_balance(data["balances"])
                 value_coin_balance = self.market.mid * coin_balance
-                usd_per_ask = 
+                value = usd_balance + value_coin_balance
+                usd_per_order = 5
 
             except Exception as e:
                 await self._logging.error(f"probleme dans l'execution : {e}")

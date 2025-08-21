@@ -115,21 +115,21 @@ class Exchange:
             await self._logging.error(f"Failed bulk order: {e}")
             raise
     
-    def get_modifyRequest(self, order, new_price):
+    def get_modifyRequest(self, order, new_price, new_size):
         modifyrequest: ModifyRequest = {
             "oid": order['oid'],
             "order": {
                 "coin": order['coin'],
                 "is_buy": False if order['side'] == 'A' else True,
-                "sz": round( float(order['sz']), self.info.asset_to_sz_decimals[self.info.name_to_asset(order['coin'])]),
+                "sz": round( new_size, self.info.asset_to_sz_decimals[self.info.name_to_asset(order['coin'])]),
                 "limit_px": format_price_spot(new_price),
                 "order_type": {"limit": {"tif": "Alo"}},
                 "reduce_only": False,
                 "cloid": None, },}
         return modifyrequest
 
-    async def modify_order(self, order, new_price) -> Any:
-        modifyrequest = self.get_modifyRequest(order, new_price)
+    async def modify_order(self, order, new_price, new_size) -> Any:
+        modifyrequest = self.get_modifyRequest(order, new_price, new_size)
         await self._logging.debug(f"Modifying order: {modifyrequest}")
         return await self.bulk_modify_order([modifyrequest])
 
