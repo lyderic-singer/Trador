@@ -44,24 +44,20 @@ class Enveloppe:
         return usd_balance, coin_balance
 
     def new_orders(self, sma, mid, usd_balance, coin_balance_value):
+        def calc_price(i, is_bid):
+            spread = ((self.spread_max - self.spread_min) * (i / (self.levels - 1))) + self.spread_min
+            price = sma * (1 - spread if is_bid else 1 + spread)
+            return min(price, mid) if is_bid else max(price, mid)
         def _orders(balance, is_bid):
-            value_per_order = balance / self.levels
-            size = value_per_order / mid
             orders = []
-            if value_per_order > self.min_order_value:
-                for i in range(self.levels):
-                    spread = ((self.spread_max - self.spread_min) * (i / (self.levels - 1))) + self.spread_min
-                    price = sma * (1 - spread if is_bid else 1 + spread)
-                    price = min(price, mid) if is_bid else max(price, mid)
-                    orders.append(self.core.exchange.get_order(self.coin, is_bid, size, price, {"limit": {"tif": "Alo"}}))
-            else:
-                nb_orders = min(int(balance // self.min_order_value), self.levels)
-                min_size = self.min_order_value / mid
-                for i in range(self.levels - nb_orders, self.levels):
-                    spread = ((self.spread_max - self.spread_min) * (i / (self.levels - 1))) + self.spread_min
-                    price = sma * (1 - spread if is_bid else 1 + spread)
-                    price = min(price, mid) if is_bid else max(price, mid)
-                    orders.append(self.core.exchange.get_order(self.coin, is_bid, min_size, price, {"limit": {"tif": "Alo"}}))
+            if balance <= 0:
+                return orders
+            value_per_order = balance / self.levels
+            nb_orders = self.levels if value_per_order > self.min_order_value else min(int(balance // self.min_order_value), self.levels)
+            size = value_per_order / mid if value_per_order > self.min_order_value else self.min_order_value / mid
+            for i in range(self.levels - nb_orders, self.levels):
+                price = calc_price(i, is_bid)
+                orders.append(self.core.exchange.get_order(self.coin, is_bid, size, price, {"limit": {"tif": "Alo"}}))
             return orders
         new_asks = _orders(coin_balance_value, False)
         new_bids = _orders(usd_balance, True)
@@ -73,23 +69,30 @@ class Enveloppe:
         new_asks, new_bids = self.new_orders(sma, mid, usd_balance, coin_balance_value)
         modified_orders = []
         for order in prev_orders:
-            if order['side'] == 'A':
-                new_order = new_asks.pop()
-            else:
-                new_order = new_bids.pop()
-            modify_request = self.core.exchange.get_modifyRequest(order, new_order[''])
+            try:
+                if order['side'] == 'A' and new_asks:
+                    new_order = new_asks.pop()
+                elif order['side'] == 'B' and new_bids:
+                    new_order = new_bids.pop()
+                else:
+                    continue  # aucun ordre disponible pour modification
+                modify_request = self.core.exchange.get_modifyRequest(order, new_order['limit_px'], new_order['sz'])
+                modified_orders.append(modify_request)
+            except Exception:
+                continue 
+        new_orders = new_asks + new_bids
         return new_orders, modified_orders
 
     async def run(self):
         await asyncio.sleep(3)
         while not self._stop.is_set():
             try:
-                data, orders = await asyncio.gather(self.core.info.spot_user_state(self.core.address), self.core.info.open_orders(self.core.address))
+                data, prev_orders = await asyncio.gather(self.core.info.spot_user_state(self.core.address), self.core.info.open_orders(self.core.address))
                 usd_balance, coin_balance = self.get_balance(data["balances"])
                 coin_balance_value = self.market.mid * coin_balance
-
-                usd_per_order = 5
-
+                new_orders, modified_orders = self.get_orders(prev_orders, usd_balance, coin_balance_value)
+                result_new, result_modified = await asyncio.gather(self.core.exchange.bulk_orders(new_orders), self.core.exchange.bulk_modify_orders(modified_orders))
+                await self._logging.info(f"statuses : new orders : {result_new}; modified orders : {result_modified}")
             except Exception as e:
                 await self._logging.error(f"probleme dans l'execution : {e}")
             finally:

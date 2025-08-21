@@ -131,9 +131,9 @@ class Exchange:
     async def modify_order(self, order, new_price, new_size) -> Any:
         modifyrequest = self.get_modifyRequest(order, new_price, new_size)
         await self._logging.debug(f"Modifying order: {modifyrequest}")
-        return await self.bulk_modify_order([modifyrequest])
+        return await self.bulk_modify_orders([modifyrequest])
 
-    async def bulk_modify_order(self, modify_requests: List[ModifyRequest]) -> Any:
+    async def bulk_modify_orders(self, modify_requests: List[ModifyRequest]) -> Any:
         try: 
             timestamp = get_timestamp_ms()
             modify_wires = [{
