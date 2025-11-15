@@ -104,7 +104,6 @@ class Exchange:
     async def bulk_orders(self, order_requests: List[OrderRequest], builder: Optional[BuilderInfo] = None) -> Any:
         try:
             order_wires = [order_request_to_order_wire(order, self.info.name_to_asset(order["coin"])) for order in order_requests]
-            print(self.info.name_to_asset(order["coin"]))
             timestamp = get_timestamp_ms()
             if builder:
                 builder["b"] = builder["b"].lower()
