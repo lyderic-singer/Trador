@@ -5,9 +5,9 @@ import random
 from data.market import Market
 
 class Enveloppe:
-    def __init__(self, asset, spread_min=0.0005, spread_max = 0.003, period = "1m", sma_period = 9, levels = 4, min_order_value = 10.5):
+    def __init__(self, asset, spread_min=0.00045, spread_max = 0.003, period = "1m", sma_period = 9, levels = 3, min_order_value = 10.5):
         self.asset = asset
-        self.name = asset + "/USDC"
+        self.name = asset + "/USDH"
         self.coin = None
         self.core = None
         self.exchange = None
@@ -34,7 +34,7 @@ class Enveloppe:
         for d in data:
             balances[d["coin"]] = float(d["total"])
         try:
-            usd_balance = balances["USDC"]
+            usd_balance = balances["USDH"]
         except Exception:
             usd_balance = 0
         try:
@@ -84,7 +84,7 @@ class Enveloppe:
         return new_orders, modified_orders
 
     async def run(self):
-        await asyncio.sleep(3)
+        await asyncio.sleep(10.1)
         while not self._stop.is_set():
             try:
                 data, prev_orders = await asyncio.gather(self.core.info.spot_user_state(self.core.address), self.core.info.open_orders(self.core.address))
