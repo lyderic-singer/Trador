@@ -11,7 +11,7 @@ class Enveloppe:
         self.coin = None
         self.core = None
         self.exchange = None
-        self._logging = None
+        self._log = None
         self.period = period
         self.market = Market(asset, sma_period, period)
         self.spread_min = spread_min
@@ -27,7 +27,7 @@ class Enveloppe:
         await self.market.start(core)
         self.coin = core.info.name_to_coin[self.name]
         self.exchange = core.exchange
-        self._logging = Logger(self, core.message_manager)
+        self._log = Logger(self, core.messenger)
 
     def get_balances(self, data):
         balances = {}
@@ -92,9 +92,9 @@ class Enveloppe:
                 coin_balance_value = self.market.mid * coin_balance
                 new_orders, modified_orders = self.get_orders(prev_orders, usd_balance, coin_balance_value)
                 result_new, result_modified = await asyncio.gather(self.core.exchange.bulk_orders(new_orders), self.core.exchange.bulk_modify_orders(modified_orders))
-                await self._logging.info(f"statuses : new orders : {result_new}; modified orders : {result_modified}")
+                await self._log.info(f"statuses : new orders : {result_new}; modified orders : {result_modified}")
             except Exception as e:
-                await self._logging.error(f"probleme dans l'execution : {e}")
+                await self._log.error(f"probleme dans l'execution : {e}")
             finally:
                 await asyncio.sleep(5)
 
