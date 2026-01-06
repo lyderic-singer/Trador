@@ -1,5 +1,5 @@
 import asyncio
-from logs.message_manager import Logger
+from HLB.logs.logger import Logger
 from time import time
 import random
 from data.market import Market

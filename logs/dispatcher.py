@@ -6,7 +6,7 @@ def shell(*args, sep=' ', end='\n'):
     sys.stdout.write(msg)
     sys.stdout.flush()
 
-class LogManager:
+class Dispatcher:
     def __init__(self, message_manager, tg_manager = None, filepath = "logs.txt" ):
         self.message_manager = message_manager
         self.filepath = filepath

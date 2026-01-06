@@ -6,7 +6,7 @@ from time import time
 from pathlib import Path
 from telegram import Update, InputFile
 from telegram.ext import Application, ApplicationBuilder, CommandHandler, ContextTypes
-from logs.message_manager import Logger
+from HLB.logs.logger import Messenger
 
 load_dotenv()
 
@@ -15,7 +15,7 @@ class TelegramManager:
         self.token = str(os.getenv("TG_TOKEN"))
         self.chat_id = int(os.getenv("TG_CHAT_ID"))
         self.orchester = orchester
-        self._logging = Logger(self, orchester.message_manager)
+        self._logging = Messenger(self, orchester.message_manager)
         self.messages = asyncio.Queue()
         self._app: Application = ApplicationBuilder().token(self.token).build()
         self._worker_task = None

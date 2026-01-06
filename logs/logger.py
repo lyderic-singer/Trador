@@ -8,9 +8,9 @@ from enum import Enum
 def get_file(objet):
     return os.path.basename(inspect.getfile(objet.__class__))
 
-def _callfunname(): # retourne la fonction appelante de rang 2
+def _callfunname():
     try:
-        return sys._getframe(2).f_code.co_name  # 2 car on veut le grand-parent
+        return sys._getframe(2).f_code.co_name
     except Exception:
         try:
             return inspect.stack()[2].function
@@ -55,7 +55,7 @@ class Message:
         }.get(self.level.value.lower(), '📌')
         return f"{emoji} {self.message}"
 
-class MessageManager:
+class Messenger:
     def __init__(self):
         self.messages = asyncio.Queue()
 
@@ -85,7 +85,7 @@ class MessageManager:
         await self._put(LogLevel.SUCCESS, context, message, save, send_tg)
 
 class Logger():
-    def __init__(self, objet, message_manager: MessageManager):
+    def __init__(self, objet, message_manager: Messenger):
         self.message_manager = message_manager
         if isinstance(objet, str):
             self.filepath = objet
