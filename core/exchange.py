@@ -1,5 +1,4 @@
 import json
-import logging
 import secrets
 
 import eth_account
@@ -28,9 +27,9 @@ def format_price_spot(px):
 
 class Exchange:
     DEFAULT_SLIPPAGE = 0.05
-    def __init__(self, info: Info, message_manager, wallet: LocalAccount, vault_address: str = None, account_address: str = None):
+    def __init__(self, info: Info, messenger, wallet: LocalAccount, vault_address: str = None, account_address: str = None):
         self.wallet = wallet
-        self._logging = Logger(self, message_manager)
+        self._log = Logger(self, messenger)
         self.base_url = info.base_url
         self.vault_address = vault_address
         self.account_address = account_address
@@ -45,11 +44,11 @@ class Exchange:
             "vaultAddress": self.vault_address if action["type"] != "usdClassTransfer" else None,
             "expiresAfter": self.expires_after,
         }
-        await self._logging.debug(f"Posting action: {payload}")
+        await self._log.debug(f"Posting action: {payload}")
         try:
             return await self.info.api.post("/exchange", payload)
         except Exception as e:
-            await self._logging.error(f"Failed to post action: {e}")
+            await self._log.error(f"Failed to post action: {e}")
             raise
 
     async def _slippage_price(self, name: str, is_buy: bool, slippage: float, px: Optional[float] = None) -> float:
@@ -61,10 +60,10 @@ class Exchange:
             is_spot = asset >= 10_000
             px *= (1 + slippage) if is_buy else (1 - slippage)
             result = round(float(f"{px:.5g}"), (6 if not is_spot else 8) - self.info.asset_to_sz_decimals[asset])
-            await self._logging.debug(f"Calculated slippage price: {result}")
+            await self._log.debug(f"Calculated slippage price: {result}")
             return result
         except Exception as e:
-            await self._logging.error(f"Error in slippage price calc: {e}")
+            await self._log.error(f"Error in slippage price calc: {e}")
             raise
 
     def set_expires_after(self, expires_after: Optional[int]) -> None:
@@ -87,7 +86,7 @@ class Exchange:
     async def order(self, name: str, is_buy: bool, sz: float, limit_px: float, order_type: OrderType,
                     reduce_only: bool = False, cloid: Optional[Cloid] = None, builder: Optional[BuilderInfo] = None) -> Any:
         order = self.get_order(name, is_buy, sz, limit_px, order_type, reduce_only, cloid, builder)
-        await self._logging.debug(f"Placing single order: {order}")
+        await self._log.debug(f"Placing single order: {order}")
         return await self.bulk_orders([order], builder)
 
     async def perp_order(self, coin: str, is_buy: bool, size: float, price: float) -> bool:
@@ -109,10 +108,10 @@ class Exchange:
                 builder["b"] = builder["b"].lower()
             order_action = order_wires_to_order_action(order_wires, builder)
             signature = sign_l1_action(self.wallet, order_action, self.vault_address, timestamp, self.expires_after, self.base_url == MAINNET_API_URL)
-            await self._logging.debug(f"Sending bulk orders: {order_requests}")
+            await self._log.debug(f"Sending bulk orders: {order_requests}")
             return await self._post_action(order_action, signature, timestamp)
         except Exception as e:
-            await self._logging.error(f"Failed bulk order: {e}")
+            await self._log.error(f"Failed bulk order: {e}")
             raise
     
     def get_modifyRequest(self, order, new_price, new_size):
@@ -130,7 +129,7 @@ class Exchange:
 
     async def modify_order(self, order, new_price, new_size) -> Any:
         modifyrequest = self.get_modifyRequest(order, new_price, new_size)
-        await self._logging.debug(f"Modifying order: {modifyrequest}")
+        await self._log.debug(f"Modifying order: {modifyrequest}")
         return await self.bulk_modify_orders([modifyrequest])
 
     async def bulk_modify_orders(self, modify_requests: List[ModifyRequest]) -> Any:
@@ -142,10 +141,10 @@ class Exchange:
             } for modify in modify_requests]
             modify_action = {"type": "batchModify", "modifies": modify_wires}
             signature = sign_l1_action(self.wallet, modify_action, self.vault_address, timestamp, self.expires_after, self.base_url == MAINNET_API_URL)
-            await self._logging.debug(f"Bulk modifying orders: {modify_requests}")
+            await self._log.debug(f"Bulk modifying orders: {modify_requests}")
             return await self._post_action(modify_action, signature, timestamp)
         except Exception as e:
-            await self._logging.error(f"Failed bulk modify: {e}")
+            await self._log.error(f"Failed bulk modify: {e}")
             raise
 
     async def market_open(self, name: str, is_buy: bool, sz: float, slippage: float = DEFAULT_SLIPPAGE, cloid: Optional[Cloid] = None) -> Any:
@@ -153,7 +152,7 @@ class Exchange:
             limit_px = await self._slippage_price(name, is_buy, slippage)
             return await self.order(name, is_buy, sz, limit_px, "ioc", cloid=cloid)
         except Exception as e:
-            await self._logging.error(f"Failed market open: {e}")
+            await self._log.error(f"Failed market open: {e}")
             raise
 
     async def market_close(self, name: str, is_buy: bool, slippage: float = DEFAULT_SLIPPAGE, cloid: Optional[Cloid] = None) -> Any:
@@ -162,34 +161,34 @@ class Exchange:
             side_sz = pos["szBuy"] if is_buy else pos["szSell"]
             sz = float(side_sz)
             if sz == 0:
-                await self._logging.warning(f"No position to close for {name}, is_buy={is_buy}")
+                await self._log.warning(f"No position to close for {name}, is_buy={is_buy}")
                 return None
             limit_px = await self._slippage_price(name, not is_buy, slippage)
             return await self.order(name, not is_buy, sz, limit_px, "ioc", reduce_only=True, cloid=cloid)
         except Exception as e:
-            await self._logging.error(f"Failed market close: {e}")
+            await self._log.error(f"Failed market close: {e}")
             raise
 
     async def cancel(self, name: str, oid: int) -> Any:
         try:
-            await self._logging.debug(f"Cancel order: coin={name}, oid={oid}")
+            await self._log.debug(f"Cancel order: coin={name}, oid={oid}")
             return await self.bulk_cancel([{"coin": name, "oid": oid}])
         except Exception as e:
-            await self._logging.error(f"Failed to cancel order: coin={name}, oid={oid}, error={e}")
+            await self._log.error(f"Failed to cancel order: coin={name}, oid={oid}, error={e}")
             raise
 
     async def cancel_by_cloid(self, name: str, cloid: Cloid) -> Any:
         try:
-            await self._logging.debug(f"Cancel order by cloid: coin={name}, cloid={cloid}")
+            await self._log.debug(f"Cancel order by cloid: coin={name}, cloid={cloid}")
             return await self.bulk_cancel_by_cloid([{"coin": name, "cloid": cloid}])
         except Exception as e:
-            await self._logging.error(f"Failed to cancel by cloid: coin={name}, cloid={cloid}, error={e}")
+            await self._log.error(f"Failed to cancel by cloid: coin={name}, cloid={cloid}, error={e}")
             raise
 
     async def bulk_cancel(self, cancel_requests: List[CancelRequest]) -> Any:
         try:
             timestamp = get_timestamp_ms()
-            await self._logging.debug(f"Bulk cancel requests: {cancel_requests} at {timestamp}")
+            await self._log.debug(f"Bulk cancel requests: {cancel_requests} at {timestamp}")
             cancel_action = {
                 "type": "cancel",
                 "cancels": [
@@ -210,13 +209,13 @@ class Exchange:
             )
             return await self._post_action(cancel_action, signature, timestamp)
         except Exception as e:
-            await self._logging.error(f"Bulk cancel failed: {e}")
+            await self._log.error(f"Bulk cancel failed: {e}")
             raise
 
     async def bulk_cancel_by_cloid(self, cancel_requests: List[CancelByCloidRequest]) -> Any:
         try:
             timestamp = get_timestamp_ms()
-            await self._logging.debug(f"Bulk cancel by cloid requests: {cancel_requests} at {timestamp}")
+            await self._log.debug(f"Bulk cancel by cloid requests: {cancel_requests} at {timestamp}")
             cancel_action = {
                 "type": "cancelByCloid",
                 "cancels": [
@@ -237,13 +236,13 @@ class Exchange:
             )
             return await self._post_action(cancel_action, signature, timestamp)
         except Exception as e:
-            await self._logging.error(f"Bulk cancel by cloid failed: {e}")
+            await self._log.error(f"Bulk cancel by cloid failed: {e}")
             raise
 
     async def schedule_cancel(self, time: Optional[int]) -> Any:
         try:
             timestamp = get_timestamp_ms()
-            await self._logging.debug(f"Schedule cancel at time: {time} with timestamp {timestamp}")
+            await self._log.debug(f"Schedule cancel at time: {time} with timestamp {timestamp}")
             schedule_cancel_action: ScheduleCancelAction = {
                 "type": "scheduleCancel",
             }
@@ -259,13 +258,13 @@ class Exchange:
             )
             return await self._post_action(schedule_cancel_action, signature, timestamp)
         except Exception as e:
-            await self._logging.error(f"Schedule cancel failed: {e}")
+            await self._log.error(f"Schedule cancel failed: {e}")
             raise
 
     async def update_leverage(self, leverage: int, name: str, is_cross: bool = True) -> Any:
         try:
             timestamp = get_timestamp_ms()
-            await self._logging.debug(f"Update leverage: asset={name}, leverage={leverage}, is_cross={is_cross}")
+            await self._log.debug(f"Update leverage: asset={name}, leverage={leverage}, is_cross={is_cross}")
             update_leverage_action = {
                 "type": "updateLeverage",
                 "asset": self.info.name_to_asset(name),
@@ -282,14 +281,14 @@ class Exchange:
             )
             return await self._post_action(update_leverage_action, signature, timestamp)
         except Exception as e:
-            await self._logging.error(f"Update leverage failed: {e}")
+            await self._log.error(f"Update leverage failed: {e}")
             raise
 
     async def update_isolated_margin(self, amount: float, name: str) -> Any:
         try:
             timestamp = get_timestamp_ms()
             amount_int = float_to_usd_int(amount)
-            await self._logging.debug(f"Update isolated margin: asset={name}, amount={amount} (int={amount_int})")
+            await self._log.debug(f"Update isolated margin: asset={name}, amount={amount} (int={amount_int})")
             update_isolated_margin_action = {
                 "type": "updateIsolatedMargin",
                 "asset": self.info.name_to_asset(name),
@@ -306,13 +305,13 @@ class Exchange:
             )
             return await self._post_action(update_isolated_margin_action, signature, timestamp)
         except Exception as e:
-            await self._logging.error(f"Update isolated margin failed: {e}")
+            await self._log.error(f"Update isolated margin failed: {e}")
             raise
 
     async def set_referrer(self, code: str) -> Any:
         try:
             timestamp = get_timestamp_ms()
-            await self._logging.debug(f"Set referrer code: {code}")
+            await self._log.debug(f"Set referrer code: {code}")
             set_referrer_action = {
                 "type": "setReferrer",
                 "code": code,
@@ -327,13 +326,13 @@ class Exchange:
             )
             return await self._post_action(set_referrer_action, signature, timestamp)
         except Exception as e:
-            await self._logging.error(f"Set referrer failed: {e}")
+            await self._log.error(f"Set referrer failed: {e}")
             raise
 
     async def create_sub_account(self, name: str) -> Any:
         try:
             timestamp = get_timestamp_ms()
-            await self._logging.debug(f"Create sub account: {name}")
+            await self._log.debug(f"Create sub account: {name}")
             create_sub_account_action = {
                 "type": "createSubAccount",
                 "name": name,
@@ -348,7 +347,7 @@ class Exchange:
             )
             return await self._post_action(create_sub_account_action, signature, timestamp)
         except Exception as e:
-            await self._logging.error(f"Create sub account failed: {e}")
+            await self._log.error(f"Create sub account failed: {e}")
             raise
 
     async def usd_class_transfer(self, amount: float, to_perp: bool) -> Any:
@@ -357,7 +356,7 @@ class Exchange:
             str_amount = str(amount)
             if self.vault_address:
                 str_amount += f" subaccount:{self.vault_address}"
-            await self._logging.debug(f"USD class transfer: amount={str_amount}, to_perp={to_perp}")
+            await self._log.debug(f"USD class transfer: amount={str_amount}, to_perp={to_perp}")
             action = {
                 "type": "usdClassTransfer",
                 "amount": str_amount,
@@ -367,7 +366,7 @@ class Exchange:
             signature = sign_usd_class_transfer_action(self.wallet, action, self.base_url == MAINNET_API_URL)
             return await self._post_action(action, signature, timestamp)
         except Exception as e:
-            await self._logging.error(f"USD class transfer failed: {e}")
+            await self._log.error(f"USD class transfer failed: {e}")
             raise
 
     async def perp_dex_class_transfer(self, dex: str, token: str, amount: float, to_perp: bool) -> Any:
@@ -376,7 +375,7 @@ class Exchange:
             str_amount = str(amount)
             if self.vault_address:
                 str_amount += f" subaccount:{self.vault_address}"
-            await self._logging.debug(f"PerpDex class transfer: dex={dex}, token={token}, amount={str_amount}, to_perp={to_perp}")
+            await self._log.debug(f"PerpDex class transfer: dex={dex}, token={token}, amount={str_amount}, to_perp={to_perp}")
             action = {
                 "type": "PerpDexClassTransfer",
                 "dex": dex,
@@ -388,13 +387,13 @@ class Exchange:
             signature = sign_perp_dex_class_transfer_action(self.wallet, action, self.base_url == MAINNET_API_URL)
             return await self._post_action(action, signature, timestamp)
         except Exception as e:
-            await self._logging.error(f"PerpDex class transfer failed: {e}")
+            await self._log.error(f"PerpDex class transfer failed: {e}")
             raise
 
     async def sub_account_transfer(self, sub_account_user: str, is_deposit: bool, usd: int) -> Any:
         try:
             timestamp = get_timestamp_ms()
-            await self._logging.debug(f"Sub account transfer: user={sub_account_user}, is_deposit={is_deposit}, usd={usd}")
+            await self._log.debug(f"Sub account transfer: user={sub_account_user}, is_deposit={is_deposit}, usd={usd}")
             sub_account_transfer_action = {
                 "type": "subAccountTransfer",
                 "subAccountUser": sub_account_user,
@@ -411,7 +410,7 @@ class Exchange:
             )
             return await self._post_action(sub_account_transfer_action, signature, timestamp)
         except Exception as e:
-            await self._logging.error(f"Sub account transfer failed: {e}")
+            await self._log.error(f"Sub account transfer failed: {e}")
             raise
 
     async def sub_account_spot_transfer(self, sub_account_user: str, is_deposit: bool, token: str, amount: float) -> Any:
@@ -424,11 +423,11 @@ class Exchange:
             "amount": str(amount),
         }
         try:
-            await self._logging.debug(f"sub_account_spot_transfer: {action}")
+            await self._log.debug(f"sub_account_spot_transfer: {action}")
             signature = sign_l1_action(self.wallet, action, None, timestamp, self.expires_after, self.base_url == MAINNET_API_URL)
             return await self._post_action(action, signature, timestamp)
         except Exception as e:
-            await self._logging.error(f"sub_account_spot_transfer failed: {e}")
+            await self._log.error(f"sub_account_spot_transfer failed: {e}")
             raise
 
     async def vault_usd_transfer(self, vault_address: str, is_deposit: bool, usd: int) -> Any:
@@ -440,22 +439,22 @@ class Exchange:
             "usd": usd,
         }
         try:
-            await self._logging.debug(f"vault_usd_transfer: {action}")
+            await self._log.debug(f"vault_usd_transfer: {action}")
             signature = sign_l1_action(self.wallet, action, None, timestamp, self.expires_after, self.base_url == MAINNET_API_URL)
             return await self._post_action(action, signature, timestamp)
         except Exception as e:
-            await self._logging.error(f"vault_usd_transfer failed: {e}")
+            await self._log.error(f"vault_usd_transfer failed: {e}")
             raise
 
     async def usd_transfer(self, amount: float, destination: str) -> Any:
         timestamp = get_timestamp_ms()
         action = {"destination": destination, "amount": str(amount), "time": timestamp, "type": "usdSend"}
         try:
-            await self._logging.debug(f"usd_transfer: {action}")
+            await self._log.debug(f"usd_transfer: {action}")
             signature = sign_usd_transfer_action(self.wallet, action, self.base_url == MAINNET_API_URL)
             return await self._post_action(action, signature, timestamp)
         except Exception as e:
-            await self._logging.error(f"usd_transfer failed: {e}")
+            await self._log.error(f"usd_transfer failed: {e}")
             raise
 
     async def spot_transfer(self, amount: float, destination: str, token: str) -> Any:
@@ -468,11 +467,11 @@ class Exchange:
             "type": "spotSend",
         }
         try:
-            await self._logging.debug(f"spot_transfer: {action}")
+            await self._log.debug(f"spot_transfer: {action}")
             signature = sign_spot_transfer_action(self.wallet, action, self.base_url == MAINNET_API_URL)
             return await self._post_action(action, signature, timestamp)
         except Exception as e:
-            await self._logging.error(f"spot_transfer failed: {e}")
+            await self._log.error(f"spot_transfer failed: {e}")
             raise
 
     async def token_delegate(self, validator: str, wei: int, is_undelegate: bool) -> Any:
@@ -485,22 +484,22 @@ class Exchange:
             "type": "tokenDelegate",
         }
         try:
-            await self._logging.debug(f"token_delegate: {action}")
+            await self._log.debug(f"token_delegate: {action}")
             signature = sign_token_delegate_action(self.wallet, action, self.base_url == MAINNET_API_URL)
             return await self._post_action(action, signature, timestamp)
         except Exception as e:
-            await self._logging.error(f"token_delegate failed: {e}")
+            await self._log.error(f"token_delegate failed: {e}")
             raise
 
     async def withdraw_from_bridge(self, amount: float, destination: str) -> Any:
         timestamp = get_timestamp_ms()
         action = {"destination": destination, "amount": str(amount), "time": timestamp, "type": "withdraw3"}
         try:
-            await self._logging.debug(f"withdraw_from_bridge: {action}")
+            await self._log.debug(f"withdraw_from_bridge: {action}")
             signature = sign_withdraw_from_bridge_action(self.wallet, action, self.base_url == MAINNET_API_URL)
             return await self._post_action(action, signature, timestamp)
         except Exception as e:
-            await self._logging.error(f"withdraw_from_bridge failed: {e}")
+            await self._log.error(f"withdraw_from_bridge failed: {e}")
             raise
 
     async def approve_agent(self, name: Optional[str] = None) -> Tuple[Any, str]:
@@ -516,23 +515,23 @@ class Exchange:
         try:
             if name is None:
                 del action["agentName"]
-            await self._logging.debug(f"approve_agent: {action}")
+            await self._log.debug(f"approve_agent: {action}")
             signature = sign_agent(self.wallet, action, self.base_url == MAINNET_API_URL)
             result = await self._post_action(action, signature, timestamp)
             return result, agent_key
         except Exception as e:
-            await self._logging.error(f"approve_agent failed: {e}")
+            await self._log.error(f"approve_agent failed: {e}")
             raise
 
     async def approve_builder_fee(self, builder: str, max_fee_rate: str) -> Any:
         timestamp = get_timestamp_ms()
         action = {"maxFeeRate": max_fee_rate, "builder": builder, "nonce": timestamp, "type": "approveBuilderFee"}
         try:
-            await self._logging.debug(f"approve_builder_fee: {action}")
+            await self._log.debug(f"approve_builder_fee: {action}")
             signature = sign_approve_builder_fee(self.wallet, action, self.base_url == MAINNET_API_URL)
             return await self._post_action(action, signature, timestamp)
         except Exception as e:
-            await self._logging.error(f"approve_builder_fee failed: {e}")
+            await self._log.error(f"approve_builder_fee failed: {e}")
             raise
 
     async def convert_to_multi_sig_user(self, authorized_users: List[str], threshold: int) -> Any:
@@ -545,11 +544,11 @@ class Exchange:
             "nonce": timestamp,
         }
         try:
-            await self._logging.debug(f"convert_to_multi_sig_user: {action}")
+            await self._log.debug(f"convert_to_multi_sig_user: {action}")
             signature = sign_convert_to_multi_sig_user_action(self.wallet, action, self.base_url == MAINNET_API_URL)
             return await self._post_action(action, signature, timestamp)
         except Exception as e:
-            await self._logging.error(f"convert_to_multi_sig_user failed: {e}")
+            await self._log.error(f"convert_to_multi_sig_user failed: {e}")
             raise
 
     async def spot_deploy_register_token(self, token_name: str, sz_decimals: int, wei_decimals: int, max_gas: int, full_name: str) -> Any:
@@ -563,11 +562,11 @@ class Exchange:
             },
         }
         try:
-            await self._logging.debug(f"spot_deploy_register_token: {action}")
+            await self._log.debug(f"spot_deploy_register_token: {action}")
             signature = sign_l1_action(self.wallet, action, None, timestamp, self.expires_after, self.base_url == MAINNET_API_URL)
             return await self._post_action(action, signature, timestamp)
         except Exception as e:
-            await self._logging.error(f"spot_deploy_register_token failed: {e}")
+            await self._log.error(f"spot_deploy_register_token failed: {e}")
             raise
 
     async def spot_deploy_user_genesis(self, token: int, user_and_wei: List[Tuple[str, str]], existing_token_and_wei: List[Tuple[int, str]]) -> Any:
@@ -581,11 +580,11 @@ class Exchange:
             },
         }
         try:
-            await self._logging.debug(f"spot_deploy_user_genesis: {action}")
+            await self._log.debug(f"spot_deploy_user_genesis: {action}")
             signature = sign_l1_action(self.wallet, action, None, timestamp, self.expires_after, self.base_url == MAINNET_API_URL)
             return await self._post_action(action, signature, timestamp)
         except Exception as e:
-            await self._logging.error(f"spot_deploy_user_genesis failed: {e}")
+            await self._log.error(f"spot_deploy_user_genesis failed: {e}")
             raise
 
     async def spot_deploy_enable_freeze_privilege(self, token: int) -> Any:
@@ -595,37 +594,37 @@ class Exchange:
             "enableFreezePrivilege": {"token": token},
         }
         try:
-            await self._logging.debug(f"spot_deploy_enable_freeze_privilege: {action}")
+            await self._log.debug(f"spot_deploy_enable_freeze_privilege: {action}")
             signature = sign_l1_action(self.wallet, action, None, timestamp, self.expires_after, self.base_url == MAINNET_API_URL)
             return await self._post_action(action, signature, timestamp)
         except Exception as e:
-            await self._logging.error(f"spot_deploy_enable_freeze_privilege failed: {e}")
+            await self._log.error(f"spot_deploy_enable_freeze_privilege failed: {e}")
             raise
 
     async def spot_deploy_freeze_user(self, token: int, user: str, freeze: bool) -> Any:
         timestamp = get_timestamp_ms()
         action = {"type": "spotDeploy", "freezeUser": {"token": token, "user": user.lower(), "freeze": freeze}}
-        await self._logging.debug(f"{timestamp=} {action=}")
+        await self._log.debug(f"{timestamp=} {action=}")
         try:
             signature = sign_l1_action(self.wallet, action, None, timestamp, self.expires_after, self.base_url == MAINNET_API_URL)
             res = await self._post_action(action, signature, timestamp)
-            await self._logging.info("spotDeploy.freezeUser sent")
+            await self._log.info("spotDeploy.freezeUser sent")
             return res
         except Exception as e:
-            await self._logging.error(f"spotDeploy.freezeUser failed: {e}")
+            await self._log.error(f"spotDeploy.freezeUser failed: {e}")
             return None
 
     async def spot_deploy_revoke_freeze_privilege(self, token: int) -> Any:
         timestamp = get_timestamp_ms()
         action = {"type": "spotDeploy", "revokeFreezePrivilege": {"token": token}}
-        await self._logging.debug(f"{timestamp=} {action=}")
+        await self._log.debug(f"{timestamp=} {action=}")
         try:
             signature = sign_l1_action(self.wallet, action, None, timestamp, self.expires_after, self.base_url == MAINNET_API_URL)
             res = await self._post_action(action, signature, timestamp)
-            await self._logging.info("spotDeploy.revokeFreezePrivilege sent")
+            await self._log.info("spotDeploy.revokeFreezePrivilege sent")
             return res
         except Exception as e:
-            await self._logging.error(f"spotDeploy.revokeFreezePrivilege failed: {e}")
+            await self._log.error(f"spotDeploy.revokeFreezePrivilege failed: {e}")
             return None
 
     async def spot_deploy_genesis(self, token: int, max_supply: str, no_hyperliquidity: bool) -> Any:
@@ -634,27 +633,27 @@ class Exchange:
         if no_hyperliquidity:
             genesis["noHyperliquidity"] = True
         action = {"type": "spotDeploy", "genesis": genesis}
-        await self._logging.debug(f"{timestamp=} {action=}")
+        await self._log.debug(f"{timestamp=} {action=}")
         try:
             signature = sign_l1_action(self.wallet, action, None, timestamp, self.expires_after, self.base_url == MAINNET_API_URL)
             res = await self._post_action(action, signature, timestamp)
-            await self._logging.info("spotDeploy.genesis sent")
+            await self._log.info("spotDeploy.genesis sent")
             return res
         except Exception as e:
-            await self._logging.error(f"spotDeploy.genesis failed: {e}")
+            await self._log.error(f"spotDeploy.genesis failed: {e}")
             return None
 
     async def spot_deploy_register_spot(self, base_token: int, quote_token: int) -> Any:
         timestamp = get_timestamp_ms()
         action = {"type": "spotDeploy", "registerSpot": {"tokens": [base_token, quote_token]}}
-        await self._logging.debug(f"{timestamp=} {action=}")
+        await self._log.debug(f"{timestamp=} {action=}")
         try:
             signature = sign_l1_action(self.wallet, action, None, timestamp, self.expires_after, self.base_url == MAINNET_API_URL)
             res = await self._post_action(action, signature, timestamp)
-            await self._logging.info("spotDeploy.registerSpot sent")
+            await self._log.info("spotDeploy.registerSpot sent")
             return res
         except Exception as e:
-            await self._logging.error(f"spotDeploy.registerSpot failed: {e}")
+            await self._log.error(f"spotDeploy.registerSpot failed: {e}")
             return None
 
     async def spot_deploy_register_hyperliquidity(self, spot: int, start_px: float, order_sz: float, n_orders: int, n_seeded_levels: Optional[int]) -> Any:
@@ -663,27 +662,27 @@ class Exchange:
         if n_seeded_levels is not None:
             h["nSeededLevels"] = n_seeded_levels
         action = {"type": "spotDeploy", "registerHyperliquidity": h}
-        await self._logging.debug(f"{timestamp=} {action=}")
+        await self._log.debug(f"{timestamp=} {action=}")
         try:
             signature = sign_l1_action(self.wallet, action, None, timestamp, self.expires_after, self.base_url == MAINNET_API_URL)
             res = await self._post_action(action, signature, timestamp)
-            await self._logging.info("spotDeploy.registerHyperliquidity sent")
+            await self._log.info("spotDeploy.registerHyperliquidity sent")
             return res
         except Exception as e:
-            await self._logging.error(f"spotDeploy.registerHyperliquidity failed: {e}")
+            await self._log.error(f"spotDeploy.registerHyperliquidity failed: {e}")
             return None
 
     async def spot_deploy_set_deployer_trading_fee_share(self, token: int, share: str) -> Any:
         timestamp = get_timestamp_ms()
         action = {"type": "spotDeploy", "setDeployerTradingFeeShare": {"token": token, "share": share}}
-        await self._logging.debug(f"{timestamp=} {action=}")
+        await self._log.debug(f"{timestamp=} {action=}")
         try:
             signature = sign_l1_action(self.wallet, action, None, timestamp, self.expires_after, self.base_url == MAINNET_API_URL)
             res = await self._post_action(action, signature, timestamp)
-            await self._logging.info("spotDeploy.setDeployerTradingFeeShare sent")
+            await self._log.info("spotDeploy.setDeployerTradingFeeShare sent")
             return res
         except Exception as e:
-            await self._logging.error(f"spotDeploy.setDeployerTradingFeeShare failed: {e}")
+            await self._log.error(f"spotDeploy.setDeployerTradingFeeShare failed: {e}")
             return None
 
     async def perp_deploy_register_asset(self, dex: str, max_gas: Optional[int], coin: str, sz_decimals: int, oracle_px: str, margin_table_id: int, only_isolated: bool, schema: Optional[PerpDexSchemaInput]) -> Any:
@@ -715,7 +714,7 @@ class Exchange:
                                     self.base_url == MAINNET_API_URL)
             return await self._post_action(action, signature, timestamp)
         except Exception as e:
-            await self._logging.error(f"perp_deploy_register_asset failed: {e}")
+            await self._log.error(f"perp_deploy_register_asset failed: {e}")
             raise
 
     async def perp_deploy_set_oracle(self, dex: str, oracle_pxs: Dict[str, str], mark_pxs: Optional[Dict[str, str]]) -> Any:
@@ -734,7 +733,7 @@ class Exchange:
                                     self.base_url == MAINNET_API_URL)
             return await self._post_action(action, signature, timestamp)
         except Exception as e:
-            await self._logging.error(f"perp_deploy_set_oracle failed: {e}")
+            await self._log.error(f"perp_deploy_set_oracle failed: {e}")
             raise
 
     async def c_signer_unjail_self(self) -> Any:
@@ -755,7 +754,7 @@ class Exchange:
                                     self.base_url == MAINNET_API_URL)
             return await self._post_action(action, signature, timestamp)
         except Exception as e:
-            await self._logging.error(f"c_signer_inner({variant}) failed: {e}")
+            await self._log.error(f"c_signer_inner({variant}) failed: {e}")
             raise
 
     async def c_validator_register(self, node_ip: str, name: str, description: str, delegations_disabled: bool,
@@ -782,7 +781,7 @@ class Exchange:
                                     self.base_url == MAINNET_API_URL)
             return await self._post_action(action, signature, timestamp)
         except Exception as e:
-            await self._logging.error(f"c_validator_register failed: {e}")
+            await self._log.error(f"c_validator_register failed: {e}")
             raise
 
     async def c_validator_change_profile(self, node_ip: Optional[str], name: Optional[str], description: Optional[str],
@@ -807,7 +806,7 @@ class Exchange:
                                     self.base_url == MAINNET_API_URL)
             return await self._post_action(action, signature, timestamp)
         except Exception as e:
-            await self._logging.error(f"c_validator_change_profile failed: {e}")
+            await self._log.error(f"c_validator_change_profile failed: {e}")
             raise
 
     async def c_validator_unregister(self) -> Any:
@@ -822,7 +821,7 @@ class Exchange:
                                     self.base_url == MAINNET_API_URL)
             return await self._post_action(action, signature, timestamp)
         except Exception as e:
-            await self._logging.error(f"c_validator_unregister failed: {e}")
+            await self._log.error(f"c_validator_unregister failed: {e}")
             raise
 
     async def multi_sig(self, multi_sig_user, inner_action, signatures, nonce, vault_address=None):
@@ -845,7 +844,7 @@ class Exchange:
             )
             return await self._post_action(action, signature, nonce)
         except Exception as e:
-            await self._logging.error(f"multi_sig failed: {e}")
+            await self._log.error(f"multi_sig failed: {e}")
             raise
 
     async def use_big_blocks(self, enable: bool) -> Any:
@@ -860,5 +859,5 @@ class Exchange:
                                     self.base_url == MAINNET_API_URL)
             return await self._post_action(action, signature, timestamp)
         except Exception as e:
-            await self._logging.error(f"use_big_blocks({enable}) failed: {e}")
+            await self._log.error(f"use_big_blocks({enable}) failed: {e}")
             raise
