@@ -4,8 +4,8 @@ import aiohttp
 
 from .utils.error import ClientError, ServerError
 from .utils.types import Any
-from .session_manager import SessionManager
-from logs.message_manager import Logger
+from .session import SessionManager
+from HLB.logs.logger import Logger
 
 
 class API:

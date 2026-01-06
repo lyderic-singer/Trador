@@ -1,9 +1,9 @@
 import asyncio
 import time
 from core.utils.constants import MAINNET_API_URL, TESTNET_API_URL
-from logs.message_manager import MessageManager, Logger
-from logs.log_manager import LogManager
-from logs.telegram_manager import TelegramManager
+from HLB.logs.logger import MessageManager, Logger
+from HLB.logs.dispatcher import LogManager
+from HLB.logs.telegram import TelegramManager
 from core.core_manager import CoreManager
 from data.coin_manager import CoinManager
 

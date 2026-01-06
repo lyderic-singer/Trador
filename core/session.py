@@ -1,10 +1,10 @@
 import aiohttp
-from logs.message_manager import Logger
+from HLB.logs.logger import Messenger
 
-class SessionManager:
+class Session:
     def __init__(self, message_manager):
         self.session = None
-        self._logging = Logger(self, message_manager)
+        self._logging = Messenger(self, message_manager)
 
     async def get_session(self) -> aiohttp.ClientSession:
         if self.session is None:

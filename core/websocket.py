@@ -3,7 +3,7 @@ import json
 from time import time
 from collections import defaultdict
 from typing import Any, Callable, Dict, List, NamedTuple, Optional, Tuple
-from logs.message_manager import Logger
+from HLB.logs.logger import Logger
 
 import websockets
 
@@ -44,7 +44,7 @@ def ws_msg_to_identifier(ws_msg: Dict[str, Any]) -> Optional[str]:
     if c == "bbo": return f'bbo:{d["coin"].lower()}'
     return None
 
-class WebsocketManager:
+class Websocket:
     def __init__(self, base_url: str, message_manager):
         self.subscription_id_counter = 0
         self.queued_subscriptions: List[Tuple[Dict[str, Any], Subscription]] = []
