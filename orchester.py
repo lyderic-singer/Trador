@@ -1,44 +1,43 @@
 import asyncio
 import time
 from core.utils.constants import MAINNET_API_URL, TESTNET_API_URL
-from HLB.logs.logger import MessageManager, Logger
-from HLB.logs.dispatcher import LogManager
-from HLB.logs.telegram import TelegramManager
-from core.core_manager import CoreManager
-from data.coin_manager import CoinManager
+from HLB.logs.logger import Messenger, Logger
+from HLB.logs.dispatcher import Dispatcher
+from HLB.logs.telegram import Telegram
+from core.core import Core
 
 class Orchester:
     def __init__(self, is_mainnet, strategy = None, skip_ws = False):
         self.base_url = MAINNET_API_URL if is_mainnet else TESTNET_API_URL
-        self.message_manager = MessageManager()
-        self._logging = Logger(self, self.message_manager)
-        self.core_manager = CoreManager(self.base_url, self.message_manager, skip_ws, is_mainnet)
-        self.address = self.core_manager.address
-        self.tg_manager = TelegramManager(self)
+        self.messenger = Messenger()
+        self._log = Logger(self, self.messenger)
+        self.core = Core(self.base_url, self.messenger, skip_ws, is_mainnet)
+        self.address = self.core.address
+        self.telegram = Telegram(self)
         self.strategy = strategy
-        self.log_manager = LogManager(self.message_manager, self.tg_manager, "logs/logs.txt")
-        self.log_manager.start()
+        self.dispatcher = Dispatcher(self.messenger, self.telegram, "logs/logs.txt")
+        self.dispatcher.start()
         self._running = False
         self._tg_task = None
         self._strategy_task = None
 
     async def start(self):
         t = time.time()
-        await self.core_manager.start()
+        await self.core.start()
         if self.strategy:
             try:
                 if asyncio.iscoroutinefunction(self.strategy.init):
-                    await self.strategy.init(self.core_manager)
+                    await self.strategy.init(self.core)
                 else:
-                    self.strategy.init(self.core_manager)
+                    self.strategy.init(self.core)
             except Exception as e:
-                await self._logging.error(f"Error in callback : {e}")
-        await self.tg_manager.start()
+                await self._log.error(f"Error in callback : {e}")
+        await self.telegram.start()
         self._running = True
-        await self._logging.success(f"orchester demarré en {(time.time()-t):.2f} s", send_tg= True)
+        await self._log.success(f"orchester demarré en {(time.time()-t):.2f} s", send_tg= True)
 
     async def stop(self):
-        await self._logging.info("orchester arrêt en cours...", send_tg= True)
+        await self._log.info("orchester arrêt en cours...", send_tg= True)
         await asyncio.sleep(1)
         if self.strategy:
             await self.strategy.stop()
@@ -49,10 +48,10 @@ class Orchester:
                     await task
                 except asyncio.CancelledError:
                     pass
-        await self.core_manager.stop()
-        await self._logging.success("orchester arrêté")
-        await self.tg_manager.stop()
-        await self.log_manager.stop()
+        await self.core.stop()
+        await self._log.success("orchester arrêté")
+        await self.telegram.stop()
+        await self.dispatcher.stop()
         await asyncio.sleep(0)
         self._running = False
 

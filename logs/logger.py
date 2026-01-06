@@ -85,30 +85,30 @@ class Messenger:
         await self._put(LogLevel.SUCCESS, context, message, save, send_tg)
 
 class Logger():
-    def __init__(self, objet, message_manager: Messenger):
-        self.message_manager = message_manager
+    def __init__(self, objet, messenger: Messenger):
+        self.messenger = messenger
         if isinstance(objet, str):
             self.filepath = objet
         else:
             self.filepath = get_file(objet)
 
     async def info(self, message: str, save: bool = True, send_tg: bool = False):
-        await self.message_manager.info(self.filepath, message, save, send_tg)
+        await self.messenger.info(self.filepath, message, save, send_tg)
 
     async def warning(self, message: str, save: bool = True, send_tg: bool = True):
-        await self.message_manager.warning(self.filepath + " in " + _callfunname(), message, save, send_tg)
+        await self.messenger.warning(self.filepath + " in " + _callfunname(), message, save, send_tg)
 
     async def error(self, message: str, save: bool = True, send_tg: bool = True):
-        await self.message_manager.error(self.filepath + " in " + _callfunname(), message, save, send_tg)
+        await self.messenger.error(self.filepath + " in " + _callfunname(), message, save, send_tg)
 
     async def critical(self, message: str, save: bool = True, send_tg: bool = True):
-        await self.message_manager.critical(self.filepath + " in " + _callfunname(), message, save, send_tg)
+        await self.messenger.critical(self.filepath + " in " + _callfunname(), message, save, send_tg)
 
     async def debug(self, message: str, save: bool = True, send_tg: bool = False):
-        await self.message_manager.debug(self.filepath, message, save, send_tg)
+        await self.messenger.debug(self.filepath, message, save, send_tg)
 
     async def exception(self, message: str, save: bool = True, send_tg: bool = True):
-        await self.message_manager.exception(self.filepath + " in " + _callfunname(), message, save, send_tg)
+        await self.messenger.exception(self.filepath + " in " + _callfunname(), message, save, send_tg)
 
     async def success(self, message: str, save: bool = True, send_tg: bool = False):
-        await self.message_manager.success(self.filepath, message, save, send_tg)
+        await self.messenger.success(self.filepath, message, save, send_tg)

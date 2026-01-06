@@ -7,10 +7,10 @@ def shell(*args, sep=' ', end='\n'):
     sys.stdout.flush()
 
 class Dispatcher:
-    def __init__(self, message_manager, tg_manager = None, filepath = "logs.txt" ):
-        self.message_manager = message_manager
+    def __init__(self, messenger, telegram = None, filepath = "logs.txt" ):
+        self.messenger = messenger
         self.filepath = filepath
-        self.tg_manager = tg_manager
+        self.telegram = telegram
         self._running = False
         self.file_handle = open(filepath, "a", buffering=1, encoding="utf-8") if filepath else None
         self._task = None
@@ -31,7 +31,7 @@ class Dispatcher:
 
     async def _send_telegram(self, message):
         try:
-            await self.tg_manager.send(message.format_tg())
+            await self.telegram.send(message.format_tg())
         except Exception as e:
             shell(f"[ERROR][Logger] Telegram error: {e}")
 
@@ -40,16 +40,16 @@ class Dispatcher:
             shell(message.format())
         if message.save and self.file_handle:
             await self._save_to_file(message)
-        if message.send_tg and self.tg_manager:
+        if message.send_tg and self.telegram:
             await self._send_telegram(message)
 
     async def _worker(self):
         self._running = True
         try:
             while self._running:
-                log = await self.message_manager.messages.get()
+                log = await self.messenger.messages.get()
                 await self._log(log)
-                self.message_manager.messages.task_done()
+                self.messenger.messages.task_done()
         except asyncio.CancelledError:
             pass
         finally:
