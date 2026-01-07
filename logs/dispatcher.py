@@ -59,7 +59,7 @@ class Dispatcher:
         if self._task is None or self._task.done():
             self._task = asyncio.create_task(self._worker())
         else:
-            shell("LogManager already started")
+            shell("Logger already started")
 
     async def stop(self):
         self._running = False

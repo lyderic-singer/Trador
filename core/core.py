@@ -9,7 +9,7 @@ from .session import Session
 from .api import API
 from .info import Info
 from .exchange import Exchange
-from HLB.logs.logger import Logger
+from logs.logger import Logger
 
 load_dotenv()
 

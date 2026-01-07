@@ -4,12 +4,12 @@ import aiohttp
 
 from .utils.error import ClientError, ServerError
 from .utils.types import Any
-from .session import SessionManager
-from HLB.logs.logger import Logger
+from .session import Session
+from logs.logger import Logger
 
 
 class API:
-    def __init__(self, base_url: str, messenger, session : SessionManager):
+    def __init__(self, base_url: str, messenger, session : Session):
         self.base_url = base_url
         self.session = session
         self._log = Logger(self, messenger)

@@ -3,7 +3,7 @@ import json
 from time import time
 from collections import defaultdict
 from typing import Any, Callable, Dict, List, NamedTuple, Optional, Tuple
-from HLB.logs.logger import Logger
+from logs.logger import Logger
 
 import websockets
 
@@ -229,7 +229,7 @@ class Websocket:
                     await asyncio.sleep(5)
 
     async def stop(self):
-        await self._log.info("Arrêt du WebSocketManager demandé.")
+        await self._log.info("Arrêt du WebSocket demandé.")
         self.stop_event.set()
         if self.ws:
             try:
@@ -239,4 +239,4 @@ class Websocket:
                 await self._log.error(f"Erreur pendant la fermeture de la connexion au websocket : {e}")
         self.ws = None
         self.ws_ready.clear()
-        await self._log.success("WebSocketManager arrêté proprement.")
+        await self._log.success("WebSocket arrêté proprement.")

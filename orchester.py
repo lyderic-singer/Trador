@@ -1,9 +1,9 @@
 import asyncio
 import time
 from core.utils.constants import MAINNET_API_URL, TESTNET_API_URL
-from HLB.logs.logger import Messenger, Logger
-from HLB.logs.dispatcher import Dispatcher
-from HLB.logs.telegram import Telegram
+from logs.logger import Messenger, Logger
+from logs.dispatcher import Dispatcher
+from logs.telegram import Telegram
 from core.core import Core
 
 class Orchester:

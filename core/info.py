@@ -79,7 +79,7 @@ class Info:
             await self._log.error("Tentative de disconnect alors que skip_ws est activé.")
             raise RuntimeError("Cannot call disconnect since skip_ws was used")
         await self.ws.stop()
-        await self._log.debug("WebSocketManager arrêté.")
+        await self._log.debug("WebSocket arrêté.")
         await self.api.close()
         await self._log.debug("API fermée.")
 

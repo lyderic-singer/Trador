@@ -1,5 +1,5 @@
 import aiohttp
-from HLB.logs.logger import Logger
+from logs.logger import Logger
 
 class Session:
     def __init__(self, messenger):
