@@ -16,6 +16,7 @@ def subscription_to_identifier(subscription: Dict[str, Any]) -> str:
     t = subscription["type"]
     if t == "allMids": return "allMids"
     if t == "l2Book": return f'l2Book:{subscription["coin"].lower()}'
+    if t == "activeAssetCtx": return f'activeAssetCtx:{subscription["coin"].lower()}'
     if t == "trades": return f'trades:{subscription["coin"].lower()}'
     if t == "userEvents": return "userEvents"
     if t == "userFills": return f'userFills:{subscription["user"].lower()}'
@@ -33,6 +34,7 @@ def ws_msg_to_identifier(ws_msg: Dict[str, Any]) -> Optional[str]:
     if c == "pong": return "pong"
     if c == "allMids": return "allMids"
     if c == "l2Book": return f'l2Book:{d["coin"].lower()}'
+    if c == "activeAssetCtx": return f'activeAssetCtx:{d["coin"].lower()}'
     if c == "trades": return f'trades:{d[0]["coin"].lower()}' if d else None
     if c == "user": return "userEvents"
     if c == "userFills": return f'userFills:{d["user"].lower()}'
