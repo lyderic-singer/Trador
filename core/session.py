@@ -1,5 +1,5 @@
 import aiohttp
-from Log.logger import Logger
+from log.logger import Logger
 
 class Session:
     def __init__(self, messenger):

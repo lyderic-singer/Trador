@@ -9,7 +9,7 @@ from ..session import Session
 from .api import API
 from .info import Info
 from .exchange import Exchange
-from Log.logger import Logger
+from log.logger import Logger
 
 load_dotenv()
 

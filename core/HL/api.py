@@ -5,7 +5,7 @@ import aiohttp
 from .utils.error import ClientError, ServerError
 from .utils.types import Any
 from ..session import Session
-from Log.logger import Logger
+from log.logger import Logger
 
 
 class API:

@@ -2,7 +2,7 @@ from .api import API
 import asyncio
 from .utils.types import (Any, Callable, List, Cloid, Meta, Optional, SpotMeta, SpotMetaAndAssetCtxs, Subscription, cast)
 from ..websocket import Websocket
-from Log.logger import Logger
+from log.logger import Logger
 
 class Info:
     def __init__(self, api: API, messenger, skip_ws: Optional[bool] = False, meta: Optional[Meta] = None, spot_meta: Optional[SpotMeta] = None, perp_dexs: Optional[List[str]] = None,):
