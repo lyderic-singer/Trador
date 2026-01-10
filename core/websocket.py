@@ -3,7 +3,7 @@ import json
 from time import time
 from collections import defaultdict
 from typing import Any, Callable, Dict, List, NamedTuple, Optional, Tuple
-from logs.logger import Logger
+from Log.logger import Logger
 
 import websockets
 

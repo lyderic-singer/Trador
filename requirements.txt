@@ -1,9 +1,0 @@
-websockets
-aiohttp
-typing_extensions
-eth_account
-ta
-python-telegram-bot
-msgpack
-matplotlib
-python-dotenv

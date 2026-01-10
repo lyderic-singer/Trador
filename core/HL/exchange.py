@@ -8,7 +8,7 @@ from .info import Info
 from .utils.constants import MAINNET_API_URL
 from .utils.signing import CancelByCloidRequest, CancelRequest, ModifyRequest, OidOrCloid, OrderRequest, OrderType, ScheduleCancelAction, float_to_usd_int, get_timestamp_ms, order_request_to_order_wire, order_wires_to_order_action, sign_agent, sign_approve_builder_fee, sign_convert_to_multi_sig_user_action, sign_l1_action, sign_multi_sig_action, sign_perp_dex_class_transfer_action, sign_spot_transfer_action, sign_token_delegate_action, sign_usd_class_transfer_action, sign_usd_transfer_action, sign_withdraw_from_bridge_action
 from .utils.types import Any, BuilderInfo, Cloid, Dict, List, Optional, PerpDexSchemaInput, Tuple
-from logs.logger import Logger
+from Log.logger import Logger
 
 max_decimal_perp = 6
 max_decimal_spot = 5

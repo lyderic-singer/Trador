@@ -1,12 +1,12 @@
 import aiohttp
-from logs.logger import Logger
+from Log.logger import Logger
 
 class Session:
     def __init__(self, messenger):
         self.session = None
         self._log = Logger(self, messenger)
 
-    async def get_session(self) -> aiohttp.ClientSession:
+    async def get(self) -> aiohttp.ClientSession:
         if self.session is None:
             await self._log.debug("Creating new aiohttp session.")
             self.session = aiohttp.ClientSession(headers={"Content-Type": "application/json"})

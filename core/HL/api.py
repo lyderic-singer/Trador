@@ -4,8 +4,8 @@ import aiohttp
 
 from .utils.error import ClientError, ServerError
 from .utils.types import Any
-from .session import Session
-from logs.logger import Logger
+from ..session import Session
+from Log.logger import Logger
 
 
 class API:
@@ -19,7 +19,7 @@ class API:
         url = self.base_url + url_path
         await self._log.debug(f"POST {url} | Payload: {payload}")
         try:
-            session = await self.session.get_session()
+            session = await self.session.get()
             async with session.post(url, json=payload) as response:
                 await self._handle_exception(response)
                 try:

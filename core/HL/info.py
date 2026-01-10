@@ -1,8 +1,8 @@
 from .api import API
 import asyncio
 from .utils.types import (Any, Callable, List, Cloid, Meta, Optional, SpotMeta, SpotMetaAndAssetCtxs, Subscription, cast)
-from .websocket import Websocket
-from logs.logger import Logger
+from ..websocket import Websocket
+from Log.logger import Logger
 
 class Info:
     def __init__(self, api: API, messenger, skip_ws: Optional[bool] = False, meta: Optional[Meta] = None, spot_meta: Optional[SpotMeta] = None, perp_dexs: Optional[List[str]] = None,):
@@ -48,7 +48,7 @@ class Info:
         await self._log.debug("Mapping coin_to_asset et name_to_coin initialisés.")
 
         perp_dex_to_offset = {"": 0}
-        perp_dexs = self.perp_dexs_arg or [""]
+        perp_dexs = self.perp_dexs_arg + [""]
 
         if self.perp_dexs_arg is not None:
             perp_dex_list = await self.perp_dexs()
@@ -73,6 +73,7 @@ class Info:
             self.coin_to_asset[asset_info["name"]] = asset
             self.name_to_coin[asset_info["name"]] = asset_info["name"]
             self.asset_to_sz_decimals[asset] = asset_info["szDecimals"]
+            self.sz_decimals[asset_info["name"]] = asset_info["szDecimals"]
 
     async def disconnect(self):
         if self.ws is None:

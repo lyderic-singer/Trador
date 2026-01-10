@@ -5,11 +5,11 @@ from dotenv import load_dotenv
 from eth_account import Account
 from eth_account.signers.local import LocalAccount
 
-from .session import Session
+from ..session import Session
 from .api import API
 from .info import Info
 from .exchange import Exchange
-from logs.logger import Logger
+from Log.logger import Logger
 
 load_dotenv()
 
@@ -28,7 +28,7 @@ def load_account_from_env(is_mainnet):
         raise ValueError("Le fichier de config doit contenir une clé {public} valide.")
     return account, address
 
-class Core:
+class HL:
     def __init__(self, base_url, messenger, skip_ws, is_mainnet):
         self.messenger = messenger
         self._log = Logger(self, messenger)
@@ -38,7 +38,7 @@ class Core:
         self.base_url = base_url
         self.session = Session(messenger)
         self.api = API(base_url, messenger, self.session)
-        self.info = Info(self.api, messenger, skip_ws)
+        self.info = Info(self.api, messenger, skip_ws, perp_dexs=["xyz", "flx", "vntl", "hyna"])
         self.ws = None
         self.exchange = Exchange(self.info, messenger, account)
         self._running = False
@@ -47,7 +47,7 @@ class Core:
         if not self._running:
             try:
                 await self._log.info("tentative de demarrage du core")
-                await self.session.get_session()
+                await self.session.get()
                 await self.info.start()
                 self.ws = self.info.ws
                 await self._log.success("core démarré", )
