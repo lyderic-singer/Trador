@@ -1,25 +1,33 @@
 from eth_account.signers.local import LocalAccount
+import time
 
 from .info import Info
 from .utils.constants import MAINNET_API_URL
-from .utils.signing import CancelByCloidRequest, CancelRequest, ModifyRequest, OrderRequest, OrderType, get_timestamp_ms, order_request_to_order_wire, order_wires_to_order_action, sign_l1_action
+from .utils.signing import CancelByCloidRequest, CancelRequest, ModifyRequest, OrderRequest, OrderType, order_request_to_order_wire, order_wires_to_order_action, sign_l1_action
 from .utils.types import Any, BuilderInfo, Cloid, List, Optional
 from log.logger import Logger
+import math
+from decimal import Decimal, ROUND_DOWN
 
-max_decimal_perp = 6
-max_decimal_spot = 5
+MAX_DECIMALS_PERP = 6
+MAX_DECIMALS_SPOT = 8
 
-def format_price(px, max_decimal):
-    if px > 100_000:
-        return round(px)
-    px = round(float(f"{px:.5g}"), max_decimal)
-    return px
+def _significant_digits(x: float) -> int:
+    d = Decimal(str(x)).normalize()
+    return len(d.as_tuple().digits)
 
-def format_price_perp(px):
-    return format_price(px, max_decimal_perp)
+def format_price(px: float, max_decimals: int, sz_decimals: int) -> float:
+    if float(px).is_integer():
+        return float(px)
+    max_dp = max_decimals - sz_decimals
+    q = Decimal("1e-" + str(max_dp))
+    px_d = Decimal(str(px)).quantize(q, rounding=ROUND_DOWN)
+    if _significant_digits(px_d) > 5:
+        raise ValueError("price has more than 5 significant figures")
+    return float(px_d)
 
-def format_price_spot(px):
-    return format_price(px, max_decimal_spot)
+def timestamp_ms():
+    return int(time.time() * 1000)
 
 class Exchange:
     DEFAULT_SLIPPAGE = 0.05
@@ -47,20 +55,11 @@ class Exchange:
             await self._log.error(f"Failed to post action: {e}")
             raise
 
-    async def _slippage_price(self, name: str, is_buy: bool, slippage: float, px: Optional[float] = None) -> float:
-        try:
-            coin = self.info.name_to_coin[name]
-            if not px:
-                px = float(await self.info.all_mids()[coin])
-            asset = self.info.coin_to_asset[coin]
-            is_spot = asset >= 10_000
-            px *= (1 + slippage) if is_buy else (1 - slippage)
-            result = round(float(f"{px:.5g}"), (6 if not is_spot else 8) - self.info.asset_to_sz_decimals[asset])
-            await self._log.debug(f"Calculated slippage price: {result}")
-            return result
-        except Exception as e:
-            await self._log.error(f"Error in slippage price calc: {e}")
-            raise
+    def format_price_perp(px: float, sz_decimals: int) -> float:
+        return format_price(px, MAX_DECIMALS_PERP, sz_decimals)
+
+    def format_price_spot(px: float, sz_decimals: int) -> float:
+        return format_price(px, MAX_DECIMALS_SPOT, sz_decimals)
 
     def set_expires_after(self, expires_after: Optional[int]) -> None:
         self.expires_after = expires_after
@@ -99,7 +98,7 @@ class Exchange:
     async def bulk_orders(self, order_requests: List[OrderRequest], builder: Optional[BuilderInfo] = None) -> Any:
         try:
             order_wires = [order_request_to_order_wire(order, self.info.name_to_asset(order["coin"])) for order in order_requests]
-            timestamp = get_timestamp_ms()
+            timestamp = timestamp_ms()
             if builder:
                 builder["b"] = builder["b"].lower()
             order_action = order_wires_to_order_action(order_wires, builder)
@@ -130,7 +129,7 @@ class Exchange:
 
     async def bulk_modify_orders(self, modify_requests: List[ModifyRequest]) -> Any:
         try: 
-            timestamp = get_timestamp_ms()
+            timestamp = timestamp_ms()
             modify_wires = [{
                 "oid": modify["oid"].to_raw() if isinstance(modify["oid"], Cloid) else modify["oid"],
                 "order": order_request_to_order_wire(modify["order"], self.info.name_to_asset(modify["order"]["coin"]))
@@ -141,28 +140,6 @@ class Exchange:
             return await self._post_action(modify_action, signature, timestamp)
         except Exception as e:
             await self._log.error(f"Failed bulk modify: {e}")
-            raise
-
-    async def market_open(self, name: str, is_buy: bool, sz: float, slippage: float = DEFAULT_SLIPPAGE, cloid: Optional[Cloid] = None) -> Any:
-        try:
-            limit_px = await self._slippage_price(name, is_buy, slippage)
-            return await self.order(name, is_buy, sz, limit_px, "ioc", cloid=cloid)
-        except Exception as e:
-            await self._log.error(f"Failed market open: {e}")
-            raise
-
-    async def market_close(self, name: str, is_buy: bool, slippage: float = DEFAULT_SLIPPAGE, cloid: Optional[Cloid] = None) -> Any:
-        try:
-            pos = await self.info.position(name)
-            side_sz = pos["szBuy"] if is_buy else pos["szSell"]
-            sz = float(side_sz)
-            if sz == 0:
-                await self._log.warning(f"No position to close for {name}, is_buy={is_buy}")
-                return None
-            limit_px = await self._slippage_price(name, not is_buy, slippage)
-            return await self.order(name, not is_buy, sz, limit_px, "ioc", reduce_only=True, cloid=cloid)
-        except Exception as e:
-            await self._log.error(f"Failed market close: {e}")
             raise
 
     async def cancel(self, name: str, oid: int) -> Any:
@@ -183,7 +160,7 @@ class Exchange:
 
     async def bulk_cancel(self, cancel_requests: List[CancelRequest]) -> Any:
         try:
-            timestamp = get_timestamp_ms()
+            timestamp = timestamp_ms()
             await self._log.debug(f"Bulk cancel requests: {cancel_requests} at {timestamp}")
             cancel_action = {
                 "type": "cancel",
@@ -210,7 +187,7 @@ class Exchange:
 
     async def bulk_cancel_by_cloid(self, cancel_requests: List[CancelByCloidRequest]) -> Any:
         try:
-            timestamp = get_timestamp_ms()
+            timestamp = timestamp_ms()
             await self._log.debug(f"Bulk cancel by cloid requests: {cancel_requests} at {timestamp}")
             cancel_action = {
                 "type": "cancelByCloid",
