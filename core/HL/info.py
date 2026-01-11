@@ -1,5 +1,6 @@
 from .api import API
 import asyncio
+from .utils.constants import MAINNET_WS_URL, MAINNET_API_URL, TESTNET_WS_URL
 from .utils.types import (Any, Cloid, Meta, Optional, SpotMeta, SpotMetaAndAssetCtxs, Instrument)
 from ..websocket import Websocket
 from log.logger import Logger
@@ -42,7 +43,7 @@ class Info:
 
     async def start(self):
         if not self.skip_ws:
-            self.ws = Websocket(self.url, self.messenger)
+            self.ws = Websocket(MAINNET_WS_URL if self.url == MAINNET_API_URL else TESTNET_WS_URL, self.messenger)
             asyncio.create_task(self.ws.start())
         await self._load_spot()
         perp_dexs = await self.perp_dexs()

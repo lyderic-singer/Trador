@@ -47,13 +47,13 @@ def ws_msg_to_identifier(ws_msg: Dict[str, Any]) -> Optional[str]:
     return None
 
 class Websocket:
-    def __init__(self, base_url: str, messenger):
+    def __init__(self, url: str, messenger):
         self.subscription_id_counter = 0
         self.queued_subscriptions: List[Tuple[Dict[str, Any], Subscription]] = []
         self.active_subscriptions: Dict[str, List[Subscription]] = defaultdict(list)
         self.ws_ready = asyncio.Event()
         self.stop_event = asyncio.Event()
-        self.uri = base_url.replace("https", "wss").replace("http", "ws") + "/ws"
+        self.uri = url
         self.ws: Optional[websockets.WebSocketClientProtocol] = None
         self.last_pong = asyncio.get_event_loop().time()
         self.callback_queue: asyncio.Queue = asyncio.Queue()
