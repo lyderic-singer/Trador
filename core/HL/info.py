@@ -176,30 +176,3 @@ class Info:
         coin = self.instrument(x).coin
         await self._log.info(f"Appel single_meta avec coin={coin}, dex={dex}")
         return await self.api.post("/info", {"type": "meta", "dex": dex, "coin": coin})
-
-    async def subscribe(self, subscription: Subscription, callback: Callable[[Any], None]) -> int:
-        self._remap_coin_subscription(subscription)
-        if self.ws is None:
-            await self._log.error("subscribe appelé sans websocket")
-            raise RuntimeError("impossible d'appeler subscribe sans web socket init")
-        sub_id = await self.ws.subscribe(subscription, callback)
-        await self._log.info(f"Abonnement réussi, subscription_id={sub_id}, subscription={subscription}")
-        return sub_id
-
-    async def unsubscribe(self, subscription: Subscription, subscription_id: int) -> bool:
-        self._remap_coin_subscription(subscription)
-        if self.ws is None:
-            await self._log.error("unsubscribe appelé sans web")
-            raise RuntimeError("impossible d'appeler unsubscribe sans web socket init")
-        success = await self.ws.unsubscribe(subscription, subscription_id)
-        if success:
-            await self._log.success(f"Désabonnement réussi, subscription_id={subscription_id}")
-        else:
-            await self._log.warning(f"Échec du désabonnement, subscription_id={subscription_id}")
-        return success
-
-    async def unsubscribe_all(self) -> None:
-        if self.ws is None:
-            await self._log.error("unsubscribe_all appelé sans web socket init")
-            raise RuntimeError("impossible d'appeler unsubscribe_all sans web socket init")
-        await self.ws.unsubscribe_all()
