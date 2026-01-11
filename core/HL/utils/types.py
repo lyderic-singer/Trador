@@ -1,17 +1,53 @@
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, List, Literal, NamedTuple, Optional, Tuple, TypedDict, Union, cast
-from typing_extensions import NotRequired
+from typing import List, Literal, Optional, Tuple, TypedDict, Union
 
 AssetInfo = TypedDict("AssetInfo", {"name": str, "szDecimals": int})
 Meta = TypedDict("Meta", {"universe": List[AssetInfo]})
-Side = Union[Literal["A"], Literal["B"]]
-SIDES: List[Side] = ["A", "B"]
+SIDE = Literal["A", "B"]
+TIF = Literal["Alo", "Ioc", "Gtc"]
+TPSL = Literal["tp", "sl"]
+
+InstrumentType = Literal["perp", "spot", "hip3", ""]
+
+class LimitType(TypedDict):
+    tif: TIF
+
+class TriggerType(TypedDict):
+    isMarket: bool
+    triggerPx: str
+    tpsl: TPSL
+
+OrderType = TypedDict(
+    "OrderType",
+    {
+        "limit": LimitType,
+    },
+    total=False,
+)
+
+TriggerOrderType = TypedDict(
+    "TriggerOrderType",
+    {
+        "trigger": TriggerType,
+    },
+    total=False,
+)
+
+class Order(TypedDict):
+    a: int
+    b: bool # buy ?
+    p: str
+    s: str
+    r: bool # reduceOnly ?
+    t: Union[OrderType, TriggerOrderType]
+    c: Optional[Cloid]
 
 SpotAssetInfo = TypedDict(
     "SpotAssetInfo",
     {"name": str, "tokens": List[int], "index": int, "isCanonical": bool},
 )
+
 SpotTokenInfo = TypedDict(
     "SpotTokenInfo",
     {
@@ -25,10 +61,12 @@ SpotTokenInfo = TypedDict(
         "fullName": Optional[str],
     },
 )
+
 SpotMeta = TypedDict(
     "SpotMeta",
     {"universe": List[SpotAssetInfo], "tokens": List[SpotTokenInfo]},
 )
+
 SpotAssetCtx = TypedDict(
     "SpotAssetCtx",
     {
@@ -40,95 +78,8 @@ SpotAssetCtx = TypedDict(
         "coin": str,
     },
 )
+
 SpotMetaAndAssetCtxs = Tuple[SpotMeta, List[SpotAssetCtx]]
-
-AllMidsSubscription = TypedDict("AllMidsSubscription", {"type": Literal["allMids"]})
-BboSubscription = TypedDict("BboSubscription", {"type": Literal["bbo"], "coin": str})
-L2BookSubscription = TypedDict("L2BookSubscription", {"type": Literal["l2Book"], "coin": str})
-TradesSubscription = TypedDict("TradesSubscription", {"type": Literal["trades"], "coin": str})
-UserEventsSubscription = TypedDict("UserEventsSubscription", {"type": Literal["userEvents"], "user": str})
-UserFillsSubscription = TypedDict("UserFillsSubscription", {"type": Literal["userFills"], "user": str})
-CandleSubscription = TypedDict("CandleSubscription", {"type": Literal["candle"], "coin": str, "interval": str})
-OrderUpdatesSubscription = TypedDict("OrderUpdatesSubscription", {"type": Literal["orderUpdates"], "user": str})
-UserFundingsSubscription = TypedDict("UserFundingsSubscription", {"type": Literal["userFundings"], "user": str})
-UserNonFundingLedgerUpdatesSubscription = TypedDict(
-    "UserNonFundingLedgerUpdatesSubscription",
-    {"type": Literal["userNonFundingLedgerUpdates"], "user": str},
-)
-WebData2Subscription = TypedDict("WebData2Subscription", {"type": Literal["webData2"], "user": str})
-
-Subscription = Union[
-    AllMidsSubscription,
-    BboSubscription,
-    L2BookSubscription,
-    TradesSubscription,
-    UserEventsSubscription,
-    UserFillsSubscription,
-    CandleSubscription,
-    OrderUpdatesSubscription,
-    UserFundingsSubscription,
-    UserNonFundingLedgerUpdatesSubscription,
-    WebData2Subscription,
-]
-
-AllMidsData = TypedDict("AllMidsData", {"mids": Dict[str, str]})
-AllMidsMsg = TypedDict("AllMidsMsg", {"channel": Literal["allMids"], "data": AllMidsData})
-L2Level = TypedDict("L2Level", {"px": str, "sz": str, "n": int})
-L2BookData = TypedDict("L2BookData", {"coin": str, "levels": Tuple[List[L2Level], List[L2Level]], "time": int})
-L2BookMsg = TypedDict("L2BookMsg", {"channel": Literal["l2Book"], "data": L2BookData})
-BboData = TypedDict("BboData", {"coin": str, "time": int, "bbo": Tuple[Optional[L2Level], Optional[L2Level]]})
-BboMsg = TypedDict("BboMsg", {"channel": Literal["bbo"], "data": BboData})
-PongMsg = TypedDict("PongMsg", {"channel": Literal["pong"]})
-Trade = TypedDict("Trade", {"coin": str, "side": Side, "px": str, "sz": int, "hash": str, "time": int})
-TradesMsg = TypedDict("TradesMsg", {"channel": Literal["trades"], "data": List[Trade]})
-Fill = TypedDict(
-    "Fill",
-    {
-        "coin": str,
-        "px": str,
-        "sz": str,
-        "side": Side,
-        "time": int,
-        "startPosition": str,
-        "dir": str,
-        "closedPnl": str,
-        "hash": str,
-        "oid": int,
-        "crossed": bool,
-        "fee": str,
-        "tid": int,
-        "feeToken": str,
-    },
-)
-
-UserEventsData = TypedDict("UserEventsData", {"fills": List[Fill]}, total=False)
-UserEventsMsg = TypedDict("UserEventsMsg", {"channel": Literal["user"], "data": UserEventsData})
-UserFillsData = TypedDict("UserFillsData", {"user": str, "isSnapshot": bool, "fills": List[Fill]})
-UserFillsMsg = TypedDict("UserFillsMsg", {"channel": Literal["userFills"], "data": UserFillsData})
-
-OtherWsMsg = TypedDict(
-    "OtherWsMsg",
-    {
-        "channel": Union[
-            Literal["candle"],
-            Literal["orderUpdates"],
-            Literal["userFundings"],
-            Literal["userNonFundingLedgerUpdates"],
-            Literal["webData2"],
-        ],
-        "data": Any,
-    },
-    total=False,
-)
-
-WsMsg = Union[AllMidsMsg, BboMsg, L2BookMsg, TradesMsg, UserEventsMsg, PongMsg, UserFillsMsg, OtherWsMsg]
-
-BuilderInfo = TypedDict("BuilderInfo", {"b": str, "f": int})
-
-PerpDexSchemaInput = TypedDict(
-    "PerpDexSchemaInput", {"fullName": str, "collateralToken": int, "oracleUpdater": Optional[str]}
-)
-
 
 class Cloid:
     def __init__(self, raw_cloid: str):
