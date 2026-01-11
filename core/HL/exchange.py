@@ -4,33 +4,11 @@ import time
 from .info import Info
 from .utils.constants import MAINNET_API_URL
 from .utils.signing import CancelByCloidRequest, CancelRequest, ModifyRequest, OrderRequest, OrderType, order_request_to_order_wire, order_wires_to_order_action, sign_l1_action
+from .utils.functions import timestamp_ms, format_price
 from .utils.types import Any, BuilderInfo, Cloid, List, Optional
 from log.logger import Logger
-import math
-from decimal import Decimal, ROUND_DOWN
-
-MAX_DECIMALS_PERP = 6
-MAX_DECIMALS_SPOT = 8
-
-def _significant_digits(x: float) -> int:
-    d = Decimal(str(x)).normalize()
-    return len(d.as_tuple().digits)
-
-def format_price(px: float, max_decimals: int, sz_decimals: int) -> float:
-    if float(px).is_integer():
-        return float(px)
-    max_dp = max_decimals - sz_decimals
-    q = Decimal("1e-" + str(max_dp))
-    px_d = Decimal(str(px)).quantize(q, rounding=ROUND_DOWN)
-    if _significant_digits(px_d) > 5:
-        raise ValueError("price has more than 5 significant figures")
-    return float(px_d)
-
-def timestamp_ms():
-    return int(time.time() * 1000)
 
 class Exchange:
-    DEFAULT_SLIPPAGE = 0.05
     def __init__(self, info: Info, messenger, wallet: LocalAccount, vault_address: str = None, account_address: str = None):
         self.wallet = wallet
         self._log = Logger(self, messenger)
@@ -40,7 +18,7 @@ class Exchange:
         self.info = info
         self.expires_after: Optional[int] = None
 
-    async def _post_action(self, action, signature, nonce):
+    async def post(self, action, signature, nonce):
         payload = {
             "action": action,
             "nonce": nonce,
@@ -48,18 +26,11 @@ class Exchange:
             "vaultAddress": self.vault_address if action["type"] != "usdClassTransfer" else None,
             "expiresAfter": self.expires_after,
         }
-        await self._log.debug(f"Posting action: {payload}")
         try:
             return await self.info.api.post("/exchange", payload)
         except Exception as e:
             await self._log.error(f"Failed to post action: {e}")
-            raise
-
-    def format_price_perp(px: float, sz_decimals: int) -> float:
-        return format_price(px, MAX_DECIMALS_PERP, sz_decimals)
-
-    def format_price_spot(px: float, sz_decimals: int) -> float:
-        return format_price(px, MAX_DECIMALS_SPOT, sz_decimals)
+            raise e
 
     def set_expires_after(self, expires_after: Optional[int]) -> None:
         self.expires_after = expires_after
@@ -70,7 +41,7 @@ class Exchange:
             "coin": name,
             "is_buy": is_buy,
             "sz": round( sz, self.info.asset_to_sz_decimals[self.info.name_to_asset(name)]),
-            "limit_px": format_price_spot(limit_px),
+            "limit_px": self.format_price_spot(limit_px),
             "order_type": order_type,
             "reduce_only": reduce_only,
         }
@@ -86,7 +57,7 @@ class Exchange:
 
     async def perp_order(self, coin: str, is_buy: bool, size: float, price: float) -> bool:
         size = round(size, self.info.sz_decimals[coin])
-        price = format_price_perp(price)
+        price = self.format_price_perp(price)
         return await self.order(coin, is_buy, size, price, {"limit": {"tif": "Alo"}})
 
     async def spot_order(self, name: str, is_buy: bool, size: float, price: float) -> bool:
