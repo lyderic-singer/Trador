@@ -8,73 +8,6 @@ from eth_utils import keccak, to_hex
 
 from .types import Cloid, Literal, NotRequired, Optional, TypedDict, Union
 
-Tif = Union[Literal["Alo"], Literal["Ioc"], Literal["Gtc"]]
-Tpsl = Union[Literal["tp"], Literal["sl"]]
-LimitOrderType = TypedDict("LimitOrderType", {"tif": Tif})
-TriggerOrderType = TypedDict("TriggerOrderType", {"triggerPx": float, "isMarket": bool, "tpsl": Tpsl})
-TriggerOrderTypeWire = TypedDict("TriggerOrderTypeWire", {"triggerPx": str, "isMarket": bool, "tpsl": Tpsl})
-OrderType = TypedDict("OrderType", {"limit": LimitOrderType, "trigger": TriggerOrderType}, total=False)
-OrderTypeWire = TypedDict("OrderTypeWire", {"limit": LimitOrderType, "trigger": TriggerOrderTypeWire}, total=False)
-OrderRequest = TypedDict(
-    "OrderRequest",
-    {
-        "coin": str,
-        "is_buy": bool,
-        "sz": float,
-        "limit_px": float,
-        "order_type": OrderType,
-        "reduce_only": bool,
-        "cloid": NotRequired[Optional[Cloid]],
-    },
-    total=False,
-)
-OidOrCloid = Union[int, Cloid]
-ModifyRequest = TypedDict(
-    "ModifyRequest",
-    {
-        "oid": OidOrCloid,
-        "order": OrderRequest,
-    },
-    total=False,
-)
-CancelRequest = TypedDict("CancelRequest", {"coin": str, "oid": int})
-CancelByCloidRequest = TypedDict("CancelByCloidRequest", {"coin": str, "cloid": Cloid})
-
-Grouping = Union[Literal["na"], Literal["normalTpsl"], Literal["positionTpsl"]]
-Order = TypedDict(
-    "Order", {"asset": int, "isBuy": bool, "limitPx": float, "sz": float, "reduceOnly": bool, "cloid": Optional[Cloid]}
-)
-
-
-OrderWire = TypedDict(
-    "OrderWire",
-    {
-        "a": int,
-        "b": bool,
-        "p": str,
-        "s": str,
-        "r": bool,
-        "t": OrderTypeWire,
-        "c": NotRequired[Optional[str]],
-    },
-)
-
-ModifyWire = TypedDict(
-    "ModifyWire",
-    {
-        "oid": int,
-        "order": OrderWire,
-    },
-)
-
-ScheduleCancelAction = TypedDict(
-    "ScheduleCancelAction",
-    {
-        "type": Literal["scheduleCancel"],
-        "time": NotRequired[Optional[int]],
-    },
-)
-
 USD_SEND_SIGN_TYPES = [
     {"name": "hyperliquidChain", "type": "string"},
     {"name": "destination", "type": "string"},
@@ -132,21 +65,6 @@ MULTI_SIG_ENVELOPE_SIGN_TYPES = [
     {"name": "multiSigActionHash", "type": "bytes32"},
     {"name": "nonce", "type": "uint64"},
 ]
-
-
-def order_type_to_wire(order_type: OrderType) -> OrderTypeWire:
-    if "limit" in order_type:
-        return {"limit": order_type["limit"]}
-    elif "trigger" in order_type:
-        return {
-            "trigger": {
-                "isMarket": order_type["trigger"]["isMarket"],
-                "triggerPx": float_to_wire(order_type["trigger"]["triggerPx"]),
-                "tpsl": order_type["trigger"]["tpsl"],
-            }
-        }
-    raise ValueError("Invalid order type", order_type)
-
 
 def address_to_bytes(address):
     return bytes.fromhex(address[2:] if address.startswith("0x") else address)
@@ -218,7 +136,7 @@ def user_signed_payload(primary_type, payload_types, action):
     }
 
 
-def sign_l1_action(wallet, action, active_pool, nonce, expires_after, is_mainnet):
+def sign(wallet, action, active_pool, nonce, expires_after, is_mainnet):
     hash = action_hash(action, active_pool, nonce, expires_after)
     phantom_agent = construct_phantom_agent(hash, is_mainnet)
     data = l1_payload(phantom_agent)
@@ -283,7 +201,7 @@ def sign_multi_sig_l1_action_payload(
     wallet, action, is_mainnet, vault_address, timestamp, expires_after, payload_multi_sig_user, outer_signer
 ):
     envelope = [payload_multi_sig_user.lower(), outer_signer.lower(), action]
-    return sign_l1_action(
+    return sign(
         wallet,
         envelope,
         vault_address,
@@ -431,58 +349,3 @@ def recover_user_from_user_signed_action(action, signature, payload_types, prima
     structured_data = encode_typed_data(full_message=data)
     address = Account.recover_message(structured_data, vrs=[signature["v"], signature["r"], signature["s"]])
     return address
-
-
-def float_to_wire(x: float) -> str:
-    rounded = f"{x:.8f}"
-    if abs(float(rounded) - x) >= 1e-12:
-        raise ValueError("float_to_wire causes rounding", x)
-    if rounded == "-0":
-        rounded = "0"
-    normalized = Decimal(rounded).normalize()
-    return f"{normalized:f}"
-
-
-def float_to_int_for_hashing(x: float) -> int:
-    return float_to_int(x, 8)
-
-
-def float_to_usd_int(x: float) -> int:
-    return float_to_int(x, 6)
-
-
-def float_to_int(x: float, power: int) -> int:
-    with_decimals = x * 10**power
-    if abs(round(with_decimals) - with_decimals) >= 1e-3:
-        raise ValueError("float_to_int causes rounding", x)
-    res: int = round(with_decimals)
-    return res
-
-
-def get_timestamp_ms() -> int:
-    return int(time.time() * 1000)
-
-
-def order_request_to_order_wire(order: OrderRequest, asset: int) -> OrderWire:
-    order_wire: OrderWire = {
-        "a": asset,
-        "b": order["is_buy"],
-        "p": float_to_wire(order["limit_px"]),
-        "s": float_to_wire(order["sz"]),
-        "r": order["reduce_only"],
-        "t": order_type_to_wire(order["order_type"]),
-    }
-    if "cloid" in order and order["cloid"] is not None:
-        order_wire["c"] = order["cloid"].to_raw()
-    return order_wire
-
-
-def order_wires_to_order_action(order_wires, builder=None):
-    action = {
-        "type": "order",
-        "orders": order_wires,
-        "grouping": "na",
-    }
-    if builder:
-        action["builder"] = builder
-    return action
