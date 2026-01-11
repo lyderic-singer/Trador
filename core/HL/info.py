@@ -89,7 +89,7 @@ class Info:
 
     async def meta(self, dex: str = "") -> Meta:
         await self._log.debug(f"Appel meta")
-        return cast(Meta, await self.api.post("/info", {"type": "meta", "dex": dex}))
+        return await self.api.post("/info", {"type": "meta", "dex": dex})
 
     async def meta_and_asset_ctxs(self) -> Any:
         await self._log.debug("Appel meta_and_asset_ctxs")
@@ -101,21 +101,20 @@ class Info:
 
     async def spot_meta(self) -> SpotMeta:
         await self._log.debug("Appel spot_meta")
-        return cast(SpotMeta, await self.api.post("/info", {"type": "spotMeta"}))
+        return await self.api.post("/info", {"type": "spotMeta"})
 
     async def spot_meta_and_asset_ctxs(self) -> SpotMetaAndAssetCtxs:
         await self._log.debug("Appel spot_meta_and_asset_ctxs")
-        return cast(SpotMetaAndAssetCtxs, await self.api.post("/info", {"type": "spotMetaAndAssetCtxs"}))
+        return await self.api.post("/info", {"type": "spotMetaAndAssetCtxs"})
     
-    async def get_price(self, name: str, dex = ""):
-        await self._log.info(f"prix demandé pour {name}")
+    async def get_price(self, x: str | int, dex = ""):
+        await self._log.info(f"prix demandé pour {x}")
         prices = await self.all_mids(dex)
-        coin = self.name_to_coin[name]
-        return float(prices[coin])
+        return float(prices[self.instrument(x).coin])
 
-    async def funding_history(self, name: str, startTime: int, endTime: Optional[int] = None) -> Any:
-        await self._log.debug(f"Appel funding_history avec name={name}, startTime={startTime}, endTime={endTime}")
-        coin = self.name_to_coin[name]
+    async def funding_history(self, x: str | int, startTime: int, endTime: Optional[int] = None) -> Any:
+        coin = self.instrument(x).coin
+        await self._log.debug(f"Appel funding_history avec coin={coin}, startTime={startTime}, endTime={endTime}")
         if endTime is not None:
             return await self.api.post("/info", {"type": "fundingHistory", "coin": coin, "startTime": startTime, "endTime": endTime})
         return await self.api.post("/info", {"type": "fundingHistory", "coin": coin, "startTime": startTime})
@@ -126,13 +125,15 @@ class Info:
             return await self.api.post("/info", {"type": "userFunding", "user": user, "startTime": startTime, "endTime": endTime})
         return await self.api.post("/info", {"type": "userFunding", "user": user, "startTime": startTime})
 
-    async def l2_snapshot(self, name: str) -> Any:
-        await self._log.debug(f"Appel l2_snapshot avec name={name}")
-        return await self.api.post("/info", {"type": "l2Book", "coin": self.name_to_coin[name]})
+    async def l2_snapshot(self, x: str | int) -> Any:
+        coin = self.instrument(x).coin
+        await self._log.debug(f"Appel l2_snapshot avec coin={coin}")
+        return await self.api.post("/info", {"type": "l2Book", "coin": coin})
 
-    async def candles_snapshot(self, name: str, interval: str, startTime: int, endTime: int) -> Any:
-        await self._log.debug(f"Appel candles_snapshot avec name={name}, interval={interval}, startTime={startTime}, endTime={endTime}")
-        req = {"coin": self.name_to_coin[name], "interval": interval, "startTime": startTime, "endTime": endTime}
+    async def candles_snapshot(self, x: str | int, interval: str, startTime: int, endTime: int) -> Any:
+        coin = self.instrument(x).coin
+        await self._log.debug(f"Appel candles_snapshot avec coin={coin}, interval={interval}, startTime={startTime}, endTime={endTime}")
+        req = {"coin": coin, "interval": interval, "startTime": startTime, "endTime": endTime}
         return await self.api.post("/info", {"type": "candleSnapshot", "req": req})
 
     async def user_fees(self, address: str) -> Any:
@@ -171,14 +172,10 @@ class Info:
         await self._log.debug(f"Appel query_user_to_multi_sig_signers pour multi_sig_user={multi_sig_user}")
         return await self.api.post("/info", {"type": "userToMultiSigSigners", "user": multi_sig_user})
     
-    async def single_meta(self, name: str, dex: str = "") -> dict:
-        await self._log.info(f"Appel single_meta avec name={name}, dex={dex}")
-        coin = self.name_to_coin.get(name, name)  # fallback au name brut
+    async def single_meta(self, x: str | int, dex: str = "") -> dict:
+        coin = self.instrument(x).coin
+        await self._log.info(f"Appel single_meta avec coin={coin}, dex={dex}")
         return await self.api.post("/info", {"type": "meta", "dex": dex, "coin": coin})
-
-    def _remap_coin_subscription(self, subscription: Subscription) -> None:
-        if subscription["type"] in {"l2Book", "trades", "candle", "bbo"}:
-            subscription["coin"] = self.name_to_coin[subscription["coin"]]
 
     async def subscribe(self, subscription: Subscription, callback: Callable[[Any], None]) -> int:
         self._remap_coin_subscription(subscription)
@@ -206,6 +203,3 @@ class Info:
             await self._log.error("unsubscribe_all appelé sans web socket init")
             raise RuntimeError("impossible d'appeler unsubscribe_all sans web socket init")
         await self.ws.unsubscribe_all()
-
-    def name_to_asset(self, name: str) -> int:
-        return self.coin_to_asset[self.name_to_coin[name]]
