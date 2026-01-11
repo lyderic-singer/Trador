@@ -6,13 +6,11 @@ from ..websocket import Websocket
 from log.logger import Logger
 
 class Info:
-    def __init__(self, api: API, messenger, skip_ws: bool = False):
+    def __init__(self, url, messenger, api: API):
         self.api = api
         self.messenger = messenger
-        self.skip_ws = skip_ws
-        self.url = api.url
+        self.url = url
         self._log = Logger(self, messenger)
-        self.ws = None
         self.instruments_dict: dict[int, Instrument] = {} # asset -> Instrument
         self.instruments_table: dict[str | int, int] = {} # name | coin | asset -> asset
     
@@ -42,23 +40,11 @@ class Info:
             self._register(f'{base_info["name"]}/{quote_info["name"]}', info['name'], asset, base_info["szDecimals"])
 
     async def start(self):
-        if not self.skip_ws:
-            self.ws = Websocket(MAINNET_WS_URL if self.url == MAINNET_API_URL else TESTNET_WS_URL, self.messenger)
-            asyncio.create_task(self.ws.start())
         await self._load_spot()
         perp_dexs = await self.perp_dexs()
         for i, dex in enumerate([""] + [d["name"] for d in perp_dexs[1:]]):
             offset = 0 if dex == "" else 110000 + (i - 1) * 10000
             await self._load_perp(dex, offset)
-
-    async def disconnect(self):
-        if self.ws is None:
-            await self._log.error("Tentative de disconnect alors que skip_ws est activé.")
-            raise RuntimeError("Cannot call disconnect since skip_ws was used")
-        await self.ws.stop()
-        await self._log.debug("WebSocket arrêté.")
-        await self.api.close()
-        await self._log.debug("API fermée.")
 
     async def user_state(self, address: str, dex: str = "") -> Any:
         await self._log.debug(f"Appel de user_state")

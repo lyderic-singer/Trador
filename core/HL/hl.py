@@ -1,11 +1,12 @@
 import os
-import json
 from dotenv import load_dotenv
-
+import asyncio
+from .utils.constants import MAINNET_API_URL, MAINNET_WS_URL, TESTNET_API_URL, TESTNET_WS_URL
 from eth_account import Account
 from eth_account.signers.local import LocalAccount
 
 from ..session import Session
+from ..websocket import Websocket
 from .api import API
 from .info import Info
 from .exchange import Exchange
@@ -29,18 +30,19 @@ def load_account_from_env(mainnet):
     return account, address
 
 class HL:
-    def __init__(self, url, messenger, skip_ws, mainnet):
+    def __init__(self, mainnet, messenger):
         self.messenger = messenger
         self._log = Logger(self, messenger)
         account, address = load_account_from_env(mainnet)
         self.account = account
         self.address = address
-        self.url = url
-        self.session = Session(messenger)
+        url = MAINNET_API_URL if mainnet else TESTNET_API_URL
+        self.session = Session(messenger) # cree
         self.api = API(url, messenger, self.session)
-        self.info = Info(self.api, messenger, skip_ws, perp_dexs=["xyz", "flx", "vntl", "hyna"])
-        self.ws = None
-        self.exchange = Exchange(self.info, messenger, account, url)
+        self.info = Info(url, messenger, self.api)
+        self.ws = Websocket(MAINNET_WS_URL if mainnet else TESTNET_WS_URL, self.messenger)
+        self.exchange = Exchange(url, messenger, account, self.info)
+        asyncio.create_task(self.ws.start())
         self._running = False
 
     async def start(self) -> None:
@@ -61,8 +63,8 @@ class HL:
         if self._running:
             try:
                 await self._log.info("demande d'arret du core")
-                await self.info.unsubscribe_all()
-                await self.info.disconnect()
+                await self.ws.stop()
+                await self.api.stop()
                 await self._log.success("core arreté et deconnecté")
                 self._running = False
             except Exception as e:
