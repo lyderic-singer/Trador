@@ -1,79 +1,54 @@
 from .api import API
 import asyncio
-from .utils.types import (Any, Callable, List, Cloid, Meta, Optional, SpotMeta, SpotMetaAndAssetCtxs, Subscription, cast)
+from .utils.types import (Any, Callable, List, Cloid, Meta, Optional, SpotMeta, SpotMetaAndAssetCtxs, Instrument, Subscription)
 from ..websocket import Websocket
 from log.logger import Logger
 
 class Info:
-    def __init__(self, api: API, messenger, skip_ws: Optional[bool] = False, meta: Optional[Meta] = None, spot_meta: Optional[SpotMeta] = None, perp_dexs: Optional[List[str]] = None,):
+    def __init__(self, api: API, messenger, skip_ws: bool = False):
+        self.api = api
         self.messenger = messenger
         self.skip_ws = skip_ws
-        self.meta_arg = meta
-        self.spot_meta_arg = spot_meta
         self.base_url = api.base_url
-        self.perp_dexs_arg = perp_dexs
         self._log = Logger(self, messenger)
-        self.api = api
-        self.ws: Optional[Websocket] = None
-        self.coin_to_asset = {}
-        self.name_to_coin = {}
-        self.asset_to_sz_decimals = {}
-        self.sz_decimals = None
+        self.ws = None
+        self.instruments_dict: dict[int, Instrument] = {} # asset -> Instrument
+        self.instruments_table: dict[str | int, int] = {} # name | coin | asset -> asset
+    
+    def _register(self, name: str, coin: str, asset: int, szDecimals: int):
+        inst = Instrument(name, coin, asset, szDecimals)
+        self.instruments_dict[asset] = inst
+        self.instruments_table[asset] = asset
+        self.instruments_table[name] = asset
+        self.instruments_table[coin] = asset
+
+    def instrument(self, x: str | int) -> Instrument:
+        asset = self.instruments_table[x]
+        return self.instruments_dict[asset]
+    
+    async def _load_perp(self, dex: str, offset: int):
+        meta = await self.meta(dex)
+        for i, info in enumerate(meta["universe"]):
+            self._register(info["name"], info["name"], offset + i, info["szDecimals"])
+    
+    async def _load_spot(self):
+        spot_meta = await self.spot_meta()
+        for info in spot_meta["universe"]:
+            asset = info["index"] + 10000
+            base, quote = info["tokens"]
+            base_info = spot_meta["tokens"][base]
+            quote_info = spot_meta["tokens"][quote]
+            self._register(f'{base_info["name"]}/{quote_info["name"]}', info['name'], asset, base_info["szDecimals"])
 
     async def start(self):
-        await self._log.info("Démarrage de la connexion websocket...")
-        meta = await self.meta()
-        self.sz_decimals = {asset_info["name"]: asset_info["szDecimals"] for asset_info in meta["universe"]}
-
         if not self.skip_ws:
             self.ws = Websocket(self.base_url, self.messenger)
             asyncio.create_task(self.ws.start())
-        else:
-            await self._log.warning("skip_ws est activé, websocket non lancé.")
-
-        spot_meta = self.spot_meta_arg or await self.spot_meta()
-        await self._log.info("Récupération du spot_meta terminée.")
-
-        for spot_info in spot_meta["universe"]:
-            asset = spot_info["index"] + 10000
-            self.coin_to_asset[spot_info["name"]] = asset
-            self.name_to_coin[spot_info["name"]] = spot_info["name"]
-            base, quote = spot_info["tokens"]
-            base_info = spot_meta["tokens"][base]
-            quote_info = spot_meta["tokens"][quote]
-            self.asset_to_sz_decimals[asset] = base_info["szDecimals"]
-            name = f'{base_info["name"]}/{quote_info["name"]}'
-            if name not in self.name_to_coin:
-                self.name_to_coin[name] = spot_info["name"]
-        await self._log.debug("Mapping coin_to_asset et name_to_coin initialisés.")
-
-        perp_dex_to_offset = {"": 0}
-        perp_dexs = self.perp_dexs_arg + [""]
-
-        if self.perp_dexs_arg is not None:
-            perp_dex_list = await self.perp_dexs()
-            await self._log.debug(f"Récupération des perp_dexs")
-            for i, perp_dex in enumerate(perp_dex_list[1:]):
-                perp_dex_to_offset[perp_dex["name"]] = 110000 + i * 10000
-            await self._log.debug(f"Offsets perp_dexs calculés")
-
-        for perp_dex in perp_dexs:
-            offset = perp_dex_to_offset[perp_dex]
-            if perp_dex == "" and self.meta_arg is not None:
-                self.set_perp_meta(self.meta_arg, 0)
-                await self._log.debug("Meta perp initialisée avec meta_arg et offset 0.")
-            else:
-                fresh_meta = await self.meta(dex=perp_dex)
-                self.set_perp_meta(fresh_meta, offset)
-                await self._log.debug(f"Meta perp mise à jour pour dex '{perp_dex}' avec offset {offset}.")
-
-    def set_perp_meta(self, meta: Meta, offset: int) -> None:
-        for asset, asset_info in enumerate(meta["universe"]):
-            asset += offset
-            self.coin_to_asset[asset_info["name"]] = asset
-            self.name_to_coin[asset_info["name"]] = asset_info["name"]
-            self.asset_to_sz_decimals[asset] = asset_info["szDecimals"]
-            self.sz_decimals[asset_info["name"]] = asset_info["szDecimals"]
+        await self._load_spot()
+        perp_dexs = await self.perp_dexs()
+        for i, dex in enumerate([""] + [d["name"] for d in perp_dexs[1:]]):
+            offset = 0 if dex == "" else 110000 + (i - 1) * 10000
+            await self._load_perp(dex, offset)
 
     async def disconnect(self):
         if self.ws is None:
