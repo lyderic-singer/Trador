@@ -1,6 +1,7 @@
 from __future__ import annotations
-from .constants import format_price, MAX_DECIMALS_PERP, MAX_DECIMALS_SPOT
-from typing import List, Literal, Optional, Tuple, TypedDict, Union
+from .constants import MAX_DECIMALS_PERP, MAX_DECIMALS_SPOT
+from .functions import format_price
+from typing import List, Literal, Optional, Tuple, TypedDict, Union, Any, NotRequired
 
 AssetInfo = TypedDict("AssetInfo", {"name": str, "szDecimals": int})
 Meta = TypedDict("Meta", {"universe": List[AssetInfo]})
@@ -8,9 +9,10 @@ SIDE = Literal["A", "B"]
 TIF = Literal["Alo", "Ioc", "Gtc"]
 TPSL = Literal["tp", "sl"]
 
+
 InstrumentType = Literal["perp", "spot", "hip3", ""]
 
-class LimitType(TypedDict):
+class Tif(TypedDict):
     tif: TIF
 
 class TriggerType(TypedDict):
@@ -18,13 +20,15 @@ class TriggerType(TypedDict):
     triggerPx: str
     tpsl: TPSL
 
-OrderType = TypedDict(
+LimitOrderType = TypedDict(
     "OrderType",
     {
-        "limit": LimitType,
+        "limit": Tif,
     },
     total=False,
 )
+
+BuilderInfo = TypedDict("BuilderInfo", {"b": str, "f": int})
 
 class Instrument:
     def __init__(self, name: str, coin: str, asset: int, szDecimals: int):
@@ -45,8 +49,11 @@ class Instrument:
         max_decimals = MAX_DECIMALS_SPOT if self.type == "spot" else MAX_DECIMALS_PERP
         return format_price(price, max_decimals, self.szDecimals)
 
-    def format_sz(self, sz):
-        return round(sz, self.szDecimals)
+    def format_size(self, sz):
+        return str(round(sz, self.szDecimals))
+    
+    def __str__(self):
+        return f"Instrument(name={self.name}, coin={self.coin}, asset={self.asset}, type={self.type}, dex={self.dex if self.dex else '""'})"
 
 TriggerOrderType = TypedDict(
     "TriggerOrderType",
@@ -56,13 +63,15 @@ TriggerOrderType = TypedDict(
     total=False,
 )
 
+ExecutionType = Union[LimitOrderType, TriggerOrderType]
+
 class Order(TypedDict):
     a: int
     b: bool # buy ?
     p: str
     s: str
     r: bool # reduceOnly ?
-    t: Union[OrderType, TriggerOrderType]
+    t: ExecutionType
     c: Optional[Cloid]
 
 SpotAssetInfo = TypedDict(
@@ -131,3 +140,14 @@ class Cloid:
     def to_raw(self):
         return self._raw_cloid
 
+OidOrCloid = Union[int, Cloid]
+Modify = TypedDict(
+    "ModifyRequest",
+    {
+        "oid": OidOrCloid,
+        "order": Order,
+    },
+    total=False,
+)
+CancelRequest = TypedDict("CancelRequest", {"a": str, "o": int})
+CancelByCloidRequest = TypedDict("CancelByCloidRequest", {"asset": str, "cloid": Cloid})
