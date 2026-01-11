@@ -29,18 +29,18 @@ def load_account_from_env(mainnet):
     return account, address
 
 class HL:
-    def __init__(self, base_url, messenger, skip_ws, mainnet):
+    def __init__(self, url, messenger, skip_ws, mainnet):
         self.messenger = messenger
         self._log = Logger(self, messenger)
         account, address = load_account_from_env(mainnet)
         self.account = account
         self.address = address
-        self.base_url = base_url
+        self.url = url
         self.session = Session(messenger)
-        self.api = API(base_url, messenger, self.session)
+        self.api = API(url, messenger, self.session)
         self.info = Info(self.api, messenger, skip_ws, perp_dexs=["xyz", "flx", "vntl", "hyna"])
         self.ws = None
-        self.exchange = Exchange(self.info, messenger, account)
+        self.exchange = Exchange(self.info, messenger, account, url)
         self._running = False
 
     async def start(self) -> None:

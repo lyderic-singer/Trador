@@ -1,6 +1,6 @@
 from .api import API
 import asyncio
-from .utils.types import (Any, Callable, List, Cloid, Meta, Optional, SpotMeta, SpotMetaAndAssetCtxs, Instrument, Subscription)
+from .utils.types import (Any, Cloid, Meta, Optional, SpotMeta, SpotMetaAndAssetCtxs, Instrument)
 from ..websocket import Websocket
 from log.logger import Logger
 
@@ -9,7 +9,7 @@ class Info:
         self.api = api
         self.messenger = messenger
         self.skip_ws = skip_ws
-        self.base_url = api.base_url
+        self.url = api.url
         self._log = Logger(self, messenger)
         self.ws = None
         self.instruments_dict: dict[int, Instrument] = {} # asset -> Instrument
@@ -42,7 +42,7 @@ class Info:
 
     async def start(self):
         if not self.skip_ws:
-            self.ws = Websocket(self.base_url, self.messenger)
+            self.ws = Websocket(self.url, self.messenger)
             asyncio.create_task(self.ws.start())
         await self._load_spot()
         perp_dexs = await self.perp_dexs()

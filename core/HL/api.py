@@ -9,14 +9,14 @@ from log.logger import Logger
 
 
 class API:
-    def __init__(self, base_url: str, messenger, session : Session):
-        self.base_url = base_url
+    def __init__(self, url: str, messenger, session : Session):
+        self.url = url
         self.session = session
         self._log = Logger(self, messenger)
 
     async def post(self, url_path: str, payload: Any = None) -> Any:
         payload = payload or {}
-        url = self.base_url + url_path
+        url = self.url + url_path
         await self._log.debug(f"POST {url} | Payload: {payload}")
         try:
             session = await self.session.get()

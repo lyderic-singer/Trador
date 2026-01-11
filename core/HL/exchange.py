@@ -4,15 +4,15 @@ import time
 from .info import Info
 from .utils.constants import MAINNET_API_URL
 from .utils.signing import CancelByCloidRequest, CancelRequest, ModifyRequest, OrderRequest, OrderType, order_request_to_order_wire, order_wires_to_order_action, sign_l1_action
-from .utils.functions import timestamp_ms, format_price
+from .utils.functions import timestamp_ms
 from .utils.types import Any, BuilderInfo, Cloid, List, Optional
 from log.logger import Logger
 
 class Exchange:
-    def __init__(self, info: Info, messenger, wallet: LocalAccount, vault_address: str = None, account_address: str = None):
+    def __init__(self, info: Info, messenger, wallet: LocalAccount, url: str, vault_address: str = None, account_address: str = None):
         self.wallet = wallet
         self._log = Logger(self, messenger)
-        self.base_url = info.base_url
+        self.url = url
         self.vault_address = vault_address
         self.account_address = account_address
         self.info = info
@@ -73,7 +73,7 @@ class Exchange:
             if builder:
                 builder["b"] = builder["b"].lower()
             order_action = order_wires_to_order_action(order_wires, builder)
-            signature = sign_l1_action(self.wallet, order_action, self.vault_address, timestamp, self.expires_after, self.base_url == MAINNET_API_URL)
+            signature = sign_l1_action(self.wallet, order_action, self.vault_address, timestamp, self.expires_after, self.url == MAINNET_API_URL)
             await self._log.debug(f"Sending bulk orders: {order_requests}")
             return await self._post_action(order_action, signature, timestamp)
         except Exception as e:
@@ -106,7 +106,7 @@ class Exchange:
                 "order": order_request_to_order_wire(modify["order"], self.info.name_to_asset(modify["order"]["coin"]))
             } for modify in modify_requests]
             modify_action = {"type": "batchModify", "modifies": modify_wires}
-            signature = sign_l1_action(self.wallet, modify_action, self.vault_address, timestamp, self.expires_after, self.base_url == MAINNET_API_URL)
+            signature = sign_l1_action(self.wallet, modify_action, self.vault_address, timestamp, self.expires_after, self.url == MAINNET_API_URL)
             await self._log.debug(f"Bulk modifying orders: {modify_requests}")
             return await self._post_action(modify_action, signature, timestamp)
         except Exception as e:
@@ -149,7 +149,7 @@ class Exchange:
                 self.vault_address,
                 timestamp,
                 self.expires_after,
-                self.base_url == MAINNET_API_URL,
+                self.url == MAINNET_API_URL,
             )
             return await self._post_action(cancel_action, signature, timestamp)
         except Exception as e:
@@ -176,7 +176,7 @@ class Exchange:
                 self.vault_address,
                 timestamp,
                 self.expires_after,
-                self.base_url == MAINNET_API_URL,
+                self.url == MAINNET_API_URL,
             )
             return await self._post_action(cancel_action, signature, timestamp)
         except Exception as e:
