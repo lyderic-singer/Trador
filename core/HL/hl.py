@@ -13,10 +13,10 @@ from log.logger import Logger
 
 load_dotenv()
 
-def load_account_from_env(is_mainnet):
+def load_account_from_env(mainnet):
     private = "MAINNET_PRIVATE_API_KEY"
     public = "MAINNET_PUBLIC_KEY"
-    if not is_mainnet:
+    if not mainnet:
         private = "TESTNET_PRIVATE_API_KEY"
         public = "TESTNET_PUBLIC_KEY"
     secret_key = os.getenv(private)
@@ -29,10 +29,10 @@ def load_account_from_env(is_mainnet):
     return account, address
 
 class HL:
-    def __init__(self, base_url, messenger, skip_ws, is_mainnet):
+    def __init__(self, base_url, messenger, skip_ws, mainnet):
         self.messenger = messenger
         self._log = Logger(self, messenger)
-        account, address = load_account_from_env(is_mainnet)
+        account, address = load_account_from_env(mainnet)
         self.account = account
         self.address = address
         self.base_url = base_url
