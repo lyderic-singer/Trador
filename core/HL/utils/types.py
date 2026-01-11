@@ -26,6 +26,21 @@ OrderType = TypedDict(
     total=False,
 )
 
+class Instrument:
+    def __init__(self, name: str, symbol: str, asset: int, szDecimals: int):
+        self.name = name # appear in front, ex 'UBTC/USDC'
+        self.symbol = symbol # real internal symbol ex: '@152'
+        self.asset = asset # asset id ex: 10152
+        self.szDecimals = szDecimals
+        self.type: InstrumentType = ""
+        if ('@' in name) or ('/' in name):
+            self.type = "spot"
+        elif ':' in name:
+            self.type = "hip3"
+        else:
+            self.type = "perp"
+        self.dex = name[:name.index(":")] if self.type == "hip3" else ""
+
 TriggerOrderType = TypedDict(
     "TriggerOrderType",
     {
