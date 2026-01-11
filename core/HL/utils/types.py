@@ -1,5 +1,5 @@
 from __future__ import annotations
-
+from .constants import format_price, MAX_DECIMALS_PERP, MAX_DECIMALS_SPOT
 from typing import List, Literal, Optional, Tuple, TypedDict, Union
 
 AssetInfo = TypedDict("AssetInfo", {"name": str, "szDecimals": int})
@@ -27,9 +27,9 @@ OrderType = TypedDict(
 )
 
 class Instrument:
-    def __init__(self, name: str, symbol: str, asset: int, szDecimals: int):
+    def __init__(self, name: str, coin: str, asset: int, szDecimals: int):
         self.name = name # appear in front, ex 'UBTC/USDC'
-        self.symbol = symbol # real internal symbol ex: '@152'
+        self.coin = coin # real internal symbol ex: '@152'
         self.asset = asset # asset id ex: 10152
         self.szDecimals = szDecimals
         self.type: InstrumentType = ""
@@ -40,6 +40,13 @@ class Instrument:
         else:
             self.type = "perp"
         self.dex = name[:name.index(":")] if self.type == "hip3" else ""
+
+    def format_price(self, price: float):
+        max_decimals = MAX_DECIMALS_SPOT if self.type == "spot" else MAX_DECIMALS_PERP
+        return format_price(price, max_decimals, self.szDecimals)
+
+    def format_sz(self, sz):
+        return round(sz, self.szDecimals)
 
 TriggerOrderType = TypedDict(
     "TriggerOrderType",
