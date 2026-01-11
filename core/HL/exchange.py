@@ -9,7 +9,7 @@ from .utils.types import Any, BuilderInfo, Cloid, List, Optional
 from log.logger import Logger
 
 class Exchange:
-    def __init__(self, info: Info, messenger, wallet: LocalAccount, url: str, vault_address: str = None, account_address: str = None):
+    def __init__(self, url , messenger, wallet: LocalAccount, info: Info, vault_address: str = None, account_address: str = None):
         self.wallet = wallet
         self._log = Logger(self, messenger)
         self.url = url

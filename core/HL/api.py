@@ -51,6 +51,6 @@ class API:
             raise ClientError(status_code, err.get("code"), err.get("msg"), response.headers, error_data)
         raise ServerError(status_code, text)
 
-    async def close(self):
+    async def stop(self):
         await self._log.info("Closing API session.")
         await self.session.close()

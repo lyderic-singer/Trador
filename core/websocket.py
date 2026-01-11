@@ -235,6 +235,7 @@ class Websocket:
         self.stop_event.set()
         if self.ws:
             try:
+                await self.unsubscribe_all()
                 await self.ws.close()
                 await self._log.success("Connexion WebSocket fermée.")
             except Exception as e:
