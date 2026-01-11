@@ -53,7 +53,7 @@ class Websocket:
         self.active_subscriptions: Dict[str, List[Subscription]] = defaultdict(list)
         self.ws_ready = asyncio.Event()
         self.stop_event = asyncio.Event()
-        self.uri = url
+        self.url = url
         self.ws: Optional[websockets.WebSocketClientProtocol] = None
         self.last_pong = asyncio.get_event_loop().time()
         self.callback_queue: asyncio.Queue = asyncio.Queue()
@@ -206,11 +206,10 @@ class Websocket:
     async def start(self):
         asyncio.create_task(self._callback())
         asyncio.create_task(self._pong())
-
         while not self.stop_event.is_set():
             try:
                 await self._log.info("Tentative de connexion au WebSocket...")
-                self.ws = await websockets.connect(self.uri)
+                self.ws = await websockets.connect(self.url)
                 self.ws_ready.set()
                 self.last_pong = asyncio.get_event_loop().time()
                 await self._log.success("Connecté au WebSocket.")

@@ -17,7 +17,7 @@ class Session:
             await self._log.debug("Reusing existing aiohttp session.")
         return self.session
 
-    async def close(self):
+    async def stop(self):
         if self.session and not self.session.closed:
             await self._log.debug("Closing aiohttp session.")
             await self.session.close()

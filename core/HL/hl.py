@@ -30,14 +30,14 @@ def load_account_from_env(mainnet):
     return account, address
 
 class HL:
-    def __init__(self, mainnet, messenger):
+    def __init__(self, mainnet, messenger, session):
         self.messenger = messenger
         self._log = Logger(self, messenger)
         account, address = load_account_from_env(mainnet)
         self.account = account
         self.address = address
         url = MAINNET_API_URL if mainnet else TESTNET_API_URL
-        self.session = Session(messenger) # cree
+        self.session = session
         self.api = API(url, messenger, self.session)
         self.info = Info(url, messenger, self.api)
         self.ws = Websocket(MAINNET_WS_URL if mainnet else TESTNET_WS_URL, self.messenger)
@@ -51,8 +51,8 @@ class HL:
                 await self._log.info("tentative de demarrage du core")
                 await self.session.get()
                 await self.info.start()
-                self.ws = self.info.ws
-                await self._log.success("core démarré", )
+                asyncio.create_task(self.ws.start())
+                await self._log.success("core démarré")
                 self._running = True
             except Exception as e:
                 await self._log.error(f"erreur dans le demarrage du core : {e}")
