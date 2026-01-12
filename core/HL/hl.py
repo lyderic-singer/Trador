@@ -5,8 +5,7 @@ from .utils.constants import MAINNET_API_URL, MAINNET_WS_URL, TESTNET_API_URL, T
 from eth_account import Account
 from eth_account.signers.local import LocalAccount
 
-from ..session import Session
-from ..websocket import Websocket
+from .websocket import Websocket
 from .api import API
 from .info import Info
 from .exchange import Exchange

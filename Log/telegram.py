@@ -5,7 +5,7 @@ import os
 from time import time
 from telegram import Update, InputFile
 from telegram.ext import Application, ApplicationBuilder, CommandHandler, ContextTypes
-from logs.logger import Logger
+from log.logger import Logger
 
 load_dotenv()
 

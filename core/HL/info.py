@@ -1,6 +1,5 @@
 from .api import API
 from .utils.types import (Any, Cloid, Meta, Optional, SpotMeta, SpotMetaAndAssetCtxs, Instrument)
-from ..websocket import Websocket
 from log.logger import Logger
 
 class Info:
