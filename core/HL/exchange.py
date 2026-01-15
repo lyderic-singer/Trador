@@ -92,11 +92,11 @@ class Exchange:
         }
         return modify
 
-    async def modify_order(self, order, new_price, new_size, tif) -> Any:
+    async def modify(self, order, new_price, new_size, tif) -> Any:
         modify = self.get_modify(order, new_price, new_size, tif)
         return await self.bulk_modify_orders([modify])
 
-    async def bulk_modify_orders(self, modifies: List[Modify]) -> Any:
+    async def bulk_modify(self, modifies: List[Modify]) -> Any:
         try:
             timestamp = timestamp_ms()
             modify_action = {"type": "batchModify", "modifies": modifies}
