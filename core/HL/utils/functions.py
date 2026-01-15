@@ -1,5 +1,6 @@
 import time
 from decimal import Decimal, ROUND_DOWN
+import asyncio
 from typing import Dict, Any
 
 def format_price(px: float, max_decimals: int, sz_decimals: int):
@@ -16,6 +17,12 @@ def format_price(px: float, max_decimals: int, sz_decimals: int):
 
 def timestamp_ms():
     return int(time.time() * 1000)
+
+async def call(fn, *args, **kwargs):
+    result = fn(*args, **kwargs)
+    if asyncio.iscoroutine(result):
+        return await result
+    return result
 
 def key(msg: Dict[str, Any]) -> str:
     d = msg.get("data")
