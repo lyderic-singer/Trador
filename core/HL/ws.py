@@ -8,23 +8,18 @@ from datetime import datetime
 from utils.functions import key, call, extract_subscription_error
 
 class Subscription:
-    def __init__(self, type: str, callback: Callable, user: str | None = None, coin: str | None = None, interval: str | None = None, dex: str | None = None):
-        self.type = type
-        self.user = user
-        self.coin = coin
-        self.interval = interval
-        self.dex = dex
+    def __init__(self, sub: Dict[str, Any], callback: Callable):
+        self.type = sub["type"]
+        self.user = sub.get("user")
+        self.coin = sub.get("coin")
+        self.interval = sub.get("interval")
+        self.dex = sub.get("dex")
         self.active = asyncio.Event()
         self.inactive = asyncio.Event()
         self.error = asyncio.Event()
         self.callback = callback
-        self.sub = {}
-        self.sub["type"] = type
-        if user: self.sub["user"] = user
-        if coin: self.sub["coin"] = coin
-        if interval: self.sub["interval"] = interval
-        if dex: self.sub["dex"] = dex
-        self.key = key(self.sub)
+        self.sub = sub
+        self.key = key(sub)
         self.clear()
 
     def set(self):
@@ -103,8 +98,8 @@ class WebSocket:
                 self.last_pong = time()
             elif channel == "subscriptionResponse" and data:
                 method = data.get("method")
-                subscription = data.get("subscription")
-                k = key(subscription)
+                sub = data.get("subscription")
+                k = key(sub)
                 if k in self.subscriptions:
                     if method == "subscribe":
                         self.subscriptions[k].set()
@@ -114,8 +109,8 @@ class WebSocket:
                         await self._log.warning(f"unexpected method: {method}")
             elif channel == "error" and data:
                 data = extract_subscription_error(data)
-                subscription = data.get("subscription")
-                k = key(subscription)
+                sub = data.get("subscription")
+                k = key(sub)
                 if k in self.subscriptions:
                     self.subscriptions[k].error.set()
                     self.subscriptions[k].clear()
@@ -125,14 +120,9 @@ class WebSocket:
                     subscription = self.subscriptions[k]
                     await call(subscription.callback, data)
     
-    async def subscribe(self, subscription: Dict[str, Any], callback: Callable):
+    async def subscribe(self, sub: Dict[str, Any], callback: Callable):
         try:
-            type = subscription["type"]
-            user = subscription.get("user")
-            coin = subscription.get("coin")
-            interval = subscription.get("interval")
-            dex = subscription.get("dex")
-            subscription = Subscription(type, callback, user, coin, interval, dex)
+            subscription = Subscription(sub, callback)
             if subscription.key in self.subscriptions:
                 await self._log.info("subscription already set")
                 del subscription
@@ -147,9 +137,9 @@ class WebSocket:
             del subscription
             await self._log.error(f"{e}")
     
-    async def unsubscribe(self, subscription: Dict[str, Any]):
+    async def unsubscribe(self, sub: Dict[str, Any]):
         try:
-            k = key(subscription)
+            k = key(sub)
             if not (k in self.subscriptions):
                 await self._log.info("not subscribed")
                 return
