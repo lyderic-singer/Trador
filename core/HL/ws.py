@@ -44,7 +44,8 @@ class WebSocket:
         self.info = info
         self.ws = None
         self.subscriptions: Dict[str, Subscription] = {}
-        self.running = asyncio.Event()
+        self.running = False
+        self.connected = asyncio.Event()
         self.reconnect_delay = 5
         self.ping_delay = 30
         self.task = None
@@ -52,16 +53,17 @@ class WebSocket:
 
     async def start(self):
         try:
-            self.running.set()
+            self.running = True
             self.task = asyncio.create_task(self.connect())
             await self._log.info("websocket started")
         except Exception as e:
+            self.running = False
             await self._log.error(f"cannot start websocket: {e}")
 
     async def close(self):
         try:
-            await self.unsubscribe_all()
-            self.running.clear()
+            self.connected.clear()
+            self.running = False
             if self.ws:
                 await self.ws.close()
             await self._log.success("websocket closed")
@@ -69,29 +71,34 @@ class WebSocket:
             self._log(f"cannot stop websocket: {e}")
     
     async def connect(self):
-        while self.running.is_set():
+        while self.running:
             try:
                 self.ws = await websockets.connect(self.url)
+                self.connected.set()
                 await self._log.success("connected")
                 for k in self.subscriptions:
                     subscription = self.subscriptions[k]
-                    await self.subscribe(subscription.sub, subscription.callback)
+                    await self.ws.send(json.dumps({"method": "subscribe", "subscription": subscription.sub}))
                 self.last_pong = time()
                 await asyncio.gather(self.ping(), self.handle())
             except Exception as e:
-                await self._log.error(f"disconnected ({e}){f" , reconnect in {self.reconnect_delay}s" if self.running.is_set() else ""}")
+                await self._log.error(f"disconnected ({e}){f" , reconnect in {self.reconnect_delay}s" if self.running else ""}")
                 await asyncio.sleep(self.reconnect_delay)
+            finally:
+                if self.ws:
+                    await self.ws.close()
+                self.connected.clear()
     
     async def ping(self):
-        while self.running.is_set() and self.ws:
+        while self.connected.is_set():
             await asyncio.sleep(self.ping_delay)
             await self.ws.send(json.dumps({"method": "ping"}))
             if time() - self.last_pong > self.ping_delay + 10:
                 raise ValueError("pong not received")
     
     async def handle(self):
-        try:
-            async for msg in self.ws:
+        async for msg in self.ws:
+            try:
                 msg = json.loads(msg)
                 channel = msg.get("channel")
                 data = msg.get("data")
@@ -120,19 +127,19 @@ class WebSocket:
                     if k in self.subscriptions:
                         subscription = self.subscriptions[k]
                         await call(subscription.callback, data)
-        except ValueError as e:
-            await self._log.warning(f"{e}")
+            except Exception as e:
+                await self._log.warning(f"{e}")
+                continue
     
     async def subscribe(self, sub: Dict[str, Any], callback: Callable):
         try:
             subscription = Subscription(sub, callback)
             if subscription.key in self.subscriptions:
                 await self._log.info("subscription already set")
-                del subscription
                 return
             self.subscriptions[subscription.key] = subscription
-            await self.running.wait()
-            await self.ws.send(json.dumps({"method": "subscribe", "subscription": subscription.sub}))
+            await self.connected.wait()
+            await self.ws.send(json.dumps({"method": "subscribe", "subscription": sub}))
             await subscription.wait()
             await self._log.success(f"Subscription added: {subscription.key}")
         except Exception as e:
@@ -147,129 +154,99 @@ class WebSocket:
                 await self._log.info("not subscribed")
                 return
             subscription = self.subscriptions[k]
-            await self.running.wait()
+            await self.connected.wait()
             await self.ws.send(json.dumps({"method": "unsubscribe", "subscription": subscription.sub}))
             try:
                 await asyncio.wait_for(subscription.inactive.wait(), timeout=10)
+                await self._log.success(f"Successfully unsubscribed {subscription.key}")
             except asyncio.TimeoutError:
                 await self._log.error(f"Timeout for unsubscribe: {subscription.key}")
-            await self._log.success(f"Successfully unsubscribed {subscription.key}")
         except Exception as e:
             await self._log.error(f"{e}")
         finally:
-            subscription = self.subscriptions.pop(key(sub), None)
-            del subscription
+            if k:
+                subscription = self.subscriptions.pop(k, None)
+                del subscription
     
-    # ========== FONCTIONS DÉDIÉES POUR CHAQUE TYPE ==========
-    
-    async def all_mids(self, handler: Callable, dex: Optional[str] = None):
-        """Souscrire aux prix mid de tous les actifs"""
+    async def all_mids(self, callback: Callable, dex: Optional[str] = None):
         subscription = {"type": "allMids"}
-        if dex:
-            subscription["dex"] = dex
-        await self.subscribe(subscription, handler)
+        if dex: subscription["dex"] = dex
+        await self.subscribe(subscription, callback)
     
-    async def notification(self, user: str, handler: Callable):
-        """Souscrire aux notifications d'un utilisateur"""
+    async def notification(self, callback: Callable, user: str):
         subscription = {"type": "notification", "user": user}
-        await self.subscribe(subscription, handler)
+        await self.subscribe(subscription, callback)
     
-    async def web_data3(self, user: str, handler: Callable):
-        """Souscrire aux données web d'un utilisateur"""
+    async def web_data3(self, callback: Callable, user: str):
         subscription = {"type": "webData3", "user": user}
-        await self.subscribe(subscription, handler)
+        await self.subscribe(subscription, callback)
     
-    async def twap_states(self, user: str, handler: Callable, dex: Optional[str] = None):
-        """Souscrire aux états TWAP d'un utilisateur"""
+    async def twap_states(self, callback: Callable, user: str, dex: Optional[str] = None):
         subscription = {"type": "twapStates", "user": user}
-        if dex:
-            subscription["dex"] = dex
-        await self.subscribe(subscription, handler)
-    
-    async def clearinghouse_state(self, user: str, handler: Callable, dex: Optional[str] = None):
-        """Souscrire à l'état de la clearinghouse d'un utilisateur"""
+        if dex: subscription["dex"] = dex
+        await self.subscribe(subscription, callback)
+
+    async def clearinghouse_state(self, callback: Callable, user: str, dex: Optional[str] = None):
         subscription = {"type": "clearinghouseState", "user": user}
-        if dex:
-            subscription["dex"] = dex
-        await self.subscribe(subscription, handler)
-    
-    async def open_orders(self, user: str, handler: Callable, dex: Optional[str] = None):
-        """Souscrire aux ordres ouverts d'un utilisateur"""
+        if dex: subscription["dex"] = dex
+        await self.subscribe(subscription, callback)
+
+    async def open_orders(self, callback: Callable, user: str, dex: Optional[str] = None):
         subscription = {"type": "openOrders", "user": user}
-        if dex:
-            subscription["dex"] = dex
-        await self.subscribe(subscription, handler)
-    
-    async def candle(self, coin: str, interval: str, handler: Callable):
-        """Souscrire aux chandeliers d'un actif"""
+        if dex: subscription["dex"] = dex
+        await self.subscribe(subscription, callback)
+
+    async def candle(self, callback: Callable, coin: str, interval: str):
         subscription = {"type": "candle", "coin": coin, "interval": interval}
-        await self.subscribe(subscription, handler)
-    
-    async def l2_book(self, coin: str, handler: Callable, 
-                                n_sig_figs: Optional[int] = None, 
-                                mantissa: Optional[int] = None):
-        """Souscrire au carnet d'ordres L2 d'un actif"""
+        await self.subscribe(subscription, callback)
+
+    async def l2_book(self, callback: Callable, coin: str, n_sig_figs: Optional[int] = None, mantissa: Optional[int] = None):
         subscription = {"type": "l2Book", "coin": coin}
-        if n_sig_figs:
-            subscription["nSigFigs"] = n_sig_figs
-        if mantissa:
-            subscription["mantissa"] = mantissa
-        await self.subscribe(subscription, handler)
-    
-    async def trades(self, coin: str, handler: Callable):
-        """Souscrire aux trades d'un actif"""
+        if n_sig_figs: subscription["nSigFigs"] = n_sig_figs
+        if mantissa: subscription["mantissa"] = mantissa
+        await self.subscribe(subscription, callback)
+
+    async def trades(self, callback: Callable, coin: str):
         subscription = {"type": "trades", "coin": coin}
-        await self.subscribe(subscription, handler)
-    
-    async def order_updates(self, user: str, handler: Callable):
-        """Souscrire aux mises à jour d'ordres d'un utilisateur"""
+        await self.subscribe(subscription, callback)
+
+    async def order_updates(self, callback: Callable, user: str):
         subscription = {"type": "orderUpdates", "user": user}
-        await self.subscribe(subscription, handler)
-    
-    async def user_events(self, user: str, handler: Callable):
-        """Souscrire aux événements utilisateur"""
+        await self.subscribe(subscription, callback)
+
+    async def user_events(self, callback: Callable, user: str):
         subscription = {"type": "userEvents", "user": user}
-        await self.subscribe(subscription, handler)
-    
-    async def user_fills(self, user: str, handler: Callable, 
-                                   aggregate_by_time: Optional[bool] = None):
-        """Souscrire aux fills d'un utilisateur"""
+        await self.subscribe(subscription, callback)
+
+    async def user_fills(self, callback: Callable, user: str, aggregate_by_time: Optional[bool] = None):
         subscription = {"type": "userFills", "user": user}
-        if aggregate_by_time is not None:
-            subscription["aggregateByTime"] = aggregate_by_time
-        await self.subscribe(subscription, handler)
-    
-    async def user_fundings(self, user: str, handler: Callable):
-        """Souscrire aux paiements de funding d'un utilisateur"""
+        if aggregate_by_time is not None: subscription["aggregateByTime"] = aggregate_by_time
+        await self.subscribe(subscription, callback)
+
+    async def user_fundings(self, callback: Callable, user: str):
         subscription = {"type": "userFundings", "user": user}
-        await self.subscribe(subscription, handler)
-    
-    async def user_non_funding_ledger_updates(self, user: str, handler: Callable):
-        """Souscrire aux mises à jour du ledger (hors funding)"""
+        await self.subscribe(subscription, callback)
+
+    async def user_non_funding_ledger_updates(self, callback: Callable, user: str):
         subscription = {"type": "userNonFundingLedgerUpdates", "user": user}
-        await self.subscribe(subscription, handler)
-    
-    async def active_asset_ctx(self, coin: str, handler: Callable):
-        """Souscrire au contexte d'un actif actif"""
+        await self.subscribe(subscription, callback)
+
+    async def active_asset_ctx(self, callback: Callable, coin: str):
         subscription = {"type": "activeAssetCtx", "coin": coin}
-        await self.subscribe(subscription, handler)
-    
-    async def active_asset_data(self, user: str, coin: str, handler: Callable):
-        """Souscrire aux données d'actif actif (Perps uniquement)"""
+        await self.subscribe(subscription, callback)
+
+    async def active_asset_data(self, callback: Callable, user: str, coin: str):
         subscription = {"type": "activeAssetData", "user": user, "coin": coin}
-        await self.subscribe(subscription, handler)
-    
-    async def user_twap_slice_fills(self, user: str, handler: Callable):
-        """Souscrire aux fills de tranches TWAP"""
+        await self.subscribe(subscription, callback)
+
+    async def user_twap_slice_fills(self, callback: Callable, user: str):
         subscription = {"type": "userTwapSliceFills", "user": user}
-        await self.subscribe(subscription, handler)
-    
-    async def user_twap_history(self, user: str, handler: Callable):
-        """Souscrire à l'historique TWAP d'un utilisateur"""
+        await self.subscribe(subscription, callback)
+
+    async def user_twap_history(self, callback: Callable, user: str):
         subscription = {"type": "userTwapHistory", "user": user}
-        await self.subscribe(subscription, handler)
-    
-    async def bbo(self, coin: str, handler: Callable):
-        """Souscrire au meilleur bid/offer d'un actif"""
+        await self.subscribe(subscription, callback)
+
+    async def bbo(self, callback: Callable, coin: str):
         subscription = {"type": "bbo", "coin": coin}
-        await self.subscribe(subscription, handler)
+        await self.subscribe(subscription, callback)
