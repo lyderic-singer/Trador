@@ -1,4 +1,3 @@
-
 import asyncio
 import json
 from time import time
@@ -6,7 +5,7 @@ import websockets
 from log.logger import Logger
 from typing import Callable, Dict, Any, Optional
 from datetime import datetime
-from utils.functions import key, call
+from utils.functions import key, call, extract_subscription_error
 
 class Subscription:
     def __init__(self, type: str, callback: Callable, user: str | None = None, coin: str | None = None, interval: str | None = None, dex: str | None = None):
@@ -17,6 +16,7 @@ class Subscription:
         self.dex = dex
         self.active = asyncio.Event()
         self.inactive = asyncio.Event()
+        self.error = asyncio.Event()
         self.callback = callback
         self.sub = {}
         self.sub["type"] = type
@@ -25,6 +25,7 @@ class Subscription:
         if interval: self.sub["interval"] = interval
         if dex: self.sub["dex"] = dex
         self.key = key(self.sub)
+        self.clear()
 
     def set(self):
         self.inactive.clear()
@@ -33,6 +34,11 @@ class Subscription:
     def clear(self):
         self.active.clear()
         self.inactive.set()
+
+    async def wait(self):
+        await asyncio.wait([self.active.wait(), self.error.wait()], return_when=asyncio.FIRST_COMPLETED)
+        if self.error.is_set():
+            raise ValueError("wrong subscription")
 
 class WebSocket:
     def __init__(self, url: str, messenger, info):
@@ -104,6 +110,12 @@ class WebSocket:
                         self.subscriptions[k].clear()
                     else:
                         await self._log.warning(f"unexpected method: {method}")
+            elif channel == "error" and data:
+                subscription = extract_subscription_error(data)
+                k = key(subscription)
+                if k in self.subscriptions:
+                    self.subscriptions[k].error.set()
+                    self.subscriptions[k].clear()
             elif channel and data:
                 k = key(msg)
                 if k in self.subscriptions:
@@ -116,7 +128,7 @@ class WebSocket:
             self.subscriptions[subscription.key] = subscription
             await self.running.wait()
             await self.ws.send(json.dumps({"method": "subscribe", "subscription": subscription.sub}))
-            await subscription.active.wait()
+            await subscription.wait()
             await self._log(f"Subscription added: {subscription.key}")
         except Exception as e:
             self.subscriptions.pop(subscription.key, None)
