@@ -111,12 +111,16 @@ class WebSocket:
                     call(subscription.callback, data)
     
     async def subscribe(self, type: str, callback: Callable, user: str | None = None, coin: str | None = None, interval: str | None = None, dex: str | None = None):
-        subscription = Subscription(type, callback, user, coin, interval, dex)
-        self.subscriptions[subscription.key] = subscription
-        if self.ws:
-            await self.ws("subscribe", subscription.sub)
-        
-        print(f"[{datetime.now()}] Souscription ajoutée: {sub_key}")
+        try:
+            subscription = Subscription(type, callback, user, coin, interval, dex)
+            self.subscriptions[subscription.key] = subscription
+            await self.running.wait()
+            await self.ws.send(json.dumps({"method": "subscribe", "subscription": subscription.sub}))
+            await subscription.active.wait()
+            await self._log(f"Subscription added: {subscription.key}")
+        except Exception as e:
+            self.subscriptions.pop(subscription.key, None)
+            await self._log.error(f"{e}")
     
     async def unsubscribe(self, subscription: Dict[str, Any]):
         """Désouscrire d'un flux spécifique"""
@@ -129,21 +133,6 @@ class WebSocket:
                 await self._send_message("unsubscribe", subscription)
             
             print(f"[{datetime.now()}] Désouscription: {sub_key}")
-    
-    async def unsubscribe_all(self):
-        """Désouscrire de tous les flux"""
-        for subscription in list(self.subscriptions.values()):
-            try:
-                if self.ws and not self.ws.closed:
-                    await self._send_message("unsubscribe", subscription)
-            except Exception as e:
-                print(f"[{datetime.now()}] Erreur lors de la désouscription: {e}")
-        
-        self.subscriptions.clear()
-        self.handlers.clear()
-        print(f"[{datetime.now()}] Toutes les souscriptions ont été supprimées")
-
-
     
     # ========== FONCTIONS DÉDIÉES POUR CHAQUE TYPE ==========
     
