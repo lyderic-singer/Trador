@@ -25,18 +25,18 @@ async def call(fn, *args, **kwargs):
         return await result
     return result
 
-def extract_json_error(s: str) -> dict:
+def extract_subscription_error(s: str) -> dict:
     try:
         json_str = s[s.index("{"):]
         return json.loads(json_str)
     except Exception:
         return {}
 
-def key(msg: Dict[str, Any]) -> str:
-    d = msg.get("data")
-    if d is not None:
-        c = msg.get("channel")
-        if c == "allMids": return "allMids"
+def key(dict: Dict[str, Any]) -> str:
+    d = dict.get("data")
+    if d is not None: # dict is ws msg
+        c = dict.get("channel")
+        if c == "allMids": return f"allMids{':' + d.get("dex") if d.get("dex") else ""}"
         if c == "notification": return "notification"
         if c == "webData3": return f'webData3:{d["userState"]["user"].lower()}'
         if c == "twapStates": return f'twapStates:{d["user"].lower()}:{d["dex"]}'
@@ -56,26 +56,26 @@ def key(msg: Dict[str, Any]) -> str:
         if c == "userTwapHistory": return f'userTwapHistory:{d["user"].lower()}'
         if c == "bbo": return f'bbo:{d["coin"].lower()}'
         raise ValueError(f"Unknown WS channel: {c}")
-    else:
-        t = msg.get("type")
-        if t == "allMids": return "allMids"
+    else: # dict is a sub
+        t = dict.get("type")
+        if t == "allMids": return f"allMids{':' + dict.get("dex") if dict.get("dex") else ""}"
         if t == "notification": return "notification"
-        if t == "webData3": return f'webData3:{msg["user"].lower()}'
-        if t == "twapStates": return f'twapStates:{msg["user"].lower()}:{msg["dex"]}'
-        if t == "clearinghouseState": return f'clearinghouseState:{msg["user"].lower()}:{msg["dex"]}'
-        if t == "openOrders": return f'openOrders:{msg["user"].lower()}:{msg["dex"]}'
-        if t == "candle": return f'candle:{msg["coin"].lower()},{msg["interval"]}'
-        if t == "l2Book": return f'l2Book:{msg["coin"].lower()}'
-        if t == "trades": return f'trades:{msg["coin"].lower()}'
+        if t == "webData3": return f'webData3:{dict["user"].lower()}'
+        if t == "twapStates": return f'twapStates:{dict["user"].lower()}:{dict["dex"]}'
+        if t == "clearinghouseState": return f'clearinghouseState:{dict["user"].lower()}:{dict["dex"]}'
+        if t == "openOrders": return f'openOrders:{dict["user"].lower()}:{dict["dex"]}'
+        if t == "candle": return f'candle:{dict["coin"].lower()},{dict["interval"]}'
+        if t == "l2Book": return f'l2Book:{dict["coin"].lower()}'
+        if t == "trades": return f'trades:{dict["coin"].lower()}'
         if t == "orderUpdates": return "orderUpdates"
         if t == "userEvents": return "userEvents"
         if t == "user": return "userEvents"
-        if t == "userFills": return f'userFills:{msg["user"].lower()}'
-        if t == "userFundings": return f'userFundings:{msg["user"].lower()}'
-        if t == "userNonFundingLedgerUpdates": return f'userNonFundingLedgerUpdates:{msg["user"].lower()}'
-        if t == "activeAssetCtx": return f'activeAssetCtx:{msg["coin"].lower()}'
-        if t == "activeAssetData": return f'activeAssetData:{msg["user"].lower()}:{msg["coin"].lower()}'
-        if t == "userTwapSliceFills": return f'userTwapSliceFills:{msg["user"].lower()}'
-        if t == "userTwapHistory": return f'userTwapHistory:{msg["user"].lower()}'
-        if t == "bbo": return f'bbo:{msg["coin"].lower()}'
+        if t == "userFills": return f'userFills:{dict["user"].lower()}'
+        if t == "userFundings": return f'userFundings:{dict["user"].lower()}'
+        if t == "userNonFundingLedgerUpdates": return f'userNonFundingLedgerUpdates:{dict["user"].lower()}'
+        if t == "activeAssetCtx": return f'activeAssetCtx:{dict["coin"].lower()}'
+        if t == "activeAssetData": return f'activeAssetData:{dict["user"].lower()}:{dict["coin"].lower()}'
+        if t == "userTwapSliceFills": return f'userTwapSliceFills:{dict["user"].lower()}'
+        if t == "userTwapHistory": return f'userTwapHistory:{dict["user"].lower()}'
+        if t == "bbo": return f'bbo:{dict["coin"].lower()}'
         raise ValueError(f"Unknown subscription type: {t}")
