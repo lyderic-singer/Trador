@@ -6,7 +6,7 @@ import websockets
 from log.logger import Logger
 from typing import Callable, Dict, Any, Optional
 from datetime import datetime
-from utils.functions import key
+from utils.functions import key, call
 
 class Subscription:
     def __init__(self, type: str, callback: Callable, user: str | None = None, coin: str | None = None, interval: str | None = None, dex: str | None = None):
@@ -15,7 +15,8 @@ class Subscription:
         self.coin = coin
         self.interval = interval
         self.dex = dex
-        self.subscrived = asyncio.Event()
+        self.active = asyncio.Event()
+        self.inactive = asyncio.Event()
         self.callback = callback
         self.sub = {}
         self.sub["type"] = type
@@ -24,6 +25,14 @@ class Subscription:
         if interval: self.sub["interval"] = interval
         if dex: self.sub["dex"] = dex
         self.key = key(self.sub)
+
+    def set(self):
+        self.inactive.clear()
+        self.active.set()
+
+    def clear(self):
+        self.active.clear()
+        self.inactive.set()
 
 class WebSocket:
     def __init__(self, url: str, messenger, info):
@@ -62,28 +71,26 @@ class WebSocket:
     async def handle(self):
         async for msg in self.ws:
             msg = json.loads(msg)
-            c = msg.get("channel")
-            d = msg.get("data")
-            if c == "pong":
+            channel = msg.get("channel")
+            data = msg.get("data")
+            if channel == "pong":
                 self.last_pong == time()
-            elif c == "subscriptionResponse" and d:
-                s = d.get("subscription")
-                k = key(s)
+            elif channel == "subscriptionResponse" and data:
+                method = data.get("method")
+                subscription = data.get("subscription")
+                k = key(subscription)
                 if k in self.subscriptions:
-                    self.subscriptions[k].subscrived.set()
-                else:
-                    self.subscriptions[k] = s
-            elif c and d:
-
-    async def _send_message(self, method: str, subscription: Dict[str, Any]):
-        """Envoie un message de souscription/désouscription"""
-        if not self.ws or self.ws.closed:
-            raise Exception("WebSocket non connecté")
-        message = {
-            "method": method,
-            "subscription": subscription
-        }
-        await self.ws.send(json.dumps(message))
+                    if method == "subscribe":
+                        self.subscriptions[k].set()
+                    elif method == "unsubscribe":
+                        self.subscriptions[k].clear()
+                    else:
+                        await self._log.warning(f"unexpected method: {method}")
+            elif channel and data:
+                k = key(msg)
+                if k in self.subscriptions:
+                    subscription = self.subscriptions[k]
+                    call(subscription.callback, data)
     
     def on(self, channel: str, handler: Callable):
         """Enregistre un handler pour un canal spécifique"""
