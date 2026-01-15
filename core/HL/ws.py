@@ -71,12 +71,12 @@ class WebSocket:
     async def connect(self):
         while self.running.is_set():
             try:
-                await self._log.info("connection attempt")
                 self.ws = await websockets.connect(self.url)
                 await self._log.success("connected")
                 for k in self.subscriptions:
-                    s = self.subscriptions[k]
-                    await self.subscribe(s.sub, s.callback)
+                    subscription = self.subscriptions[k]
+                    await self.subscribe(subscription.sub, subscription.callback)
+                self.last_pong = time()
                 await asyncio.gather(self.ping(), self.handle())
             except Exception as e:
                 await self._log.error(f"disconnected ({e}){f" , reconnect in {self.reconnect_delay}s" if self.running.is_set() else ""}")
@@ -85,40 +85,43 @@ class WebSocket:
     async def ping(self):
         while self.running.is_set() and self.ws:
             await asyncio.sleep(self.ping_delay)
-            await self.ws.send(json.dumps({"method", "ping"}))
+            await self.ws.send(json.dumps({"method": "ping"}))
             if time() - self.last_pong > self.ping_delay + 10:
                 raise ValueError("pong not received")
     
     async def handle(self):
-        async for msg in self.ws:
-            msg = json.loads(msg)
-            channel = msg.get("channel")
-            data = msg.get("data")
-            if channel == "pong":
-                self.last_pong = time()
-            elif channel == "subscriptionResponse" and data:
-                method = data.get("method")
-                sub = data.get("subscription")
-                k = key(sub)
-                if k in self.subscriptions:
-                    if method == "subscribe":
-                        self.subscriptions[k].set()
-                    elif method == "unsubscribe":
+        try:
+            async for msg in self.ws:
+                msg = json.loads(msg)
+                channel = msg.get("channel")
+                data = msg.get("data")
+                if channel == "pong":
+                    self.last_pong = time()
+                elif channel == "subscriptionResponse" and data:
+                    method = data.get("method")
+                    sub = data.get("subscription")
+                    k = key(sub)
+                    if k in self.subscriptions:
+                        if method == "subscribe":
+                            self.subscriptions[k].set()
+                        elif method == "unsubscribe":
+                            self.subscriptions[k].clear()
+                        else:
+                            await self._log.warning(f"unexpected method: {method}")
+                elif channel == "error" and data:
+                    data = extract_subscription_error(data)
+                    sub = data.get("subscription")
+                    k = key(sub)
+                    if k in self.subscriptions:
+                        self.subscriptions[k].error.set()
                         self.subscriptions[k].clear()
-                    else:
-                        await self._log.warning(f"unexpected method: {method}")
-            elif channel == "error" and data:
-                data = extract_subscription_error(data)
-                sub = data.get("subscription")
-                k = key(sub)
-                if k in self.subscriptions:
-                    self.subscriptions[k].error.set()
-                    self.subscriptions[k].clear()
-            elif channel and data:
-                k = key(msg)
-                if k in self.subscriptions:
-                    subscription = self.subscriptions[k]
-                    await call(subscription.callback, data)
+                elif channel and data:
+                    k = key(msg)
+                    if k in self.subscriptions:
+                        subscription = self.subscriptions[k]
+                        await call(subscription.callback, data)
+        except ValueError as e:
+            await self._log.warning(f"{e}")
     
     async def subscribe(self, sub: Dict[str, Any], callback: Callable):
         try:
@@ -153,6 +156,9 @@ class WebSocket:
             await self._log.success(f"Successfully unsubscribed {subscription.key}")
         except Exception as e:
             await self._log.error(f"{e}")
+        finally:
+            subscription = self.subscriptions.pop(key(sub), None)
+            del subscription
     
     # ========== FONCTIONS DÉDIÉES POUR CHAQUE TYPE ==========
     
