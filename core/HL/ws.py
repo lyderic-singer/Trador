@@ -36,7 +36,9 @@ class Subscription:
         self.inactive.set()
 
     async def wait(self):
-        await asyncio.wait([self.active.wait(), self.error.wait()], return_when=asyncio.FIRST_COMPLETED)
+        _, pending = await asyncio.wait([self.active.wait(), self.error.wait()], return_when=asyncio.FIRST_COMPLETED)
+        for p in pending:
+            p.cancel()
         if self.error.is_set():
             raise ValueError("wrong subscription")
 
@@ -111,7 +113,8 @@ class WebSocket:
                     else:
                         await self._log.warning(f"unexpected method: {method}")
             elif channel == "error" and data:
-                subscription = extract_subscription_error(data)
+                data = extract_subscription_error(data)
+                subscription = data.get("subscription")
                 k = key(subscription)
                 if k in self.subscriptions:
                     self.subscriptions[k].error.set()
@@ -120,31 +123,46 @@ class WebSocket:
                 k = key(msg)
                 if k in self.subscriptions:
                     subscription = self.subscriptions[k]
-                    call(subscription.callback, data)
+                    await call(subscription.callback, data)
     
-    async def subscribe(self, type: str, callback: Callable, user: str | None = None, coin: str | None = None, interval: str | None = None, dex: str | None = None):
+    async def subscribe(self, subscription: Dict[str, Any], callback: Callable):
         try:
+            type = subscription["type"]
+            user = subscription.get("user")
+            coin = subscription.get("coin")
+            interval = subscription.get("interval")
+            dex = subscription.get("dex")
             subscription = Subscription(type, callback, user, coin, interval, dex)
+            if subscription.key in self.subscriptions:
+                await self._log.info("subscription already set")
+                del subscription
+                return
             self.subscriptions[subscription.key] = subscription
             await self.running.wait()
             await self.ws.send(json.dumps({"method": "subscribe", "subscription": subscription.sub}))
             await subscription.wait()
-            await self._log(f"Subscription added: {subscription.key}")
+            await self._log.success(f"Subscription added: {subscription.key}")
         except Exception as e:
-            self.subscriptions.pop(subscription.key, None)
+            subscription = self.subscriptions.pop(subscription.key, None)
+            del subscription
             await self._log.error(f"{e}")
     
     async def unsubscribe(self, subscription: Dict[str, Any]):
-        """Désouscrire d'un flux spécifique"""
-        sub_key = key(subscription)
-        
-        if sub_key in self.subscriptions:
-            del self.subscriptions[sub_key]
-            
-            if self.ws and not self.ws.closed:
-                await self._send_message("unsubscribe", subscription)
-            
-            print(f"[{datetime.now()}] Désouscription: {sub_key}")
+        try:
+            k = key(subscription)
+            if not (k in self.subscriptions):
+                await self._log.info("not subscribed")
+                return
+            subscription = self.subscriptions[k]
+            await self.running.wait()
+            await self.ws.send(json.dumps({"method": "unsubscribe", "subscription": subscription.sub}))
+            try:
+                await asyncio.wait_for(subscription.inactive.wait(), timeout=10)
+            except asyncio.TimeoutError:
+                await self._log.error(f"Timeout for unsubscribe: {subscription.key}")
+            await self._log.success(f"Successfully unsubscribed {subscription.key}")
+        except Exception as e:
+            await self._log.error(f"{e}")
     
     # ========== FONCTIONS DÉDIÉES POUR CHAQUE TYPE ==========
     
