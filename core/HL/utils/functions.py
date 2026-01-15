@@ -1,6 +1,7 @@
 import time
 from decimal import Decimal, ROUND_DOWN
 import asyncio
+import json
 from typing import Dict, Any
 
 def format_price(px: float, max_decimals: int, sz_decimals: int):
@@ -23,6 +24,13 @@ async def call(fn, *args, **kwargs):
     if asyncio.iscoroutine(result):
         return await result
     return result
+
+def extract_json_error(s: str) -> dict:
+    try:
+        json_str = s[s.index("{"):]
+        return json.loads(json_str)
+    except Exception:
+        return {}
 
 def key(msg: Dict[str, Any]) -> str:
     d = msg.get("data")
