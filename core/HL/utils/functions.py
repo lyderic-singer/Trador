@@ -17,35 +17,50 @@ def format_price(px: float, max_decimals: int, sz_decimals: int):
 def timestamp_ms():
     return int(time.time() * 1000)
 
-def key(dict: Dict[str, Any]) -> str:
-    d = dict.get("data")
-    if d:
-        c = dict.get("channel")
+def key(msg: Dict[str, Any]) -> str:
+    d = msg.get("data")
+    if d is not None:
+        c = msg.get("channel")
         if c == "allMids": return "allMids"
+        if c == "notification": return "notification"
+        if c == "webData3": return f'webData3:{d["userState"]["user"].lower()}'
+        if c == "twapStates": return f'twapStates:{d["user"].lower()}:{d["dex"]}'
+        if c == "clearinghouseState": return f'clearinghouseState:{d["user"].lower()}:{d["dex"]}'
+        if c == "openOrders": return f'openOrders:{d["user"].lower()}:{d["dex"]}'
+        if c == "candle": return f'candle:{d["s"].lower()},{d["i"]}'
         if c == "l2Book": return f'l2Book:{d["coin"].lower()}'
-        if c == "activeAssetCtx": return f'activeAssetCtx:{d["coin"].lower()}'
-        if c == "trades": return f'trades:{d[0]["coin"].lower()}' if d else None
+        if c == "trades": return f'trades:{d[0]["coin"].lower()}' if d else "trades"
+        if c == "orderUpdates": return "orderUpdates"
         if c == "user": return "userEvents"
         if c == "userFills": return f'userFills:{d["user"].lower()}'
-        if c == "candle": return f'candle:{d["s"].lower()},{d["i"]}'
-        if c == "orderUpdates": return "orderUpdates"
         if c == "userFundings": return f'userFundings:{d["user"].lower()}'
         if c == "userNonFundingLedgerUpdates": return f'userNonFundingLedgerUpdates:{d["user"].lower()}'
-        if c == "webData2": return f'webData2:{d["user"].lower()}'
+        if c == "activeAssetCtx": return f'activeAssetCtx:{d["coin"].lower()}'
+        if c == "activeAssetData": return f'activeAssetData:{d["user"].lower()}:{d["coin"].lower()}'
+        if c == "userTwapSliceFills": return f'userTwapSliceFills:{d["user"].lower()}'
+        if c == "userTwapHistory": return f'userTwapHistory:{d["user"].lower()}'
         if c == "bbo": return f'bbo:{d["coin"].lower()}'
-        raise ValueError(f"Unknown msg type: {t}")
+        raise ValueError(f"Unknown WS channel: {c}")
     else:
-        t = dict.get("type")
+        t = msg.get("type")
         if t == "allMids": return "allMids"
-        if t == "l2Book": return f'l2Book:{dict["coin"].lower()}'
-        if t == "activeAssetCtx": return f'activeAssetCtx:{dict["coin"].lower()}'
-        if t == "trades": return f'trades:{dict["coin"].lower()}'
-        if t == "userEvents": return "userEvents"
-        if t == "userFills": return f'userFills:{dict["user"].lower()}'
-        if t == "candle": return f'candle:{dict["coin"].lower()},{dict["interval"]}'
+        if t == "notification": return "notification"
+        if t == "webData3": return f'webData3:{msg["user"].lower()}'
+        if t == "twapStates": return f'twapStates:{msg["user"].lower()}:{msg["dex"]}'
+        if t == "clearinghouseState": return f'clearinghouseState:{msg["user"].lower()}:{msg["dex"]}'
+        if t == "openOrders": return f'openOrders:{msg["user"].lower()}:{msg["dex"]}'
+        if t == "candle": return f'candle:{msg["coin"].lower()},{msg["interval"]}'
+        if t == "l2Book": return f'l2Book:{msg["coin"].lower()}'
+        if t == "trades": return f'trades:{msg["coin"].lower()}'
         if t == "orderUpdates": return "orderUpdates"
-        if t == "userFundings": return f'userFundings:{dict["user"].lower()}'
-        if t == "userNonFundingLedgerUpdates": return f'userNonFundingLedgerUpdates:{dict["user"].lower()}'
-        if t == "webData2": return f'webData2:{dict["user"].lower()}'
-        if t == "bbo": return f'bbo:{dict["coin"].lower()}'
+        if t == "userEvents": return "userEvents"
+        if t == "user": return "userEvents"
+        if t == "userFills": return f'userFills:{msg["user"].lower()}'
+        if t == "userFundings": return f'userFundings:{msg["user"].lower()}'
+        if t == "userNonFundingLedgerUpdates": return f'userNonFundingLedgerUpdates:{msg["user"].lower()}'
+        if t == "activeAssetCtx": return f'activeAssetCtx:{msg["coin"].lower()}'
+        if t == "activeAssetData": return f'activeAssetData:{msg["user"].lower()}:{msg["coin"].lower()}'
+        if t == "userTwapSliceFills": return f'userTwapSliceFills:{msg["user"].lower()}'
+        if t == "userTwapHistory": return f'userTwapHistory:{msg["user"].lower()}'
+        if t == "bbo": return f'bbo:{msg["coin"].lower()}'
         raise ValueError(f"Unknown subscription type: {t}")
