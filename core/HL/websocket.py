@@ -2,7 +2,8 @@ import asyncio
 import json
 from time import time
 import websockets
-from log.logger import Logger
+from log.logger import Logger, Messenger
+from .info import Info
 from typing import Callable, Dict, Any, Optional
 from .utils.functions import key, call, extract_subscription_error
 
@@ -36,12 +37,13 @@ class Subscription:
         for p in pending:
             p.cancel()
         if self.error.is_set():
-            raise ValueError("wrong subscription")
+            raise ValueError(f"wrong subscription: {self.sub}")
 
 class WebSocket:
-    def __init__(self, url: str, messenger):
+    def __init__(self, url: str, messenger: Messenger, info: Info):
         self.url = url
         self._log = Logger(self, messenger)
+        self.info = info
         self.ws = None
         self.subscriptions: Dict[str, Subscription] = {}
         self.running = False
@@ -138,7 +140,7 @@ class WebSocket:
             subscription = Subscription(sub, callback)
             if subscription.key in self.subscriptions:
                 await self._log.info("subscription already set")
-                return
+                return sub
             self.subscriptions[subscription.key] = subscription
             await self.connected.wait()
             await self.ws.send(json.dumps({"method": "subscribe", "subscription": sub}))
@@ -149,6 +151,7 @@ class WebSocket:
                 k = subscription.key
                 self.subscriptions.pop(k, None)
             await self._log.error(f"{e}")
+        return sub
     
     async def unsubscribe(self, sub: Dict[str, Any]):
         k = None
@@ -182,7 +185,7 @@ class WebSocket:
     
     async def web_data3(self, callback: Callable, user: str):
         subscription = {"type": "webData3", "user": user}
-        await self.subscribe(subscription, callback)
+        return await self.subscribe(subscription, callback)
     
     async def twap_states(self, callback: Callable, user: str, dex: Optional[str] = None):
         subscription = {"type": "twapStates", "user": user}
@@ -199,18 +202,21 @@ class WebSocket:
         if dex: subscription["dex"] = dex
         await self.subscribe(subscription, callback)
 
-    async def candle(self, callback: Callable, coin: str, interval: str):
-        subscription = {"type": "candle", "coin": coin, "interval": interval}
+    async def candle(self, callback: Callable, x: str | int, interval: str):
+        instrument = self.info.instrument(x)
+        subscription = {"type": "candle", "coin": instrument.coin, "interval": interval}
         await self.subscribe(subscription, callback)
 
-    async def l2_book(self, callback: Callable, coin: str, n_sig_figs: Optional[int] = None, mantissa: Optional[int] = None):
-        subscription = {"type": "l2Book", "coin": coin}
+    async def l2_book(self, callback: Callable, x: str | int, n_sig_figs: Optional[int] = None, mantissa: Optional[int] = None):
+        instrument = self.info.instrument(x)
+        subscription = {"type": "l2Book", "coin": instrument.coin}
         if n_sig_figs: subscription["nSigFigs"] = n_sig_figs
         if mantissa: subscription["mantissa"] = mantissa
         await self.subscribe(subscription, callback)
 
-    async def trades(self, callback: Callable, coin: str):
-        subscription = {"type": "trades", "coin": coin}
+    async def trades(self, callback: Callable, x: str | int):
+        instrument = self.info.instrument(x)
+        subscription = {"type": "trades", "coin": instrument.coin}
         await self.subscribe(subscription, callback)
 
     async def order_updates(self, callback: Callable, user: str):
@@ -234,12 +240,14 @@ class WebSocket:
         subscription = {"type": "userNonFundingLedgerUpdates", "user": user}
         await self.subscribe(subscription, callback)
 
-    async def active_asset_ctx(self, callback: Callable, coin: str):
-        subscription = {"type": "activeAssetCtx", "coin": coin}
+    async def active_asset_ctx(self, callback: Callable, x: str | int):
+        instrument = self.info.instrument(x)
+        subscription = {"type": "activeAssetCtx", "coin": instrument.coin}
         await self.subscribe(subscription, callback)
 
-    async def active_asset_data(self, callback: Callable, user: str, coin: str):
-        subscription = {"type": "activeAssetData", "user": user, "coin": coin}
+    async def active_asset_data(self, callback: Callable, user: str, x: str | int):
+        instrument = self.info.instrument(x)
+        subscription = {"type": "activeAssetData", "user": user, "coin": instrument.coin}
         await self.subscribe(subscription, callback)
 
     async def user_twap_slice_fills(self, callback: Callable, user: str):
@@ -250,6 +258,7 @@ class WebSocket:
         subscription = {"type": "userTwapHistory", "user": user}
         await self.subscribe(subscription, callback)
 
-    async def bbo(self, callback: Callable, coin: str):
-        subscription = {"type": "bbo", "coin": coin}
+    async def bbo(self, callback: Callable, x: str | int):
+        instrument = self.info.instrument(x)
+        subscription = {"type": "bbo", "coin": instrument.coin}
         await self.subscribe(subscription, callback)

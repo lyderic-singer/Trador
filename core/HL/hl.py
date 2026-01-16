@@ -39,7 +39,7 @@ class HL:
         self.session = session
         self.api = API(url, messenger, self.session)
         self.info = Info(url, messenger, self.api)
-        self.websocket = WebSocket(MAINNET_WS_URL if mainnet else TESTNET_WS_URL, self.messenger)
+        self.websocket = WebSocket(MAINNET_WS_URL if mainnet else TESTNET_WS_URL, self.messenger, self.info)
         self.exchange = Exchange(url, messenger, account, self.info)
         self._running = False
 
