@@ -5,7 +5,7 @@ from .utils.constants import MAINNET_API_URL, MAINNET_WS_URL, TESTNET_API_URL, T
 from eth_account import Account
 from eth_account.signers.local import LocalAccount
 
-from .websocket import Websocket
+from .websocket import WebSocket
 from .api import API
 from .info import Info
 from .exchange import Exchange
@@ -39,30 +39,29 @@ class HL:
         self.session = session
         self.api = API(url, messenger, self.session)
         self.info = Info(url, messenger, self.api)
-        self.ws = Websocket(MAINNET_WS_URL if mainnet else TESTNET_WS_URL, self.messenger)
+        self.websocket = WebSocket(MAINNET_WS_URL if mainnet else TESTNET_WS_URL, self.messenger)
         self.exchange = Exchange(url, messenger, account, self.info)
-        asyncio.create_task(self.ws.start())
         self._running = False
 
     async def start(self) -> None:
         if not self._running:
             try:
-                await self._log.info("tentative de demarrage du core")
+                await self._log.info("starting HL core")
                 await self.session.get()
                 await self.info.start()
-                asyncio.create_task(self.ws.start())
-                await self._log.success("core démarré")
+                await self.websocket.start()
+                await self._log.success("HL ready")
                 self._running = True
             except Exception as e:
-                await self._log.error(f"erreur dans le demarrage du core : {e}")
+                await self._log.error(f"{e}")
         else:
-            await self._log.warning("le core est deja lancé")
+            await self._log.warning("HL already started")
 
     async def stop(self) -> None:
         if self._running:
             try:
                 await self._log.info("demande d'arret du core")
-                await self.ws.stop()
+                await self.websocket.stop()
                 await self.api.stop()
                 await self._log.success("core arreté et deconnecté")
                 self._running = False

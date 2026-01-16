@@ -1,244 +1,252 @@
 import asyncio
 import json
 from time import time
-from collections import defaultdict
-from typing import Any, Callable, Dict, List, NamedTuple, Optional, Tuple
-from log.logger import Logger
-
 import websockets
+from log.logger import Logger
+from typing import Callable, Dict, Any, Optional
+from .utils.functions import key, call, extract_subscription_error
 
-class Subscription(NamedTuple):
-    subscription: Dict[str, Any]
-    callback: Callable[[Any], Any]
-    subscription_id: int
+class Subscription:
+    def __init__(self, sub: Dict[str, Any], callback: Callable):
+        self.type = sub["type"]
+        self.user = sub.get("user")
+        self.coin = sub.get("coin")
+        self.interval = sub.get("interval")
+        self.dex = sub.get("dex")
+        self.active = asyncio.Event()
+        self.inactive = asyncio.Event()
+        self.error = asyncio.Event()
+        self.callback = callback
+        self.sub = sub
+        self.key = key(sub)
+        self.clear()
 
-def subscription_to_identifier(subscription: Dict[str, Any]) -> str:
-    t = subscription["type"]
-    if t == "allMids": return "allMids"
-    if t == "l2Book": return f'l2Book:{subscription["coin"].lower()}'
-    if t == "activeAssetCtx": return f'activeAssetCtx:{subscription["coin"].lower()}'
-    if t == "trades": return f'trades:{subscription["coin"].lower()}'
-    if t == "userEvents": return "userEvents"
-    if t == "userFills": return f'userFills:{subscription["user"].lower()}'
-    if t == "candle": return f'candle:{subscription["coin"].lower()},{subscription["interval"]}'
-    if t == "orderUpdates": return "orderUpdates"
-    if t == "userFundings": return f'userFundings:{subscription["user"].lower()}'
-    if t == "userNonFundingLedgerUpdates": return f'userNonFundingLedgerUpdates:{subscription["user"].lower()}'
-    if t == "webData2": return f'webData2:{subscription["user"].lower()}'
-    if t == "bbo": return f'bbo:{subscription["coin"].lower()}'
-    raise ValueError(f"Unknown subscription type: {t}")
+    def set(self):
+        self.inactive.clear()
+        self.active.set()
 
-def ws_msg_to_identifier(ws_msg: Dict[str, Any]) -> Optional[str]:
-    c = ws_msg["channel"]
-    d = ws_msg.get("data")
-    if c == "pong": return "pong"
-    if c == "allMids": return "allMids"
-    if c == "l2Book": return f'l2Book:{d["coin"].lower()}'
-    if c == "activeAssetCtx": return f'activeAssetCtx:{d["coin"].lower()}'
-    if c == "trades": return f'trades:{d[0]["coin"].lower()}' if d else None
-    if c == "user": return "userEvents"
-    if c == "userFills": return f'userFills:{d["user"].lower()}'
-    if c == "candle": return f'candle:{d["s"].lower()},{d["i"]}'
-    if c == "orderUpdates": return "orderUpdates"
-    if c == "userFundings": return f'userFundings:{d["user"].lower()}'
-    if c == "userNonFundingLedgerUpdates": return f'userNonFundingLedgerUpdates:{d["user"].lower()}'
-    if c == "webData2": return f'webData2:{d["user"].lower()}'
-    if c == "bbo": return f'bbo:{d["coin"].lower()}'
-    return None
+    def clear(self):
+        self.active.clear()
+        self.inactive.set()
 
-class Websocket:
+    async def wait(self):
+        _, pending = await asyncio.wait([self.active.wait(), self.error.wait()], return_when=asyncio.FIRST_COMPLETED)
+        for p in pending:
+            p.cancel()
+        if self.error.is_set():
+            raise ValueError("wrong subscription")
+
+class WebSocket:
     def __init__(self, url: str, messenger):
-        self.subscription_id_counter = 0
-        self.queued_subscriptions: List[Tuple[Dict[str, Any], Subscription]] = []
-        self.active_subscriptions: Dict[str, List[Subscription]] = defaultdict(list)
-        self.ws_ready = asyncio.Event()
-        self.stop_event = asyncio.Event()
         self.url = url
-        self.ws: Optional[websockets.WebSocketClientProtocol] = None
-        self.last_pong = asyncio.get_event_loop().time()
-        self.callback_queue: asyncio.Queue = asyncio.Queue()
         self._log = Logger(self, messenger)
-        self.last_useful_message = None
-
-    async def _ping(self):
-        while not self.stop_event.is_set():
-            await asyncio.sleep(2)
-            if self.ws:
-                try:
-                    await self.ws.send(json.dumps({"method": "ping"}))
-                    await self._log.debug("Ping sent", save = False)
-                except Exception as e:
-                    await self._log.warning(f"Failed to send ping: {e}")
-
-    async def _pong(self):
-        while not self.stop_event.is_set():
-            await asyncio.sleep(10)
-            if asyncio.get_event_loop().time() - self.last_pong > 40:
-                await self._log.error("Pong timeout reached, reconnecting...")
-                await self._reconnect()
-
-    async def _sub(self, identifier: str, subscription: Dict[str, Any], subscription_id: int):
-        try:
-            await self.ws.send(json.dumps({"method": "subscribe", "subscription": subscription}))
-            await self._log.info(f"Subscription validée pour {identifier} (id={subscription_id})")
-        except (ConnectionError, asyncio.TimeoutError) as e:
-            await self._log.error(f"Erreur lors du subscribe de {identifier} (id={subscription_id}): {e}")
-            raise
-
-    async def _subqueue(self):
-        for subscription, active_sub in self.queued_subscriptions:
-            await self.subscribe(subscription, active_sub.callback, active_sub.subscription_id)
-        self.queued_subscriptions.clear()
-
-    async def _callback(self):
-        while not self.stop_event.is_set():
-            callback, msg = await self.callback_queue.get()
-            try:
-                if asyncio.iscoroutinefunction(callback):
-                    await callback(msg)
-                else:
-                    callback(msg)
-            except Exception as e:
-                await self._log.error(f"Error in callback : {e}")
-
-    async def _reconnect(self):
-        self.ws_ready.clear()
-        if self.ws:
-            try:
-                await self.ws.close()
-            except Exception as e:
-                await self._log.error(f"Error closing websocket during reconnect: {e}", exc_info=True)
         self.ws = None
-
-    async def _resubscribe(self):
-        for identifier, subs_list in self.active_subscriptions.items():
-            for sub in subs_list:
-                try:
-                    await self._sub(identifier, sub.subscription, sub.subscription_id)
-                except Exception as e:
-                    await self._log.error(f"Erreur dans le resubscribe de {identifier} : {e}")
-
-    async def _receive(self):
-        try:
-            async for message in self.ws:
-                try:
-                    ws_msg = json.loads(message)
-                except Exception as e:
-                    await self._log.warning(f"Erreur lors du parsing JSON : {e} - Message: {message}")
-                    continue
-                identifier = ws_msg_to_identifier(ws_msg)
-                if identifier == "pong":
-                    self.last_pong = asyncio.get_event_loop().time()
-                    continue
-                if not identifier:
-                    continue
-                for active_sub in self.active_subscriptions.get(identifier, []):
-                    self.last_useful_message = int(time())
-                    await self.callback_queue.put((active_sub.callback, ws_msg))
-        except (websockets.ConnectionClosedError, websockets.ConnectionClosedOK) as e:
-            await self._log.warning(f"WebSocket closed: {e}")
-        except Exception as e:
-            await self._log.error(f"Unexpected error in _receive() : {e}")
-
-    async def subscribe(self, subscription: Dict[str, Any], callback: Callable[[Any], Any], subscription_id: Optional[int] = None) -> int:
-        if subscription_id is None:
-            self.subscription_id_counter += 1
-            subscription_id = self.subscription_id_counter
-        identifier = subscription_to_identifier(subscription)
-        if identifier in {"userEvents", "orderUpdates"} and self.active_subscriptions[identifier]:
-            await self._log.warning(f"Tentative de multiples abonnements interdits pour {identifier}")
-            raise NotImplementedError(f"Multiple subscriptions to {identifier} not allowed")
-        for sub in self.active_subscriptions.get(identifier, []):
-            if sub.subscription == subscription:
-                await self._log.info(f"Souscription déjà active pour {identifier}, aucun nouvel envoi (id existant={sub.subscription_id})")
-                return sub.subscription_id
-        active_sub = Subscription(subscription, callback, subscription_id)
-        if not self.ws_ready.is_set():
-            await self._log.info(f"WS pas prête, mise en file d'attente de l'abonnement {identifier} (id={subscription_id})")
-            self.queued_subscriptions.append((subscription, active_sub))
-        else:
-            self.active_subscriptions[identifier].append(active_sub)
-            try:
-                await self._sub(identifier, subscription, subscription_id)
-            except (ConnectionError, asyncio.TimeoutError):
-                self.queued_subscriptions.append((subscription, active_sub))
-                raise
-        return subscription_id
-
-    async def unsubscribe(self, subscription: Dict[str, Any], subscription_id: int) -> bool:
-        try:
-            if not self.ws_ready.is_set():
-                raise RuntimeError("Cannot unsubscribe before websocket is ready")
-            identifier = subscription_to_identifier(subscription)
-            subs = self.active_subscriptions.get(identifier, [])
-            new_subs = [s for s in subs if s.subscription_id != subscription_id]
-            if len(new_subs) == len(subs):
-                await self._log.warning(f"Abonnement id={subscription_id} non trouvé pour {identifier}")
-                return False
-            if not new_subs:
-                try:
-                    await self.ws.send(json.dumps({"method": "unsubscribe", "subscription": subscription}))
-                    await self._log.info(f"Unsubscribe envoyé pour {identifier} (id={subscription_id})")
-                except (ConnectionError, asyncio.TimeoutError) as e:
-                    await self._log.error(f"Erreur lors de l'envoi du message unsubscribe pour {identifier} (id={subscription_id}): {e}")
-                    raise
-            self.active_subscriptions[identifier] = new_subs
-            return True
-        except Exception as e:
-            await self._log.error(f"Erreur inattendue dans unsubscribe: {e}")
-            raise
-
-    async def unsubscribe_all(self) -> None:
-        if not self.ws_ready.is_set():
-            raise RuntimeError("Websocket is not ready; cannot unsubscribe all.")
-        for identifier, subs_list in list(self.active_subscriptions.items()):
-            for sub in subs_list:
-                try:
-                    await self.ws.send(json.dumps({
-                        "method": "unsubscribe",
-                        "subscription": sub.subscription
-                    }))
-                except Exception as e:
-                    await self._log.error(f"Erreur pendant l'unsubscribe de {identifier} (id={sub.subscription_id}): {e}")
-            self.active_subscriptions[identifier] = []
-        await self._log.info("Toutes les subscriptions ont été supprimées")
+        self.subscriptions: Dict[str, Subscription] = {}
+        self.running = False
+        self.connected = asyncio.Event()
+        self.reconnect_delay = 5
+        self.ping_delay = 30
+        self.task = None
+        self.last_pong = 0
 
     async def start(self):
-        asyncio.create_task(self._callback())
-        asyncio.create_task(self._pong())
-        while not self.stop_event.is_set():
-            try:
-                await self._log.info("Tentative de connexion au WebSocket...")
-                self.ws = await websockets.connect(self.url)
-                self.ws_ready.set()
-                self.last_pong = asyncio.get_event_loop().time()
-                await self._log.success("Connecté au WebSocket.")
-                await self._subqueue()
-                await self._resubscribe()
-                recv_task = asyncio.create_task(self._receive())
-                ping_task = asyncio.create_task(self._ping())
-                done, pending = await asyncio.wait(
-                    [recv_task, ping_task],
-                    return_when=asyncio.FIRST_COMPLETED)
-                for task in pending:
-                    task.cancel()
-            except Exception as e:
-                await self._log.warning(f"Connexion échouée : {e}. Nouvelle tentative dans 5 secondes.")
-            finally:
-                await self._reconnect()
-                if not self.stop_event.is_set():
-                    await asyncio.sleep(5)
+        try:
+            self.running = True
+            self.task = asyncio.create_task(self.connect())
+            await self.connected.wait()
+            await self._log.info("websocket started")
+        except Exception as e:
+            self.running = False
+            await self._log.error(f"cannot start websocket: {e}")
 
-    async def stop(self):
-        await self._log.info("Arrêt du WebSocket demandé.")
-        self.stop_event.set()
-        if self.ws:
-            try:
-                await self.unsubscribe_all()
+    async def close(self):
+        try:
+            self.connected.clear()
+            self.running = False
+            if self.ws:
                 await self.ws.close()
-                await self._log.success("Connexion WebSocket fermée.")
+            await self._log.success("websocket closed")
+        except Exception as e:
+            self._log(f"cannot stop websocket: {e}")
+    
+    async def connect(self):
+        while self.running:
+            try:
+                self.ws = await websockets.connect(self.url)
+                self.connected.set()
+                await self._log.success("connected")
+                for k in self.subscriptions:
+                    subscription = self.subscriptions[k]
+                    await self.ws.send(json.dumps({"method": "subscribe", "subscription": subscription.sub}))
+                self.last_pong = time()
+                await asyncio.gather(self.ping(), self.handle())
             except Exception as e:
-                await self._log.error(f"Erreur pendant la fermeture de la connexion au websocket : {e}")
-        self.ws = None
-        self.ws_ready.clear()
-        await self._log.success("WebSocket arrêté proprement.")
+                await self._log.error(f"disconnected ({e}){f" , reconnect in {self.reconnect_delay}s" if self.running else ""}")
+                await asyncio.sleep(self.reconnect_delay)
+            finally:
+                if self.ws:
+                    await self.ws.close()
+                self.connected.clear()
+    
+    async def ping(self):
+        while self.connected.is_set():
+            await asyncio.sleep(self.ping_delay)
+            await self.ws.send(json.dumps({"method": "ping"}))
+            if time() - self.last_pong > self.ping_delay + 10:
+                raise ValueError("pong not received")
+    
+    async def handle(self):
+        async for msg in self.ws:
+            try:
+                msg = json.loads(msg)
+                channel = msg.get("channel")
+                data = msg.get("data")
+                if channel == "pong":
+                    self.last_pong = time()
+                elif channel == "subscriptionResponse" and data:
+                    method = data.get("method")
+                    sub = data.get("subscription")
+                    k = key(sub)
+                    if k in self.subscriptions:
+                        if method == "subscribe":
+                            self.subscriptions[k].set()
+                        elif method == "unsubscribe":
+                            self.subscriptions[k].clear()
+                        else:
+                            await self._log.warning(f"unexpected method: {method}")
+                elif channel == "error" and data:
+                    data = extract_subscription_error(data)
+                    sub = data.get("subscription")
+                    k = key(sub)
+                    if k in self.subscriptions:
+                        self.subscriptions[k].error.set()
+                        self.subscriptions[k].clear()
+                elif channel and data:
+                    k = key(msg)
+                    if k in self.subscriptions:
+                        subscription = self.subscriptions[k]
+                        await call(subscription.callback, data)
+            except Exception as e:
+                await self._log.warning(f"{e}")
+                continue
+    
+    async def subscribe(self, sub: Dict[str, Any], callback: Callable):
+        try:
+            subscription = Subscription(sub, callback)
+            if subscription.key in self.subscriptions:
+                await self._log.info("subscription already set")
+                return
+            self.subscriptions[subscription.key] = subscription
+            await self.connected.wait()
+            await self.ws.send(json.dumps({"method": "subscribe", "subscription": sub}))
+            await subscription.wait()
+            await self._log.success(f"Subscription added: {subscription.key}")
+        except Exception as e:
+            if subscription and subscription.key in self.subscriptions:
+                k = subscription.key
+                self.subscriptions.pop(k, None)
+            await self._log.error(f"{e}")
+    
+    async def unsubscribe(self, sub: Dict[str, Any]):
+        try:
+            k = key(sub)
+            if not (k in self.subscriptions):
+                await self._log.info("not subscribed")
+                return
+            subscription = self.subscriptions[k]
+            await self.connected.wait()
+            await self.ws.send(json.dumps({"method": "unsubscribe", "subscription": subscription.sub}))
+            try:
+                await asyncio.wait_for(subscription.inactive.wait(), timeout=10)
+                await self._log.success(f"Successfully unsubscribed {subscription.key}")
+            except asyncio.TimeoutError:
+                await self._log.error(f"Timeout for unsubscribe: {subscription.key}")
+        except Exception as e:
+            await self._log.error(f"{e}")
+        finally:
+            if k:
+                subscription = self.subscriptions.pop(k, None)
+                del subscription
+    
+    async def all_mids(self, callback: Callable, dex: Optional[str] = None):
+        subscription = {"type": "allMids"}
+        if dex: subscription["dex"] = dex
+        await self.subscribe(subscription, callback)
+    
+    async def notification(self, callback: Callable, user: str):
+        subscription = {"type": "notification", "user": user}
+        await self.subscribe(subscription, callback)
+    
+    async def web_data3(self, callback: Callable, user: str):
+        subscription = {"type": "webData3", "user": user}
+        await self.subscribe(subscription, callback)
+    
+    async def twap_states(self, callback: Callable, user: str, dex: Optional[str] = None):
+        subscription = {"type": "twapStates", "user": user}
+        if dex: subscription["dex"] = dex
+        await self.subscribe(subscription, callback)
+
+    async def clearinghouse_state(self, callback: Callable, user: str, dex: Optional[str] = None):
+        subscription = {"type": "clearinghouseState", "user": user}
+        if dex: subscription["dex"] = dex
+        await self.subscribe(subscription, callback)
+
+    async def open_orders(self, callback: Callable, user: str, dex: Optional[str] = None):
+        subscription = {"type": "openOrders", "user": user}
+        if dex: subscription["dex"] = dex
+        await self.subscribe(subscription, callback)
+
+    async def candle(self, callback: Callable, coin: str, interval: str):
+        subscription = {"type": "candle", "coin": coin, "interval": interval}
+        await self.subscribe(subscription, callback)
+
+    async def l2_book(self, callback: Callable, coin: str, n_sig_figs: Optional[int] = None, mantissa: Optional[int] = None):
+        subscription = {"type": "l2Book", "coin": coin}
+        if n_sig_figs: subscription["nSigFigs"] = n_sig_figs
+        if mantissa: subscription["mantissa"] = mantissa
+        await self.subscribe(subscription, callback)
+
+    async def trades(self, callback: Callable, coin: str):
+        subscription = {"type": "trades", "coin": coin}
+        await self.subscribe(subscription, callback)
+
+    async def order_updates(self, callback: Callable, user: str):
+        subscription = {"type": "orderUpdates", "user": user}
+        await self.subscribe(subscription, callback)
+
+    async def user_events(self, callback: Callable, user: str):
+        subscription = {"type": "userEvents", "user": user}
+        await self.subscribe(subscription, callback)
+
+    async def user_fills(self, callback: Callable, user: str, aggregate_by_time: Optional[bool] = None):
+        subscription = {"type": "userFills", "user": user}
+        if aggregate_by_time is not None: subscription["aggregateByTime"] = aggregate_by_time
+        await self.subscribe(subscription, callback)
+
+    async def user_fundings(self, callback: Callable, user: str):
+        subscription = {"type": "userFundings", "user": user}
+        await self.subscribe(subscription, callback)
+
+    async def user_non_funding_ledger_updates(self, callback: Callable, user: str):
+        subscription = {"type": "userNonFundingLedgerUpdates", "user": user}
+        await self.subscribe(subscription, callback)
+
+    async def active_asset_ctx(self, callback: Callable, coin: str):
+        subscription = {"type": "activeAssetCtx", "coin": coin}
+        await self.subscribe(subscription, callback)
+
+    async def active_asset_data(self, callback: Callable, user: str, coin: str):
+        subscription = {"type": "activeAssetData", "user": user, "coin": coin}
+        await self.subscribe(subscription, callback)
+
+    async def user_twap_slice_fills(self, callback: Callable, user: str):
+        subscription = {"type": "userTwapSliceFills", "user": user}
+        await self.subscribe(subscription, callback)
+
+    async def user_twap_history(self, callback: Callable, user: str):
+        subscription = {"type": "userTwapHistory", "user": user}
+        await self.subscribe(subscription, callback)
+
+    async def bbo(self, callback: Callable, coin: str):
+        subscription = {"type": "bbo", "coin": coin}
+        await self.subscribe(subscription, callback)
