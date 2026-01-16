@@ -30,7 +30,9 @@ class Subscription:
         self.inactive.set()
 
     async def wait(self):
-        _, pending = await asyncio.wait([self.active.wait(), self.error.wait()], return_when=asyncio.FIRST_COMPLETED)
+        error_task = asyncio.create_task(self.error.wait())
+        active_task = asyncio.create_task(self.active.wait())
+        _, pending = await asyncio.wait([active_task, error_task], return_when=asyncio.FIRST_COMPLETED)
         for p in pending:
             p.cancel()
         if self.error.is_set():
@@ -131,6 +133,7 @@ class WebSocket:
                 continue
     
     async def subscribe(self, sub: Dict[str, Any], callback: Callable):
+        subscription = None
         try:
             subscription = Subscription(sub, callback)
             if subscription.key in self.subscriptions:
@@ -148,6 +151,7 @@ class WebSocket:
             await self._log.error(f"{e}")
     
     async def unsubscribe(self, sub: Dict[str, Any]):
+        k = None
         try:
             k = key(sub)
             if not (k in self.subscriptions):
@@ -166,7 +170,6 @@ class WebSocket:
         finally:
             if k:
                 subscription = self.subscriptions.pop(k, None)
-                del subscription
     
     async def all_mids(self, callback: Callable, dex: Optional[str] = None):
         subscription = {"type": "allMids"}
