@@ -3,7 +3,7 @@ import time
 
 from .info import Info
 from .utils.constants import MAINNET_API_URL
-from .utils.signing import OrderType, sign
+from .utils.signing import sign
 from .utils.functions import timestamp_ms
 from .utils.types import Any, BuilderInfo, Cloid, List, Optional, Tif, Order, ExecutionType, CancelByCloidRequest, CancelRequest, Modify
 from log.logger import Logger

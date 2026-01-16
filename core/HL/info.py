@@ -12,7 +12,7 @@ class Info:
         self.instruments_table: dict[str | int, int] = {} # name | coin | asset -> asset
 
     async def post(self, request):
-        await self.post(request)
+        return await self.api.post("/info", request)
     
     def _register(self, name: str, coin: str, asset: int, szDecimals: int):
         inst = Instrument(name, coin, asset, szDecimals)
