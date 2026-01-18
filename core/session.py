@@ -6,20 +6,26 @@ class Session:
         self.session = None
         self._log = Logger(self, messenger)
 
+    async def start(self):
+        try:
+            self.session = aiohttp.ClientSession(headers={"Content-Type": "application/json"})
+            await self._log.success("Session started")
+        except Exception as e:
+            await self._log.error(f"{e}")
+            raise e
+
     async def get(self) -> aiohttp.ClientSession:
         if self.session is None:
-            await self._log.debug("Creating new aiohttp session.")
+            await self._log.debug("New session")
             self.session = aiohttp.ClientSession(headers={"Content-Type": "application/json"})
-        elif self.session.closed:
-            await self._log.debug("Session was closed. Creating a new one.")
+        if self.session.closed:
+            await self._log.info("Session closed, creating a new one")
             self.session = aiohttp.ClientSession(headers={"Content-Type": "application/json"})
-        else:
-            await self._log.debug("Reusing existing aiohttp session.")
         return self.session
 
     async def stop(self):
         if self.session and not self.session.closed:
-            await self._log.debug("Closing aiohttp session.")
             await self.session.close()
+            await self._log.success("Session closed")
         else:
-            await self._log.debug("Session already closed or does not exist.")
+            await self._log.info("Session already closed or does not exist")
