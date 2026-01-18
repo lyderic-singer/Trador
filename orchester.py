@@ -1,5 +1,6 @@
 import asyncio
 import time
+from core.HL.utils.functions import call
 from core.HL.utils.constants import MAINNET_API_URL, TESTNET_API_URL
 from core.session import Session
 from log.logger import Messenger, Logger
@@ -25,21 +26,17 @@ class Orchester:
 
     async def start(self):
         t = time.time()
+        await self._log.info("starting orchester")
+        await self.session.start()
         await self.hl.start()
         if self.strategy:
-            try:
-                if asyncio.iscoroutinefunction(self.strategy.init):
-                    await self.strategy.init(self.hl)
-                else:
-                    self.strategy.init(self.hl)
-            except Exception as e:
-                await self._log.error(f"Error in callback : {e}")
+            await call(self.strategy.start(self))
         await self.telegram.start()
         self._running = True
-        await self._log.success(f"orchester demarré en {(time.time()-t):.2f} s", send_tg= True)
+        await self._log.success(f"orchester started in {(time.time()-t):.2f} s", send_tg= True)
 
     async def stop(self):
-        await self._log.info("orchester arrêt en cours...", send_tg= True)
+        await self._log.info("stoping orchester", send_tg= True)
         if self.strategy:
             await self.strategy.stop()
         for task in [self._tg_task, self._strategy_task]:
@@ -51,7 +48,7 @@ class Orchester:
                     pass
         await self.hl.stop()
         await self.telegram.stop()
-        await self.dispatcher.stop()
         await self.session.stop()
         self._running = False
-        await self._log.success("orchester arrêté")
+        await self._log.success("orchester stopped")
+        await self.dispatcher.stop()
