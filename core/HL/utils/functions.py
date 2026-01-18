@@ -79,3 +79,12 @@ def key(dict: Dict[str, Any]) -> str:
         if t == "userTwapHistory": return f'userTwapHistory:{dict["user"].lower()}'
         if t == "bbo": return f'bbo:{dict["coin"].lower()}'
         raise ValueError(f"Unknown subscription type: {t}")
+    
+async def cancel(task: asyncio.Task):
+    if task.done():
+        return
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
