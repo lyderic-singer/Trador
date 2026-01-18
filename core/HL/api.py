@@ -14,32 +14,20 @@ class API:
         self.session = session
         self._log = Logger(self, messenger)
 
-    async def post(self, url_path: str, payload: Any = None) -> Any:
+    async def post(self, path: str, payload: Any = None) -> Any:
         payload = payload or {}
-        url = self.url + url_path
-        await self._log.debug(f"POST {url} | Payload: {payload}")
-        try:
-            session = await self.session.get()
-            async with session.post(url, json=payload) as response:
-                await self._handle_exception(response)
-                try:
-                    data = await response.json()
-                    await self._log.debug(f"Response JSON recue")
-                    return data
-                except aiohttp.ContentTypeError:
-                    text = await response.text()
-                    await self._log.warning(f"Invalid JSON response")
-                    return {"error": f"Could not parse JSON"}
-        except Exception as e:
-            await self._log.error(f"POST request failed: {e}")
-            raise
+        url = self.url + path
+        session = await self.session.get()
+        async with session.post(url, json=payload) as response:
+            await self.handle(response)
+            return await response.json()
 
-    async def _handle_exception(self, response):
+    async def handle(self, response):
         status_code = response.status
         if status_code < 400:
             return
         text = await response.text()
-        await self._log.warning(f"HTTP {status_code} | Response text: {text}")
+        await self._log.warning(f"HTTP {status_code} | {text}")
         if 400 <= status_code < 500:
             try:
                 err = json.loads(text)
@@ -50,7 +38,3 @@ class API:
             error_data = err.get("data")
             raise ClientError(status_code, err.get("code"), err.get("msg"), response.headers, error_data)
         raise ServerError(status_code, text)
-
-    async def stop(self):
-        await self._log.info("Closing API session.")
-        await self.session.close()
