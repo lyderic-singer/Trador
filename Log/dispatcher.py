@@ -7,12 +7,12 @@ def shell(*args, sep=' ', end='\n'):
     sys.stdout.flush()
 
 class Dispatcher:
-    def __init__(self, messenger, telegram = None, filepath = "logs.txt" ):
+    def __init__(self, messenger, telegram = None, path = "logs.txt" ):
         self.messenger = messenger
-        self.filepath = filepath
+        self.path = path
         self.telegram = telegram
         self._running = False
-        self.file_handle = open(filepath, "a", buffering=1, encoding="utf-8") if filepath else None
+        self.file_handle = open(path, "a", buffering=1, encoding="utf-8") if path else None
         self._task = None
     
     async def _save_to_file(self, message):

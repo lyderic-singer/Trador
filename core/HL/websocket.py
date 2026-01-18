@@ -146,12 +146,13 @@ class WebSocket:
             await self.ws.send(json.dumps({"method": "subscribe", "subscription": sub}))
             await subscription.wait()
             await self._log.success(f"Subscription added: {subscription.key}")
+            return sub
         except Exception as e:
             if subscription and subscription.key in self.subscriptions:
                 k = subscription.key
                 self.subscriptions.pop(k, None)
             await self._log.error(f"{e}")
-        return sub
+            raise e
     
     async def unsubscribe(self, sub: Dict[str, Any]):
         k = None
@@ -167,7 +168,7 @@ class WebSocket:
                 await asyncio.wait_for(subscription.inactive.wait(), timeout=10)
                 await self._log.success(f"Successfully unsubscribed {subscription.key}")
             except asyncio.TimeoutError:
-                await self._log.error(f"Timeout for unsubscribe: {subscription.key}")
+                raise ValueError(f"Timeout for unsubscribe: {subscription.key}")
         except Exception as e:
             await self._log.error(f"{e}")
         finally:

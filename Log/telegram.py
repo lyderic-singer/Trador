@@ -19,9 +19,9 @@ class Telegram:
         self._app: Application = ApplicationBuilder().token(self.token).build()
         self._worker_task = None
         self._polling_task = None
-        self._add_handlers()
+        self._register()
 
-    def _add_handlers(self):
+    def _register(self):
         self._app.add_handler(CommandHandler("ping", self._on_ping))
         self._app.add_handler(CommandHandler("run", self._on_run))
         self._app.add_handler(CommandHandler("perpinventory", self._on_perp_inventory))
@@ -109,7 +109,7 @@ class Telegram:
             await self._log.error(f"[Telegram] message worker exception: {e}")
 
     async def _polling(self):
-        await self._log.info("démarrage du polling")
+        await self._log.info("Starting Telegram")
         while True:
             try:
                 await self._app.initialize()
@@ -121,7 +121,6 @@ class Telegram:
             except asyncio.CancelledError:
                 await self._log.warning("polling annulé")
                 break
-
             except Exception as e:
                 await self._log.error(f"polling crashed : {e}")
                 await self._log.warning("tentative de reconnexion dans 5s...")
@@ -132,7 +131,6 @@ class Telegram:
                 except Exception as stop_error:
                     await self._log.warning(f"erreur durant l'arrêt : {stop_error}")
                 await asyncio.sleep(5)
-        await self._log.info("polling terminé")
 
     async def start(self):
         self._worker_task = asyncio.create_task(self._worker())
