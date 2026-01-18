@@ -21,11 +21,11 @@ def load_account_from_env(mainnet):
         public = "TESTNET_PUBLIC_KEY"
     secret_key = os.getenv(private)
     if not secret_key:
-        raise ValueError("Le fichier de config doit contenir une clé {private} valide.")
+        raise ValueError(f"No valid {private}")
     account: LocalAccount = Account.from_key(secret_key)
     address = os.getenv(public)
     if not address:
-        raise ValueError("Le fichier de config doit contenir une clé {public} valide.")
+        raise ValueError(f"No valid {public}")
     return account, address
 
 class HL:
@@ -50,22 +50,17 @@ class HL:
                 await self.session.get()
                 await self.info.start()
                 await self.websocket.start()
-                await self._log.success("HL ready")
                 self._running = True
             except Exception as e:
                 await self._log.error(f"{e}")
-        else:
-            await self._log.warning("HL already started")
+        await self._log.warning("HL ready")
 
     async def stop(self) -> None:
         if self._running:
             try:
-                await self._log.info("demande d'arret du core")
+                await self._log.info("stoping HL core")
                 await self.websocket.stop()
-                await self.api.stop()
-                await self._log.success("core arreté et deconnecté")
                 self._running = False
             except Exception as e:
-                await self._log.error(f"le core n'a pas pu etre arreter correctement : {e}")
-        else:
-            await self._log.warning("core deja arrété")
+                await self._log.error(f"{e}")
+        await self._log.success("HL stopped")
