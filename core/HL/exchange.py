@@ -5,11 +5,11 @@ from .info import Info
 from .utils.constants import MAINNET_API_URL
 from .utils.signing import sign
 from .utils.functions import timestamp_ms
-from .utils.types import Any, BuilderInfo, Cloid, List, Optional, Tif, Order, ExecutionType, CancelByCloidRequest, CancelRequest, Modify
-from log.logger import Logger
+from .utils.types import Any, BuilderInfo, Cloid, List, Optional, Tif, Order, ExecutionType, Modify
+from log.logger import Logger, Messenger
 
 class Exchange:
-    def __init__(self, url , messenger, wallet: LocalAccount, info: Info, vault_address: str = None, account_address: str = None):
+    def __init__(self, url , messenger: Messenger, wallet: LocalAccount, info: Info, vault_address: str = None, account_address: str = None):
         self.wallet = wallet
         self._log = Logger(self, messenger)
         self.url = url
@@ -26,11 +26,7 @@ class Exchange:
             "vaultAddress": self.vault_address if action["type"] != "usdClassTransfer" else None,
             "expiresAfter": self.expires_after,
         }
-        try:
-            return await self.info.api.post("/exchange", payload)
-        except Exception as e:
-            await self._log.error(f"Failed to post action: {e}")
-            raise e
+        return await self.info.api.post("/exchange", payload)
 
     def get_order(self, x: str | int, is_buy: bool, size: float, price: float, type: ExecutionType, reduce_only: bool = False, cloid: Optional[Cloid] = None) -> Order:
         instrument = self.info.instrument(x)
@@ -66,24 +62,16 @@ class Exchange:
         return await self.order(x, is_buy, size, px, type, reduce_only, cloid, builder)
 
     async def bulk_orders(self, orders: List[Order], builder: Optional[BuilderInfo] = None) -> Any:
-        try:
-            timestamp = timestamp_ms()
-            if builder:
-                builder["b"] = builder["b"].lower()
-            order_action = {
-                "type": "order",
-                "orders": orders,
-                "grouping": "na",
-            }
-            if builder:
-                order_action["builder"] = builder
-            signature = sign(self.wallet, order_action, self.vault_address, timestamp, self.expires_after, self.url == MAINNET_API_URL)
-            await self._log.debug(f"Sending {len(orders)} orders")
-            return await self.post(order_action, signature, timestamp)
-        except Exception as e:
-            await self._log.error(f"Failed bulk order: {e}")
-            raise e
-
+        timestamp = timestamp_ms()
+        if builder:
+            builder["b"] = builder["b"].lower()
+        order_action = {"type": "order", "orders": orders, "grouping": "na"}
+        if builder:
+            order_action["builder"] = builder
+        signature = sign(self.wallet, order_action, self.vault_address, timestamp, self.expires_after, self.url == MAINNET_API_URL)
+        await self._log.debug(f"Sending {len(orders)} orders")
+        return await self.post(order_action, signature, timestamp)
+    
     def get_modify(self, order, new_price, new_size, tif):
         type = {"limit": {"tif": tif}}
         modify = {
@@ -97,34 +85,22 @@ class Exchange:
         return await self.bulk_modify_orders([modify])
 
     async def bulk_modify(self, modifies: List[Modify]) -> Any:
-        try:
-            timestamp = timestamp_ms()
-            modify_action = {"type": "batchModify", "modifies": modifies}
-            signature = sign(self.wallet, modify_action, self.vault_address, timestamp, self.expires_after, self.url == MAINNET_API_URL)
-            await self._log.debug(f"modifying {len(modifies)} orders")
-            return await self.post(modify_action, signature, timestamp)
-        except Exception as e:
-            await self._log.error(f"Failed bulk modify: {e}")
-            raise e
+        timestamp = timestamp_ms()
+        modify_action = {"type": "batchModify", "modifies": modifies}
+        signature = sign(self.wallet, modify_action, self.vault_address, timestamp, self.expires_after, self.url == MAINNET_API_URL)
+        await self._log.debug(f"modifying {len(modifies)} orders")
+        return await self.post(modify_action, signature, timestamp)
 
     async def cancel(self, x: str | int, *, oid: int | None = None, cloid: Cloid | None = None) -> Any:
         if (oid is None) == (cloid is None):
             raise ValueError("oid xor cloid")
         instrument = self.info.instrument(x)
         cancel = {"a": instrument.asset, "o": oid} if oid is not None else {"asset": instrument.asset, "cloid": cloid}
-        try:
-            return await self.bulk_cancel(oid is not None, [cancel])
-        except Exception as e:
-            await self._log.error(f"Cancel failed: coin={instrument.coin}, oid={oid}, cloid={cloid}, error={e}")
-            raise e
+        return await self.bulk_cancel(oid is not None, [cancel])
 
     async def bulk_cancel(self, is_oid, cancels: list[dict]) -> Any:
-        try:
-            timestamp = timestamp_ms()
-            t = "cancel" if is_oid else "cancelByCloid"
-            cancel_action = {"type": t, "cancels": cancels}
-            signature = sign(self.wallet, cancel_action, self.vault_address, timestamp, self.expires_after, self.url == MAINNET_API_URL)
-            return await self.post(cancel_action, signature, timestamp)
-        except Exception as e:
-            await self._log.error(f"Bulk {t} failed: {e}")
-            raise
+        timestamp = timestamp_ms()
+        t = "cancel" if is_oid else "cancelByCloid"
+        cancel_action = {"type": t, "cancels": cancels}
+        signature = sign(self.wallet, cancel_action, self.vault_address, timestamp, self.expires_after, self.url == MAINNET_API_URL)
+        return await self.post(cancel_action, signature, timestamp)
