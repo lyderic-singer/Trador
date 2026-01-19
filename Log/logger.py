@@ -6,7 +6,7 @@ import time
 from enum import Enum
 
 def get_file(objet):
-    return os.path.basename(inspect.getfile(objet.__class__))
+    return os.path.basename(inspect.getfile(objet.__class__))[:-3]
 
 def get_function():
     try:
@@ -16,111 +16,70 @@ def get_function():
             return inspect.stack()[2].function
         except Exception:
             return "<unknown>"
-        
-class Color(str, Enum):
-    RESET = "\033[0m"
-    RED = "\033[31m"
-    YELLOW = "\033[33m"
-    GREEN = "\033[32m"
-    BLUE = "\033[34m"
-    MAGENTA = "\033[35m"
-    CYAN = "\033[36m"
-    BOLD = "\033[1m"
 
 class LogLevel(str, Enum):
-    INFO = "info"
-    WARNING = "warning"
-    ERROR = "error"
-    DEBUG = "debug"
-    CRITICAL = "critical"
-    EXCEPTION = "exception"
-    SUCCESS = "success"
+    INFO = "INFO"
+    WARNING = "WARNING"
+    ERROR = "ERROR"
+    DEBUG = "DEBUG"
+    CRITICAL = "CRITICAL"
+    EXCEPTION = "EXCEPTION"
+    SUCCESS = "SUCCESS"
+    CUSTOM = "CUSTOM"
 
 class Message:
-    def __init__(self, level: LogLevel, context: str, message: str, display: bool, save: bool = False, send_tg: bool = False, color: str = None):
+    def __init__(self, level: LogLevel, context: str, text: str, display: bool, save: bool = False, send_tg: bool = False, styles: str = None):
         self.timestamp = time.time()
-        self.iso_timestamp = None
+        self.date = None
         self.level = level
         self.context = context
         self.display = display
-        self.message = message
+        self.text = text
         self.save = save
         self.send_tg = send_tg
-        self.color = color
+        self.styles = styles
 
-    def date(self):
-        if self.iso_timestamp is None:
-            self.iso_timestamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(self.timestamp))
-        return self.iso_timestamp
+    def format_date(self):
+        if self.date is None:
+            self.date = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(self.timestamp))
+        return self.date
 
     def format(self) -> str:
-        return f"[{self.date()}] [{self.level.value.upper()}] [{self.context}] {self.message}"
+        return f"[{self.format_date()}] [{self.level.value}] [{self.context}] {self.text}"
 
     def format_tg(self) -> str:
-        emoji = {
-            'debug': '🔧',
-            'info': 'ℹ️',
-            'warning': '⚠️',
-            'error': '❌',
-            'critical': '🔥',
-            'success': '✅'
-        }.get(self.level.value.lower(), '📌')
-        return f"{emoji} {self.message}"
-
-class Messenger:
-    def __init__(self):
-        self.messages = asyncio.Queue()
-
-    async def _put(self, level: LogLevel, context: str, message: str, display: bool, save: bool, send_tg: bool, color: str = None):
-        log = Message(level, context, message, display, save, send_tg)
-        await self.messages.put(log)
-
-    async def info(self, context: str, message: str, display: bool, save: bool = False, send_tg: bool = False, color: str = None):
-        await self._put(LogLevel.INFO, context, message, display, save, send_tg)
-
-    async def warning(self, context: str, message: str, display: bool, save: bool = True, send_tg: bool = True, color: str = None):
-        await self._put(LogLevel.WARNING, context, message, display, save, send_tg)
-
-    async def error(self, context: str, message: str, display: bool, save: bool = True, send_tg: bool = True, color: str = None):
-        await self._put(LogLevel.ERROR, context, message, display, save, send_tg)
-
-    async def critical(self, context: str, message: str, display: bool, save: bool = True, send_tg: bool = True, color: str = None):
-        await self._put(LogLevel.CRITICAL, context, message, display, save, send_tg)
-
-    async def debug(self, context: str, message: str, display: bool, save: bool = False, send_tg: bool = False, color: str = None):
-        await self._put(LogLevel.DEBUG, context, message, display, save, send_tg)
-
-    async def exception(self, context: str, message: str, display: bool, save: bool = True, send_tg: bool = True, color: str = None):
-        await self._put(LogLevel.EXCEPTION, context, message, display, save, send_tg)
-
-    async def success(self, context: str, message: str, display: bool, save: bool = True, send_tg: bool = False, color: str = None):
-        await self._put(LogLevel.SUCCESS, context, message, display, save, send_tg)
+        emoji = {'DEBUG': '🔧', 'INFO': 'ℹ️', 'WARNING': '⚠️', 'ERROR': '❌', 'CRITICAL': '🔥', 'SUCCESS': '✅'}.get(self.level.value, '📌')
+        return f"{emoji} {self.text}"
 
 class Logger():
-    def __init__(self, objet, messenger: Messenger):
+    def __init__(self, objet, messenger):
         self.messenger = messenger
         if isinstance(objet, str):
             self.filepath = objet
         else:
             self.filepath = get_file(objet)
 
-    async def info(self, message: str, display: bool, save: bool = True, send_tg: bool = False, color: str = None):
-        await self.messenger.info(self.filepath, message, display, save, send_tg)
+    async def custom(self, text: str, level: LogLevel = LogLevel.CUSTOM, context: str = None, display: bool = True, save: bool = False, send_tg: bool = False, styles: str = "BRIGHT_YELLOW"):
+        message = Message(level, context if context else self.filepath, text, display, save, send_tg, styles)
+        await self.messenger.messages.put(message)
 
-    async def warning(self, message: str, display: bool, save: bool = True, send_tg: bool = True):
-        await self.messenger.warning(self.filepath + " in " + get_function(), message, display, save, send_tg)
+    async def info(self, text: str, display: bool = True, save: bool = True, send_tg: bool = False, styles: str = "CYAN"):
+        await self.custom(text, LogLevel.INFO, self.filepath, display, save, send_tg, styles)
 
-    async def error(self, message: str, display: bool, save: bool = True, send_tg: bool = True):
-        await self.messenger.error(self.filepath + " in " + get_function(), message, display, save, send_tg)
+    async def warning(self, text: str, display: bool = True, save: bool = True, send_tg: bool = True, styles: str = "BRIGHT_ORANGE BOLD"):
+        await self.custom(text, LogLevel.WARNING, self.filepath + " in " + get_function(), display, save, send_tg, styles)
 
-    async def critical(self, message: str, display: bool, save: bool = True, send_tg: bool = True):
-        await self.messenger.critical(self.filepath + " in " + get_function(), message, display, save, send_tg)
+    async def error(self, text: str, display: bool = True, save: bool = True, send_tg: bool = True, styles: str = "BRIGHT_RED BOLD"):
+        await self.custom(text, LogLevel.ERROR, self.filepath + " in " + get_function(), display, save, send_tg, styles)
 
-    async def debug(self, message: str, display: bool, save: bool = True, send_tg: bool = False):
-        await self.messenger.debug(self.filepath, message, display, save, send_tg)
+    async def critical(self, text: str, display: bool = True, save: bool = True, send_tg: bool = True, styles: str = "BRIGHT_RED BOLD REVERSE"):
+        await self.custom(text, LogLevel.CRITICAL, self.filepath + " in " + get_function(), display, save, send_tg, styles)
 
-    async def exception(self, message: str, display: bool, save: bool = True, send_tg: bool = True):
-        await self.messenger.exception(self.filepath + " in " + get_function(), message, display, save, send_tg)
+    async def debug(self, text: str, display: bool = True, save: bool = True, send_tg: bool = False, styles: str = "BRIGHT_BLACK"):
+        await self.custom(text, LogLevel.DEBUG, self.filepath + " in " + get_function(), display, save, send_tg, styles)
 
-    async def success(self, message: str, display: bool, save: bool = True, send_tg: bool = False):
-        await self.messenger.success(self.filepath, message, display, save, send_tg)
+    async def exception(self, text: str, display: bool = True, save: bool = True, send_tg: bool = True, styles: str = "MAGENTA BOLD"):
+        await self.custom(text, LogLevel.EXCEPTION, self.filepath + " in " + get_function(), display, save, send_tg, styles)
+
+    async def success(self, text: str, display: bool = True, save: bool = True, send_tg: bool = False, styles: str = "BRIGHT_GREEN BOLD"):
+        await self.custom(text, LogLevel.SUCCESS, self.filepath, display, save, send_tg, styles)

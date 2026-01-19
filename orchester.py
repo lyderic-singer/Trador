@@ -4,7 +4,7 @@ from core.HL.utils.functions import call
 from core.HL.utils.constants import MAINNET_API_URL, TESTNET_API_URL
 from core.session import Session
 from log.logger import Messenger, Logger
-from log.dispatcher import Dispatcher
+from log.messenger import Dispatcher
 from log.telegram import Telegram
 from core.HL.hl import HL
 
