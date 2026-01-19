@@ -3,23 +3,22 @@ import time
 from core.HL.utils.functions import call
 from core.HL.utils.constants import MAINNET_API_URL, TESTNET_API_URL
 from core.session import Session
-from log.logger import Messenger, Logger
-from log.messenger import Dispatcher
+from log.logger import Logger
+from log.messenger import Messenger
 from log.telegram import Telegram
 from core.HL.hl import HL
 
 class Orchester:
     def __init__(self, mainnet, strategy = None):
+        self.telegram = Telegram()
+        self.strategy = strategy
+        self.messenger = Messenger(self.telegram, "log/logs.txt")
+        self.messenger.start()
         self.url = MAINNET_API_URL if mainnet else TESTNET_API_URL
-        self.messenger = Messenger()
         self.session = Session(self.messenger)
         self._log = Logger(self, self.messenger)
         self.hl = HL(mainnet, self.messenger, self.session)
         self.address = self.hl.address
-        self.telegram = Telegram(self)
-        self.strategy = strategy
-        self.dispatcher = Dispatcher(self.messenger, self.telegram, "log/logs.txt")
-        self.dispatcher.start()
         self._running = False
         self._tg_task = None
         self._strategy_task = None
@@ -31,7 +30,7 @@ class Orchester:
         await self.hl.start()
         if self.strategy:
             await call(self.strategy.start(self))
-        await self.telegram.start()
+        await self.telegram.start(self)
         self._running = True
         await self._log.success(f"orchester started in {(time.time()-t):.2f} s", send_tg= True)
 
@@ -51,4 +50,4 @@ class Orchester:
         await self.session.stop()
         self._running = False
         await self._log.success("orchester stopped")
-        await self.dispatcher.stop()
+        await self.messenger.stop()
