@@ -8,7 +8,7 @@ from enum import Enum
 def get_file(objet):
     return os.path.basename(inspect.getfile(objet.__class__))
 
-def _callfunname():
+def get_function():
     try:
         return sys._getframe(2).f_code.co_name
     except Exception:
@@ -16,6 +16,16 @@ def _callfunname():
             return inspect.stack()[2].function
         except Exception:
             return "<unknown>"
+        
+class Color(str, Enum):
+    RESET = "\033[0m"
+    RED = "\033[31m"
+    YELLOW = "\033[33m"
+    GREEN = "\033[32m"
+    BLUE = "\033[34m"
+    MAGENTA = "\033[35m"
+    CYAN = "\033[36m"
+    BOLD = "\033[1m"
 
 class LogLevel(str, Enum):
     INFO = "info"
@@ -27,22 +37,24 @@ class LogLevel(str, Enum):
     SUCCESS = "success"
 
 class Message:
-    def __init__(self, level: LogLevel, context: str, message: str, save: bool = False, send_tg: bool = False):
+    def __init__(self, level: LogLevel, context: str, message: str, display: bool, save: bool = False, send_tg: bool = False, color: str = None):
         self.timestamp = time.time()
         self.iso_timestamp = None
         self.level = level
         self.context = context
+        self.display = display
         self.message = message
         self.save = save
         self.send_tg = send_tg
+        self.color = color
 
-    def _get_iso(self):
+    def date(self):
         if self.iso_timestamp is None:
             self.iso_timestamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(self.timestamp))
         return self.iso_timestamp
 
     def format(self) -> str:
-        return f"[{self._get_iso()}] [{self.level.value.upper()}] [{self.context}] {self.message}"
+        return f"[{self.date()}] [{self.level.value.upper()}] [{self.context}] {self.message}"
 
     def format_tg(self) -> str:
         emoji = {
@@ -59,30 +71,30 @@ class Messenger:
     def __init__(self):
         self.messages = asyncio.Queue()
 
-    async def _put(self, level: LogLevel, context: str, message: str, save: bool, send_tg: bool):
-        log = Message(level, context, message, save, send_tg)
+    async def _put(self, level: LogLevel, context: str, message: str, display: bool, save: bool, send_tg: bool, color: str = None):
+        log = Message(level, context, message, display, save, send_tg)
         await self.messages.put(log)
 
-    async def info(self, context: str, message: str, save: bool = False, send_tg: bool = False):
-        await self._put(LogLevel.INFO, context, message, save, send_tg)
+    async def info(self, context: str, message: str, display: bool, save: bool = False, send_tg: bool = False, color: str = None):
+        await self._put(LogLevel.INFO, context, message, display, save, send_tg)
 
-    async def warning(self, context: str, message: str, save: bool = True, send_tg: bool = True):
-        await self._put(LogLevel.WARNING, context, message, save, send_tg)
+    async def warning(self, context: str, message: str, display: bool, save: bool = True, send_tg: bool = True, color: str = None):
+        await self._put(LogLevel.WARNING, context, message, display, save, send_tg)
 
-    async def error(self, context: str, message: str, save: bool = True, send_tg: bool = True):
-        await self._put(LogLevel.ERROR, context, message, save, send_tg)
+    async def error(self, context: str, message: str, display: bool, save: bool = True, send_tg: bool = True, color: str = None):
+        await self._put(LogLevel.ERROR, context, message, display, save, send_tg)
 
-    async def critical(self, context: str, message: str, save: bool = True, send_tg: bool = True):
-        await self._put(LogLevel.CRITICAL, context, message, save, send_tg)
+    async def critical(self, context: str, message: str, display: bool, save: bool = True, send_tg: bool = True, color: str = None):
+        await self._put(LogLevel.CRITICAL, context, message, display, save, send_tg)
 
-    async def debug(self, context: str, message: str, save: bool = False, send_tg: bool = False):
-        await self._put(LogLevel.DEBUG, context, message, save, send_tg)
+    async def debug(self, context: str, message: str, display: bool, save: bool = False, send_tg: bool = False, color: str = None):
+        await self._put(LogLevel.DEBUG, context, message, display, save, send_tg)
 
-    async def exception(self, context: str, message: str, save: bool = True, send_tg: bool = True):
-        await self._put(LogLevel.EXCEPTION, context, message, save, send_tg)
+    async def exception(self, context: str, message: str, display: bool, save: bool = True, send_tg: bool = True, color: str = None):
+        await self._put(LogLevel.EXCEPTION, context, message, display, save, send_tg)
 
-    async def success(self, context: str, message: str, save: bool = True, send_tg: bool = False):
-        await self._put(LogLevel.SUCCESS, context, message, save, send_tg)
+    async def success(self, context: str, message: str, display: bool, save: bool = True, send_tg: bool = False, color: str = None):
+        await self._put(LogLevel.SUCCESS, context, message, display, save, send_tg)
 
 class Logger():
     def __init__(self, objet, messenger: Messenger):
@@ -92,23 +104,23 @@ class Logger():
         else:
             self.filepath = get_file(objet)
 
-    async def info(self, message: str, save: bool = True, send_tg: bool = False):
-        await self.messenger.info(self.filepath, message, save, send_tg)
+    async def info(self, message: str, display: bool, save: bool = True, send_tg: bool = False, color: str = None):
+        await self.messenger.info(self.filepath, message, display, save, send_tg)
 
-    async def warning(self, message: str, save: bool = True, send_tg: bool = True):
-        await self.messenger.warning(self.filepath + " in " + _callfunname(), message, save, send_tg)
+    async def warning(self, message: str, display: bool, save: bool = True, send_tg: bool = True):
+        await self.messenger.warning(self.filepath + " in " + get_function(), message, display, save, send_tg)
 
-    async def error(self, message: str, save: bool = True, send_tg: bool = True):
-        await self.messenger.error(self.filepath + " in " + _callfunname(), message, save, send_tg)
+    async def error(self, message: str, display: bool, save: bool = True, send_tg: bool = True):
+        await self.messenger.error(self.filepath + " in " + get_function(), message, display, save, send_tg)
 
-    async def critical(self, message: str, save: bool = True, send_tg: bool = True):
-        await self.messenger.critical(self.filepath + " in " + _callfunname(), message, save, send_tg)
+    async def critical(self, message: str, display: bool, save: bool = True, send_tg: bool = True):
+        await self.messenger.critical(self.filepath + " in " + get_function(), message, display, save, send_tg)
 
-    async def debug(self, message: str, save: bool = True, send_tg: bool = False):
-        await self.messenger.debug(self.filepath, message, save, send_tg)
+    async def debug(self, message: str, display: bool, save: bool = True, send_tg: bool = False):
+        await self.messenger.debug(self.filepath, message, display, save, send_tg)
 
-    async def exception(self, message: str, save: bool = True, send_tg: bool = True):
-        await self.messenger.exception(self.filepath + " in " + _callfunname(), message, save, send_tg)
+    async def exception(self, message: str, display: bool, save: bool = True, send_tg: bool = True):
+        await self.messenger.exception(self.filepath + " in " + get_function(), message, display, save, send_tg)
 
-    async def success(self, message: str, save: bool = True, send_tg: bool = False):
-        await self.messenger.success(self.filepath, message, save, send_tg)
+    async def success(self, message: str, display: bool, save: bool = True, send_tg: bool = False):
+        await self.messenger.success(self.filepath, message, display, save, send_tg)
