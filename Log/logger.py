@@ -1,4 +1,3 @@
-import asyncio
 import inspect
 import os
 import sys
@@ -59,7 +58,7 @@ class Logger():
         else:
             self.filepath = get_file(objet)
 
-    async def custom(self, text: str, level: LogLevel = LogLevel.CUSTOM, context: str = None, display: bool = True, save: bool = False, send_tg: bool = False, styles: str = "BRIGHT_YELLOW"):
+    async def custom(self, text: str, level: LogLevel = LogLevel.CUSTOM, context: str = None, display: bool = True, save: bool = True, send_tg: bool = False, styles: str = "BRIGHT_YELLOW"):
         message = Message(level, context if context else self.filepath, text, display, save, send_tg, styles)
         await self.messenger.messages.put(message)
 
@@ -75,7 +74,7 @@ class Logger():
     async def critical(self, text: str, display: bool = True, save: bool = True, send_tg: bool = True, styles: str = "BRIGHT_RED BOLD REVERSE"):
         await self.custom(text, LogLevel.CRITICAL, self.filepath + " in " + get_function(), display, save, send_tg, styles)
 
-    async def debug(self, text: str, display: bool = True, save: bool = True, send_tg: bool = False, styles: str = "BRIGHT_BLACK"):
+    async def debug(self, text: str, display: bool = True, save: bool = False, send_tg: bool = False, styles: str = "BRIGHT_BLACK"):
         await self.custom(text, LogLevel.DEBUG, self.filepath + " in " + get_function(), display, save, send_tg, styles)
 
     async def exception(self, text: str, display: bool = True, save: bool = True, send_tg: bool = True, styles: str = "MAGENTA BOLD"):

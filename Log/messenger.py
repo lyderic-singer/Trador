@@ -1,6 +1,6 @@
 import asyncio
 import sys
-from logger import Logger, Message
+from .logger import Logger, Message
 
 COLORS = {
     "RESET": "\033[0m",
@@ -35,7 +35,7 @@ def flush(text, styles=None, end='\n'):
     sys.stdout.flush()
 
 class Messenger:
-    def __init__(self, telegram = None, path = "logs.txt" ):
+    def __init__(self, telegram = None, path = "logs.txt"):
         self.telegram = telegram
         self.path = path
         self.messages: asyncio.Queue[Message] = asyncio.Queue()
