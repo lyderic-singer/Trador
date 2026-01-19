@@ -1,7 +1,6 @@
 import json
 from json import JSONDecodeError
-import aiohttp
-
+from log.messenger import Messenger
 from .utils.error import ClientError, ServerError
 from .utils.types import Any
 from ..session import Session
@@ -9,7 +8,7 @@ from log.logger import Logger
 
 
 class API:
-    def __init__(self, url: str, messenger, session : Session):
+    def __init__(self, url: str, messenger: Messenger, session : Session):
         self.url = url
         self.session = session
         self._log = Logger(self, messenger)

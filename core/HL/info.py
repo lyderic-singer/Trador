@@ -1,6 +1,7 @@
 from .api import API
 from .utils.types import (Any, Meta, Optional, SpotMeta, SpotMetaAndAssetCtxs, Instrument)
-from log.logger import Logger, Messenger
+from log.logger import Logger
+from log.messenger import Messenger
 
 class Info:
     def __init__(self, url, messenger: Messenger, api: API):
@@ -26,9 +27,10 @@ class Info:
         instrument = self.instruments_dict.get(asset)
         if instrument is None:
             raise ValueError("The ID provided does not correspond to any hyperliquid market")
+        return instrument
     
     async def _load_perp(self, dex: str, offset: int):
-        meta = await self.meta(dex)
+        meta = await self.meta(dex=dex)
         for i, info in enumerate(meta["universe"]):
             self._register(info["name"], info["name"], offset + i, info["szDecimals"])
     
@@ -69,8 +71,12 @@ class Info:
     async def user_fills_by_time(self, address: str, start_time: int, end_time: Optional[int] = None) -> Any:
         return await self.post({"type": "userFillsByTime", "user": address, "startTime": start_time, "endTime": end_time})
 
-    async def meta(self, dex: str = "") -> Meta:
-        return await self.post({"type": "meta", "dex": dex})
+    async def meta(self, dex: str = "", x: str | int = None) -> Meta:
+        payload = {"type": "meta", "dex": dex}
+        if x:
+            coin = self.instrument(x).coin
+            payload["coin"] = coin
+        return await self.post(payload)
 
     async def meta_and_asset_ctxs(self) -> Any:
         return await self.post({"type": "metaAndAssetCtxs"})
@@ -134,7 +140,3 @@ class Info:
 
     async def user_to_multi_sig_signers(self, multi_sig_user: str) -> Any:
         return await self.post({"type": "userToMultiSigSigners", "user": multi_sig_user})
-    
-    async def meta(self, x: str | int, dex: str = "") -> dict:
-        coin = self.instrument(x).coin
-        return await self.post({"type": "meta", "dex": dex, "coin": coin})

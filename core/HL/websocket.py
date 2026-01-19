@@ -2,7 +2,8 @@ import asyncio
 import json
 from time import time
 import websockets
-from log.logger import Logger, Messenger
+from log.logger import Logger
+from log.messenger import Messenger
 from .info import Info
 from typing import Callable, Dict, Any, Optional
 from .utils.functions import key, call, extract_subscription_error

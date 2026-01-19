@@ -1,12 +1,11 @@
 from eth_account.signers.local import LocalAccount
-import time
-
 from .info import Info
 from .utils.constants import MAINNET_API_URL
 from .utils.signing import sign
 from .utils.functions import timestamp_ms
 from .utils.types import Any, BuilderInfo, Cloid, List, Optional, Tif, Order, ExecutionType, Modify
-from log.logger import Logger, Messenger
+from log.logger import Logger
+from log.messenger import Messenger
 
 class Exchange:
     def __init__(self, url , messenger: Messenger, wallet: LocalAccount, info: Info, vault_address: str = None, account_address: str = None):

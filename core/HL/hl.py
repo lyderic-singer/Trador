@@ -1,15 +1,14 @@
 import os
 from dotenv import load_dotenv
-import asyncio
 from .utils.constants import MAINNET_API_URL, MAINNET_WS_URL, TESTNET_API_URL, TESTNET_WS_URL
 from eth_account import Account
 from eth_account.signers.local import LocalAccount
-
 from .websocket import WebSocket
 from .api import API
 from .info import Info
 from .exchange import Exchange
 from log.logger import Logger
+from log.messenger import Messenger
 
 load_dotenv()
 
@@ -29,7 +28,7 @@ def load_account_from_env(mainnet):
     return account, address
 
 class HL:
-    def __init__(self, mainnet, messenger, session):
+    def __init__(self, mainnet, messenger: Messenger, session):
         self.messenger = messenger
         self._log = Logger(self, messenger)
         account, address = load_account_from_env(mainnet)
@@ -53,7 +52,7 @@ class HL:
                 self._running = True
             except Exception as e:
                 await self._log.error(f"{e}")
-        await self._log.warning("HL ready")
+        await self._log.success("HL ready")
 
     async def stop(self) -> None:
         if self._running:
