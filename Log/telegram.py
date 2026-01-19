@@ -10,11 +10,11 @@ from log.logger import Logger
 load_dotenv()
 
 class Telegram:
-    def __init__(self, orchester, config_path="config/telegram.json"):
+    def __init__(self):
         self.token = str(os.getenv("TG_TOKEN"))
         self.chat_id = int(os.getenv("TG_CHAT_ID"))
-        self.orchester = orchester
-        self._log = Logger(self, orchester.messenger)
+        self.orchester = None
+        self._log = None
         self.messages = asyncio.Queue()
         self._app: Application = ApplicationBuilder().token(self.token).build()
         self._worker_task = None
@@ -132,7 +132,9 @@ class Telegram:
                     await self._log.warning(f"erreur durant l'arrêt : {stop_error}")
                 await asyncio.sleep(5)
 
-    async def start(self):
+    async def start(self, orchester):
+        self.orchester = orchester
+        self._log = Logger(self, orchester.messenger)
         self._worker_task = asyncio.create_task(self._worker())
         self._polling_task = asyncio.create_task(self._polling())
 
