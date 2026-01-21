@@ -9,10 +9,10 @@ class Session:
     async def start(self):
         try:
             self.session = aiohttp.ClientSession(headers={"Content-Type": "application/json"})
-            await self._log.success("Session started")
+            await self._log.success("Started")
         except Exception as e:
             await self._log.error(f"{e}")
-            raise e
+            raise
 
     async def get(self) -> aiohttp.ClientSession:
         if self.session is None:
@@ -26,6 +26,6 @@ class Session:
     async def stop(self):
         if self.session and not self.session.closed:
             await self.session.close()
-            await self._log.success("Session closed")
+            await self._log.success("Stopped")
         else:
             await self._log.info("Session already closed or does not exist")

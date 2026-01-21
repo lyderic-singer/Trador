@@ -30,7 +30,7 @@ def load_account_from_env(mainnet):
 class HL:
     def __init__(self, mainnet, messenger: Messenger, session):
         self.messenger = messenger
-        self._log = Logger(self, messenger)
+        self._log = Logger("HL Core", messenger)
         account, address = load_account_from_env(mainnet)
         self.account = account
         self.address = address
@@ -40,26 +40,27 @@ class HL:
         self.info = Info(url, messenger, self.api)
         self.websocket = WebSocket(MAINNET_WS_URL if mainnet else TESTNET_WS_URL, self.messenger, self.info)
         self.exchange = Exchange(url, messenger, account, self.info)
-        self._running = False
+        self.running = False
 
     async def start(self) -> None:
-        if not self._running:
+        if not self.running:
             try:
-                await self._log.info("starting HL core")
-                await self.session.get()
+                await self._log.info("Starting")
                 await self.info.start()
                 await self.websocket.start()
-                self._running = True
+                self.running = True
             except Exception as e:
                 await self._log.error(f"{e}")
-        await self._log.success("HL ready")
+                raise
+        await self._log.success("Started")
 
     async def stop(self) -> None:
-        if self._running:
+        if self.running:
             try:
-                await self._log.info("stoping HL core")
+                await self._log.info("Stopping")
                 await self.websocket.stop()
-                self._running = False
+                self.running = False
             except Exception as e:
                 await self._log.error(f"{e}")
-        await self._log.success("HL stopped")
+                raise
+        await self._log.success("Stopped")
