@@ -35,8 +35,8 @@ def flush(text, styles=None, end='\n'):
     sys.stdout.flush()
 
 class Messenger:
-    def __init__(self, telegram = None, path = "logs.txt"):
-        self.telegram = telegram
+    def __init__(self, path = "logs.txt"):
+        self.telegram = None
         self.path = path
         self.messages: asyncio.Queue[Message] = asyncio.Queue()
         self.running = False
@@ -79,12 +79,13 @@ class Messenger:
         finally:
             self.running = False
 
-    def start(self):
+    def start(self, telegram = None):
+        self.telegram = telegram
         if self.task is None or self.task.done():
             self.task = asyncio.create_task(self.handle())
             flush
         else:
-            flush("Logger already started")
+            flush("Already started")
 
     async def stop(self):
         self.running = False
