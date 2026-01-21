@@ -1,7 +1,6 @@
 import asyncio
 import time
-from core.HL.utils.functions import call
-from core.HL.utils.constants import MAINNET_API_URL, TESTNET_API_URL
+from core.HL.utils.functions import call, cancel
 from core.session import Session
 from log.logger import Logger
 from log.messenger import Messenger
@@ -10,44 +9,48 @@ from core.HL.hl import HL
 
 class Orchester:
     def __init__(self, mainnet, strategy = None):
-        self.telegram = Telegram()
+        self.messenger = Messenger("log/logs.txt")
         self.strategy = strategy
-        self.messenger = Messenger(self.telegram, "log/logs.txt")
-        self.messenger.start()
-        self.url = MAINNET_API_URL if mainnet else TESTNET_API_URL
+        self.telegram = Telegram(self.messenger)
         self.session = Session(self.messenger)
         self._log = Logger(self, self.messenger)
         self.hl = HL(mainnet, self.messenger, self.session)
         self.address = self.hl.address
-        self._running = False
-        self._tg_task = None
-        self._strategy_task = None
+        self.strategy_task = None
+        self.running = False
 
     async def start(self):
-        t = time.time()
-        await self._log.info("starting orchester")
-        await self.session.start()
-        await self.hl.start()
-        if self.strategy:
-            await call(self.strategy.start(self))
-        await self.telegram.start(self)
-        self._running = True
-        await self._log.success(f"orchester started in {(time.time()-t):.2f} s", send_tg= True)
+        try:
+            t = time.time()
+            self.messenger.start(self.telegram)
+            await self._log.info("starting orchester")
+            await self.session.start()
+            await self.hl.start()
+            if self.strategy:
+                await call(self.strategy.start(self))
+            await self.telegram.start(self)
+            self.running = True
+            await self._log.success(f"Started in {(time.time()-t):.2f} s", send_tg= True)
+        except Exception:
+            await self._log.error("cannot start")
 
     async def stop(self):
-        await self._log.info("stoping orchester", send_tg= True)
-        if self.strategy:
-            await self.strategy.stop()
-        for task in [self._tg_task, self._strategy_task]:
-            if task:
-                task.cancel()
-                try:
-                    await task
-                except asyncio.CancelledError:
-                    pass
-        await self.hl.stop()
-        await self.telegram.stop()
-        await self.session.stop()
-        self._running = False
-        await self._log.success("orchester stopped")
-        await self.messenger.stop()
+        try:
+            await self._log.info("Stopping", send_tg= True)
+            self.running = False
+            if self.strategy:
+                await self.strategy.stop()
+                await cancel(self.strategy_task)
+            await self.hl.stop()
+            await self.session.stop()
+            await self._log.success("Stopped", send_tg=True)
+            await self.telegram.stop()
+            await self.messenger.stop()
+        except Exception:
+            await self._log.error("Stop failed")
+
+    async def run(self):
+        if not self.strategy or not self.running:
+            return
+        else:
+            self.strategy_task = asyncio.create_task(self.strategy.run())
