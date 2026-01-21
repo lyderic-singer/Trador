@@ -22,8 +22,8 @@ class Orchester:
     async def start(self):
         try:
             t = time.time()
-            self.messenger.start(self.telegram)
-            await self._log.info("starting orchester")
+            await self.messenger.start(self.telegram)
+            await self._log.info("Starting")
             await self.session.start()
             await self.hl.start()
             if self.strategy:

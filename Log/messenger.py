@@ -45,17 +45,14 @@ class Messenger:
         self.task = None
     
     async def save(self, message: Message):
-        line = message.format() + "\n"
-        loop = asyncio.get_running_loop()
-        await loop.run_in_executor(None, self.write, line)
-
-    def write(self, line: str):
         if self.file is None:
             return
+        line = message.format() + "\n"
         try:
-            self.file.write(line)
+            await asyncio.to_thread(self.file.write, line)
+            await asyncio.to_thread(self.file.flush)
         except Exception as e:
-            flush(f"[ERROR][Logger] Failed to write to log file: {e}")
+            await self._log.error(f"{e}")
 
     async def handle(self):
         self.running = True
@@ -70,33 +67,41 @@ class Messenger:
                     try:
                         await self.telegram.send(message.format_tg())
                     except Exception as e:
-                        flush(f"[ERROR][Logger] Telegram error: {e}")
+                        await self._log.error(f"cannot send message '{message.format_tg()}': {e}")
                 self.messages.task_done()
         except asyncio.CancelledError:
             pass
         except Exception as e:
-            flush(f"erreur mess: {e}")
+            await self._log.warning(f"messages handling stopped{e}")
         finally:
             self.running = False
 
-    def start(self, telegram = None):
-        self.telegram = telegram
-        if self.task is None or self.task.done():
-            self.task = asyncio.create_task(self.handle())
-            flush
-        else:
-            flush("Already started")
+    async def start(self, telegram = None):
+        try:
+            self.telegram = telegram
+            if self.task is None or self.task.done():
+                self.task = asyncio.create_task(self.handle())
+                await self._log.success("Started")
+            else:
+                await self._log.info("Already started")
+        except Exception as e:
+            await self._log.error(f"{e}")
+            raise
 
     async def stop(self):
-        self.running = False
-        await self.messages.join()
-        if self.task:
-            self.task.cancel()
-            try:
-                await self.task
-            except asyncio.CancelledError:
-                pass
-            self.task = None
-        if self.file:
-            self.file.close()
-            self.file = None
+        try:
+            self.running = False
+            await self.messages.join()
+            if self.task:
+                self.task.cancel()
+                try:
+                    await self.task
+                except asyncio.CancelledError:
+                    pass
+                self.task = None
+            if self.file:
+                self.file.close()
+                self.file = None
+        except Exception as e:
+            await self._log.error(f"{e}")
+            raise
