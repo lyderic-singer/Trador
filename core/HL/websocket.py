@@ -6,7 +6,7 @@ from log.logger import Logger
 from log.messenger import Messenger
 from .info import Info
 from typing import Callable, Dict, Any, Optional
-from .utils.functions import key, call, extract_subscription_error
+from .utils.functions import key, call, extract_subscription_error, cancel
 
 class Subscription:
     def __init__(self, sub: Dict[str, Any], callback: Callable):
@@ -36,14 +36,14 @@ class Subscription:
         active_task = asyncio.create_task(self.active.wait())
         _, pending = await asyncio.wait([active_task, error_task], return_when=asyncio.FIRST_COMPLETED)
         for p in pending:
-            p.cancel()
+            await cancel(p)
         if self.error.is_set():
             raise ValueError(f"wrong subscription: {self.sub}")
 
 class WebSocket:
     def __init__(self, url: str, messenger: Messenger, info: Info):
         self.url = url
-        self._log = Logger(self, messenger)
+        self._log = Logger("HL WebSocket", messenger)
         self.info = info
         self.ws = None
         self.subscriptions: Dict[str, Subscription] = {}
@@ -59,20 +59,22 @@ class WebSocket:
             self.running = True
             self.task = asyncio.create_task(self.connect())
             await self.connected.wait()
-            await self._log.info("websocket started")
+            await self._log.success("Started")
         except Exception as e:
             self.running = False
             await self._log.error(f"cannot start websocket: {e}")
+            raise
 
-    async def close(self):
+    async def stop(self):
         try:
-            self.connected.clear()
             self.running = False
+            await cancel(self.task)
             if self.ws:
                 await self.ws.close()
             await self._log.success("websocket closed")
         except Exception as e:
-            self._log(f"cannot stop websocket: {e}")
+            self._log.error(f"cannot stop websocket: {e}")
+            raise
     
     async def connect(self):
         while self.running:
