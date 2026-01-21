@@ -81,7 +81,7 @@ def key(dict: Dict[str, Any]) -> str:
         raise ValueError(f"Unknown subscription type: {t}")
     
 async def cancel(task: asyncio.Task):
-    if task.done():
+    if task is None or task.done():
         return
     task.cancel()
     try:
