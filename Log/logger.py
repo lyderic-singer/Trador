@@ -31,7 +31,7 @@ class Message:
         self.timestamp = time.time()
         self.date = None
         self.level = level
-        self.context = context
+        self.context = context[0].upper() + context[1:]
         self.display = display
         self.text = text
         self.save = save
@@ -48,7 +48,7 @@ class Message:
 
     def format_tg(self) -> str:
         emoji = {'DEBUG': '🔧', 'INFO': 'ℹ️', 'WARNING': '⚠️', 'ERROR': '❌', 'CRITICAL': '🔥', 'SUCCESS': '✅'}.get(self.level.value, '📌')
-        return f"{emoji} {self.text}"
+        return f"{emoji} [{self.context}] {self.text}"
 
 class Logger():
     def __init__(self, objet, messenger):

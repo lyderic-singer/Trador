@@ -50,7 +50,7 @@ class Info:
             for i, dex in enumerate([""] + [d["name"] for d in perp_dexs[1:]]):
                 offset = 0 if dex == "" else 110000 + (i - 1) * 10000
                 await self._load_perp(dex, offset)
-            await self._log.success("fetched HL datas")
+            await self._log.success("fetched datas")
         except Exception as e:
             await self._log.error(f"{e}")
             raise

@@ -71,7 +71,7 @@ class WebSocket:
             await cancel(self.task)
             if self.ws:
                 await self.ws.close()
-            await self._log.success("websocket closed")
+            await self._log.success("Stopped")
         except Exception as e:
             self._log.error(f"cannot stop websocket: {e}")
             raise
