@@ -10,7 +10,7 @@ from log.messenger import Messenger
 class Exchange:
     def __init__(self, url , messenger: Messenger, wallet: LocalAccount, info: Info, vault_address: str = None, account_address: str = None):
         self.wallet = wallet
-        self._log = Logger(self, messenger)
+        self._log = Logger("HL Exchange", messenger)
         self.url = url
         self.vault_address = vault_address
         self.account_address = account_address

@@ -8,7 +8,7 @@ class Info:
         self.api = api
         self.messenger = messenger
         self.url = url
-        self._log = Logger(self, messenger)
+        self._log = Logger("HL Info", messenger)
         self.instruments_table: dict[str | int, int] = {} # name | coin | asset -> asset
         self.instruments_dict: dict[int, Instrument] = {} # asset -> Instrument
 
@@ -44,11 +44,16 @@ class Info:
             self._register(f'{base_info["name"]}/{quote_info["name"]}', info['name'], asset, base_info["szDecimals"])
 
     async def start(self):
-        await self._load_spot()
-        perp_dexs = await self.perp_dexs()
-        for i, dex in enumerate([""] + [d["name"] for d in perp_dexs[1:]]):
-            offset = 0 if dex == "" else 110000 + (i - 1) * 10000
-            await self._load_perp(dex, offset)
+        try:
+            await self._load_spot()
+            perp_dexs = await self.perp_dexs()
+            for i, dex in enumerate([""] + [d["name"] for d in perp_dexs[1:]]):
+                offset = 0 if dex == "" else 110000 + (i - 1) * 10000
+                await self._load_perp(dex, offset)
+            await self._log.success("fetched HL datas")
+        except Exception as e:
+            await self._log.error(f"{e}")
+            raise
 
     async def clearing_house_state(self, address: str, dex: str = "") -> Any:
         return await self.post({"type": "clearinghouseState", "user": address, "dex": dex})
