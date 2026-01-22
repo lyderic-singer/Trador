@@ -43,13 +43,15 @@ class Info:
             quote_info = spot_meta["tokens"][quote]
             self._register(f'{base_info["name"]}/{quote_info["name"]}', info['name'], asset, base_info["szDecimals"])
 
-    async def start(self):
+    async def start(self, dexs=None):
         try:
             await self._load_spot()
+            await self._load_perp("", 0)
             perp_dexs = await self.perp_dexs()
-            for i, dex in enumerate([""] + [d["name"] for d in perp_dexs[1:]]):
-                offset = 0 if dex == "" else 110000 + (i - 1) * 10000
-                await self._load_perp(dex, offset)
+            for i, dex in enumerate([d["name"] for d in perp_dexs[1:]]):
+                offset = 110000 + i * 10000
+                if (dexs is None) or (dexs and (dex in dexs)):
+                    await self._load_perp(dex, offset)
             await self._log.success("fetched datas")
         except Exception as e:
             await self._log.error(f"{e}")
