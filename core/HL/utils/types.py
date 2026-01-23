@@ -53,7 +53,7 @@ class Instrument:
         return str(round(sz, self.szDecimals))
     
     def __str__(self):
-        return f"Instrument(name={self.name}, coin={self.coin}, asset={self.asset}, type={self.type}, dex={self.dex if self.dex else '""'})"
+        return f"Instrument(name={self.name}, coin={self.coin}, asset={self.asset}, type={self.type}, dex={self.dex if self.dex else '""'}, decimals={self.szDecimals})"
 
 TriggerOrderType = TypedDict(
     "TriggerOrderType",
