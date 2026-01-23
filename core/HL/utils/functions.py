@@ -1,20 +1,17 @@
 import time
-from decimal import Decimal, ROUND_DOWN
 import asyncio
 import json
 from typing import Dict, Any
 
 def format_price(px: float, max_decimals: int, sz_decimals: int):
-    if not isinstance(px, (float, int)):
-        raise TypeError("px must be a float or int")
-    if float(px).is_integer():
+    if (px.is_integer()) or (len(str(int(px))) > 4):
         return str(int(px))
-    max_dp = max_decimals - sz_decimals
-    if max_dp < 0:
-        max_dp = 0
-    q = Decimal("1e-" + str(max_dp))
-    px_d = Decimal(str(px)).quantize(q, rounding=ROUND_DOWN)
-    return str(px_d)
+    else:
+        decimals = max_decimals - sz_decimals
+        px = float(f"{px:.5g}")
+        px = round(px, decimals)
+        px = f"{px:.{decimals}f}"
+        return px.rstrip("0").rstrip(".")
 
 def timestamp_ms():
     return int(time.time() * 1000)
