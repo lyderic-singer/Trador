@@ -33,12 +33,12 @@ def key(dict: Dict[str, Any]) -> str:
     d = dict.get("data")
     if d is not None: # dict is ws msg
         c = dict.get("channel")
-        if c == "allMids": return f"allMids{':' + d.get("dex") if d.get("dex") else ""}"
+        if c == "allMids": return f"allMids:{d.get("dex", "")}"
         if c == "notification": return "notification"
         if c == "webData3": return f'webData3:{d["userState"]["user"].lower()}'
-        if c == "twapStates": return f'twapStates:{d["user"].lower()}:{d["dex"]}'
-        if c == "clearinghouseState": return f'clearinghouseState:{d["user"].lower()}:{d["dex"]}'
-        if c == "openOrders": return f'openOrders:{d["user"].lower()}:{d["dex"]}'
+        if c == "twapStates": return f'twapStates:{d["user"].lower()}:{d.get("dex", "")}'
+        if c == "clearinghouseState": return f'clearinghouseState:{d["user"].lower()}:{d.get("dex", "")}'
+        if c == "openOrders": return f'openOrders:{d["user"].lower()}:{d.get("dex", "")}'
         if c == "candle": return f'candle:{d["s"].lower()},{d["i"]}'
         if c == "l2Book": return f'l2Book:{d["coin"].lower()}'
         if c == "trades": return f'trades:{d[0]["coin"].lower()}' if d else "trades"
@@ -55,12 +55,12 @@ def key(dict: Dict[str, Any]) -> str:
         raise ValueError(f"Unknown WS channel: {c}")
     else: # dict is a sub
         t = dict.get("type")
-        if t == "allMids": return f"allMids{':' + dict.get("dex") if dict.get("dex") else ""}"
+        if t == "allMids": return f"allMids:{dict.get("dex", "")}"
         if t == "notification": return "notification"
         if t == "webData3": return f'webData3:{dict["user"].lower()}'
-        if t == "twapStates": return f'twapStates:{dict["user"].lower()}:{dict["dex"]}'
-        if t == "clearinghouseState": return f'clearinghouseState:{dict["user"].lower()}:{dict["dex"]}'
-        if t == "openOrders": return f'openOrders:{dict["user"].lower()}:{dict["dex"]}'
+        if t == "twapStates": return f'twapStates:{dict["user"].lower()}:{dict.get("dex", "")}'
+        if t == "clearinghouseState": return f'clearinghouseState:{dict["user"].lower()}:{dict.get("dex", "")}'
+        if t == "openOrders": return f'openOrders:{dict["user"].lower()}:{dict.get("dex", "")}'
         if t == "candle": return f'candle:{dict["coin"].lower()},{dict["interval"]}'
         if t == "l2Book": return f'l2Book:{dict["coin"].lower()}'
         if t == "trades": return f'trades:{dict["coin"].lower()}'
