@@ -6,7 +6,6 @@ from .utils.types import Any
 from ..session import Session
 from log.logger import Logger
 
-
 class API:
     def __init__(self, url: str, messenger: Messenger, session : Session):
         self.url = url

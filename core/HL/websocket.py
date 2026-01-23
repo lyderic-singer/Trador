@@ -191,17 +191,17 @@ class WebSocket:
         subscription = {"type": "webData3", "user": user}
         return await self.subscribe(subscription, callback)
     
-    async def twap_states(self, callback: Callable, user: str, dex: Optional[str] = None):
+    async def twap_states(self, callback: Callable, user: str, dex: Optional[str] = ""):
         subscription = {"type": "twapStates", "user": user}
         if dex: subscription["dex"] = dex
         await self.subscribe(subscription, callback)
 
-    async def clearinghouse_state(self, callback: Callable, user: str, dex: Optional[str] = None):
+    async def clearinghouse_state(self, callback: Callable, user: str, dex: Optional[str] = ""):
         subscription = {"type": "clearinghouseState", "user": user}
         if dex: subscription["dex"] = dex
         await self.subscribe(subscription, callback)
 
-    async def open_orders(self, callback: Callable, user: str, dex: Optional[str] = None):
+    async def open_orders(self, callback: Callable, user: str, dex: Optional[str] = ""):
         subscription = {"type": "openOrders", "user": user}
         if dex: subscription["dex"] = dex
         await self.subscribe(subscription, callback)
