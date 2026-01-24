@@ -67,13 +67,15 @@ class WebSocket:
 
     async def stop(self):
         try:
+            subs = [subscription.sub for subscription in self.subscriptions.values()]
+            await asyncio.gather(*(self.unsubscribe(sub) for sub in subs))
             self.running = False
             await cancel(self.task)
             if self.ws:
                 await self.ws.close()
             await self._log.success("Stopped")
         except Exception as e:
-            self._log.error(f"cannot stop websocket: {e}")
+            await self._log.error(f"{e}")
             raise
     
     async def connect(self):
@@ -148,7 +150,7 @@ class WebSocket:
             await self.connected.wait()
             await self.ws.send(json.dumps({"method": "subscribe", "subscription": sub}))
             await subscription.wait()
-            await self._log.success(f"Subscription added: {subscription.key}")
+            await self._log.success(f"Subscribed: {subscription.key}")
             return sub
         except Exception as e:
             if subscription and subscription.key in self.subscriptions:
@@ -169,7 +171,7 @@ class WebSocket:
             await self.ws.send(json.dumps({"method": "unsubscribe", "subscription": subscription.sub}))
             try:
                 await asyncio.wait_for(subscription.inactive.wait(), timeout=10)
-                await self._log.success(f"Successfully unsubscribed {subscription.key}")
+                await self._log.success(f"Unsubscribed {subscription.key}")
             except asyncio.TimeoutError:
                 raise ValueError(f"Timeout for unsubscribe: {subscription.key}")
         except Exception as e:
