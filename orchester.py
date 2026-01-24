@@ -8,15 +8,15 @@ from log.telegram import Telegram
 from core.HL.hl import HL
 
 class Orchester:
-    def __init__(self, mainnet, strategy = None):
+    def __init__(self, mainnet, bot = None):
         self.messenger = Messenger("log/logs.txt")
-        self.strategy = strategy
+        self.bot = bot
         self.telegram = Telegram(self.messenger)
         self.session = Session(self.messenger)
         self._log = Logger(self, self.messenger)
         self.hl = HL(mainnet, self.messenger, self.session)
         self.address = self.hl.address
-        self.strategy_task = None
+        self.bot_task = None
         self.running = False
 
     async def start(self):
@@ -26,8 +26,8 @@ class Orchester:
             await self._log.info("Starting")
             await self.session.start()
             await self.hl.start()
-            if self.strategy:
-                await call(self.strategy.start(self))
+            if self.bot:
+                await call(self.bot.start(self))
             await self.telegram.start(self)
             self.running = True
             await self._log.success(f"Started in {(time.time()-t):.2f} s", send_tg= True)
@@ -38,9 +38,9 @@ class Orchester:
         try:
             await self._log.info("Stopping", send_tg= True)
             self.running = False
-            if self.strategy:
-                await self.strategy.stop()
-                await cancel(self.strategy_task)
+            if self.bot:
+                await self.bot.stop()
+                await cancel(self.bot_task)
             await self.hl.stop()
             await self.session.stop()
             await self._log.success("Stopped", send_tg=True)
@@ -50,7 +50,7 @@ class Orchester:
             await self._log.error("Stop failed")
 
     async def run(self):
-        if not self.strategy or not self.running:
+        if not self.bot or not self.running:
             return
         else:
-            self.strategy_task = asyncio.create_task(self.strategy.run())
+            self.bot_task = asyncio.create_task(self.bot.run())
