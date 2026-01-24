@@ -1,6 +1,7 @@
 import time
 import asyncio
 import json
+from .types import Instrument
 from typing import Dict, Any
 
 def format_price(px: float, max_decimals: int, sz_decimals: int):
@@ -85,3 +86,16 @@ async def cancel(task: asyncio.Task):
         await task
     except asyncio.CancelledError:
         pass
+
+def get_order(instrument: Instrument, is_buy: bool, size: float, price: float, type: ExecutionType, reduce_only: bool = False, cloid: Optional[Cloid] = None) -> Order:
+    order: Order = {
+        "a": instrument.asset,
+        "b": is_buy,
+        "p": instrument.format_price(price),
+        "s": instrument.format_size(size),
+        "r": reduce_only,
+        "t": type
+    }
+    if cloid:
+        order["cloid"] = cloid
+    return order
