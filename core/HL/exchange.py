@@ -2,7 +2,7 @@ from eth_account.signers.local import LocalAccount
 from .info import Info
 from .utils.constants import MAINNET_API_URL
 from .utils.signing import sign
-from .utils.functions import timestamp_ms
+from .utils.functions import timestamp_ms, get_order
 from .utils.types import Any, BuilderInfo, Cloid, List, Optional, Tif, Order, ExecutionType, Modify
 from log.logger import Logger
 from log.messenger import Messenger
@@ -27,22 +27,9 @@ class Exchange:
         }
         return await self.info.api.post("/exchange", payload)
 
-    def get_order(self, x: str | int, is_buy: bool, size: float, price: float, type: ExecutionType, reduce_only: bool = False, cloid: Optional[Cloid] = None) -> Order:
-        instrument = self.info.instrument(x)
-        order: Order = {
-            "a": instrument.asset,
-            "b": is_buy,
-            "p": instrument.format_price(price),
-            "s": instrument.format_size(size),
-            "r": reduce_only,
-            "t": type
-        }
-        if cloid:
-            order["cloid"] = cloid
-        return order
-
     async def order(self, x: str | int, is_buy: bool, size: float, price: float, type: ExecutionType, reduce_only: bool = False, cloid: Optional[Cloid] = None, builder: Optional[BuilderInfo] = None) -> Any:
-        order = self.get_order(x, is_buy, size, price, type, reduce_only, cloid)
+        instrument = self.info.instrument(x)
+        order = get_order(instrument, is_buy, size, price, type, reduce_only, cloid)
         return await self.bulk_orders([order], builder)
 
     async def limit(self, x: str | int, is_buy: bool, size: float, price: float, tif: Tif, reduce_only: bool = False, cloid: Optional[Cloid] = None, builder: Optional[BuilderInfo] = None):
@@ -73,9 +60,10 @@ class Exchange:
     
     def get_modify(self, order, new_price, new_size, tif):
         type = {"limit": {"tif": tif}}
+        instrument = self.info.instrument(order["coin"])
         modify = {
             "oid": order['oid'],
-            "order": self.get_order(order['coin'],  order['side'] == 'B', new_size, new_price, type)
+            "order": get_order(instrument,  order['side'] == 'B', new_size, new_price, type)
         }
         return modify
 
