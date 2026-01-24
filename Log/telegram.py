@@ -56,20 +56,26 @@ class Telegram:
             raise
 
     async def handle(self):
-        try:
-            while True:
-                text = await self.messages.get()
-                if text is None:
-                    self.messages.task_done()
-                    break
+        while True:
+            text = await self.messages.get()
+            if text is None:
+                self.messages.task_done()
+                break
+            retry = 5
+            backoff = 2
+            while retry > 0:
                 try:
                     await self.application.bot.send_message(chat_id=self.chat_id, text=text)
                     await asyncio.sleep(self.delay)
+                    break
                 except Exception as e:
-                    await self._log.error(f"send failed: {e}")
-                self.messages.task_done()
-        except Exception as e:
-            await self._log.error(f"{e}")
+                    retry -= 1
+                    await self._log.error(f"send failed: {e}, retries left: {retry}")
+                    await asyncio.sleep(backoff)
+                    backoff *= 2
+            else:
+                await self._log.error(f"Failed to send message after retries: {text}")
+            self.messages.task_done()
 
     async def send(self, msg: str):
         try:
