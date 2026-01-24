@@ -6,7 +6,7 @@ from eth_account import Account
 from eth_account.messages import encode_typed_data
 from eth_utils import keccak, to_hex
 
-from .types import Cloid, Literal, NotRequired, Optional, TypedDict, Union
+from .types import Literal, NotRequired, Optional, TypedDict, Union
 
 USD_SEND_SIGN_TYPES = [
     {"name": "hyperliquidChain", "type": "string"},

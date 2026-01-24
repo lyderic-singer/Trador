@@ -140,14 +140,3 @@ class Cloid:
     def to_raw(self):
         return self._raw_cloid
 
-OidOrCloid = Union[int, Cloid]
-Modify = TypedDict(
-    "ModifyRequest",
-    {
-        "oid": OidOrCloid,
-        "order": Order,
-    },
-    total=False,
-)
-CancelRequest = TypedDict("CancelRequest", {"a": str, "o": int})
-CancelByCloidRequest = TypedDict("CancelByCloidRequest", {"asset": str, "cloid": Cloid})
