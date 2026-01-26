@@ -2,7 +2,7 @@ from eth_account.signers.local import LocalAccount
 from .info import Info
 from .utils.constants import MAINNET_API_URL
 from .utils.signing import sign
-from .utils.functions import timestamp_ms, get_order
+from .utils.functions import timestamp_ms, get_order, get_modify
 from .utils.types import Any, BuilderInfo, Cloid, List, Optional, Tif, Order, ExecutionType, Modify
 from log.logger import Logger
 from log.messenger import Messenger
@@ -57,19 +57,11 @@ class Exchange:
         signature = sign(self.wallet, order_action, self.vault_address, timestamp, self.expires_after, self.url == MAINNET_API_URL)
         await self._log.debug(f"Sending {len(orders)} orders")
         return await self.post(order_action, signature, timestamp)
-    
-    def get_modify(self, order, new_price, new_size, tif):
-        type = {"limit": {"tif": tif}}
-        instrument = self.info.instrument(order["coin"])
-        modify = {
-            "oid": order['oid'],
-            "order": get_order(instrument,  order['side'] == 'B', new_size, new_price, type)
-        }
-        return modify
 
     async def modify(self, order, new_price, new_size, tif) -> Any:
-        modify = self.get_modify(order, new_price, new_size, tif)
-        return await self.bulk_modify_orders([modify])
+        instrument = self.info.instrument(order["coin"])
+        modify = get_modify(order, instrument, new_price, new_size, tif)
+        return await self.bulk_modify([modify])
 
     async def bulk_modify(self, modifies: List[Modify]) -> Any:
         timestamp = timestamp_ms()

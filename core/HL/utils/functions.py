@@ -98,3 +98,11 @@ def get_order(instrument, is_buy: bool, size: float, price: float, type, reduce_
     if cloid:
         order["cloid"] = cloid
     return order
+
+def get_modify(order, instrument, new_price, new_size, tif):
+    type = {"limit": {"tif": tif}}
+    modify = {
+        "oid": order['oid'],
+        "order": get_order(instrument,  order['side'] == 'B', new_size, new_price, type)
+    }
+    return modify
