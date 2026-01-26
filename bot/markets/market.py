@@ -1,0 +1,79 @@
+import asyncio
+import math
+from collections import deque
+from time import time
+from ...core.HL.utils.functions import cancel
+from logs.logger import Logger
+
+MIN_MS = 60 * 1000
+TIMEFRAME_MAP_MINUTE = {"1m":1,"3m":3,"5m":5,"15m":15,"1h":60}
+TIMEFRAME_MAP_SECOND = {"1s":1,"3s":3,"15s":15,"30s":30,"1m":60,"3m":180,"5m":300,"15m":900,"1h":3600}
+
+class Market:
+    def __init__(self, x: int | str, sma_period = 9, sma_candles = "1m"):
+        # === Market data ===
+        self.best_bid = None
+        self.best_ask = None
+        self.mid = None
+        self.spread = None
+        self.volatility_MIN_MS = None
+        # === Coin ===
+        self.x = x
+        self.instrument = None
+        # === Parameters ===
+        self.sma_candles = sma_candles
+        self.sma_period = sma_period
+        # === Utils ===
+        self.running = asyncio.Event()
+        self.last_mid_update = None
+        self.last_closes_sma = None
+        self._sum = None
+        self.task = None
+        # === Core ===
+        self.hl = None
+        self._log = None
+
+    async def start(self, hl):
+        self.hl = hl
+        self.instrument = hl.info.instrument(self.x)
+        self._log = Logger(f"{self.instrument.coin} Market", hl.messenger)
+        await hl.websocket.bbo(self.on_bbo, self.instrument.coin)
+        self.task = asyncio.create_task(self.handle_sma())
+        await self.running.wait()
+        await self._log.success("Started")
+
+    async def stop(self):
+        self.running.clear()
+        await cancel(task=self.task)
+
+    def on_bbo(self, msg):
+        best_bid = float(msg["data"]["bbo"][0]["px"])
+        best_ask = float(msg["data"]["bbo"][1]["px"])
+        self.best_bid = best_bid
+        self.best_ask = best_ask
+        mid = (best_ask + best_bid) / 2
+        spread = (best_ask / best_bid) - 1
+        self.last_mid_update = time()
+        self.mid = mid
+        self.spread = spread
+
+    async def handle_sma(self):
+        now = int(time()) * 1000
+        first_candles = await self.hl.info.candles_snapshot( self.instrument.coin, self.sma_candles, now - (self.sma_period * TIMEFRAME_MAP_MINUTE[self.sma_candles] * MIN_MS), now)
+        first_candles = first_candles[-(self.sma_period - 1):]
+        self.last_closes_sma = deque((float(c['c']) for c in first_candles), maxlen=(self.sma_period - 1))
+        self._sum = sum(self.last_closes_sma)
+        self.mid = await self.hl.info.price(self.instrument.coin, self.instrument.dex)
+        self.running.set()
+        while self.running.is_set():
+            await asyncio.sleep(TIMEFRAME_MAP_SECOND[self.sma_candles])
+            if self.mid is not None:
+                if len(self.last_closes_sma) == self.last_closes_sma.maxlen:
+                    old = self.last_closes_sma.popleft()
+                    self._sum -= old
+                self.last_closes_sma.append(self.mid)
+                self._sum += self.mid
+
+    def sma(self):
+        total = self._sum + self.mid
+        return total / (len(self.last_closes_sma) + 1)
