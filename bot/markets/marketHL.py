@@ -11,27 +11,27 @@ TIMEFRAME_MAP_SECOND = {"1s":1,"3s":3,"15s":15,"30s":30,"1m":60,"3m":180,"5m":30
 
 class MarketHL:
     def __init__(self, instrument, hl, sma_period = 9, sma_candles = "1m"):
-        # === Init ===
         self.instrument = instrument
         self.hl = hl
         self.sma_candles = sma_candles
         self.sma_period = sma_period
         self._log = Logger(f"{self.instrument.coin} Market", hl.messenger)
-        # === bbo ===
+        self.running = asyncio.Event()
+        self.task = None
+        # ==== bbo ====
         self.best_bid = None
         self.best_ask = None
         self.mid = None
         self.spread = None
-        # === ctx ===
+        self.last_bbo = None
+        # ==== ctx ====
         self.funding = None
         self.oracle = None
         self.mark = None
-        # === Utils ===
-        self.running = asyncio.Event()
-        self.last_mid_update = None
-        self.last_closes_sma = None
-        self._sum = None
-        self.task = None
+        self.last_ctx = None
+        # ==== sma ====
+        self.last_closes = None
+        self.sum_closes = None
 
     async def start(self):
         self.instrument = self.hl.info.instrument(self.x)
@@ -53,7 +53,7 @@ class MarketHL:
             self.best_ask = best_ask
             mid = (best_ask + best_bid) / 2
             spread = (best_ask / best_bid) - 1
-            self.last_mid_update = time()
+            self.last_bbo = time()
             self.mid = mid
             self.spread = spread
         except Exception as e:
@@ -65,6 +65,7 @@ class MarketHL:
             self.funding = float(ctx["funding"])
             self.oracle = float(ctx["oraclePx"])
             self.mark = float(ctx["markPx"])
+            self.last_ctx = time()
         except Exception as e:
             await self._log.error(f"{e}")
 
@@ -72,21 +73,21 @@ class MarketHL:
         now = int(time()) * 1000
         first_candles = await self.hl.info.candles_snapshot( self.instrument.coin, self.sma_candles, now - (self.sma_period * TIMEFRAME_MAP_MINUTE[self.sma_candles] * MIN_MS), now)
         first_candles = first_candles[-(self.sma_period - 1):]
-        self.last_closes_sma = deque((float(c['c']) for c in first_candles), maxlen=(self.sma_period - 1))
-        self._sum = sum(self.last_closes_sma)
+        self.last_closes = deque((float(c['c']) for c in first_candles), maxlen=(self.sma_period - 1))
+        self.sum_closes = sum(self.last_closes)
         self.mid = await self.hl.info.price(self.instrument.coin, self.instrument.dex)
         self.running.set()
         while self.running.is_set():
             await asyncio.sleep(TIMEFRAME_MAP_SECOND[self.sma_candles])
             if self.mid is not None:
-                if len(self.last_closes_sma) == self.last_closes_sma.maxlen:
-                    old = self.last_closes_sma.popleft()
-                    self._sum -= old
-                self.last_closes_sma.append(self.mid)
-                self._sum += self.mid
+                if len(self.last_closes) == self.last_closes.maxlen:
+                    old = self.last_closes.popleft()
+                    self.sum_closes -= old
+                self.last_closes.append(self.mid)
+                self.sum_closes += self.mid
 
     def sma(self):
-        if self._sum and self.mid:
-            total = self._sum + self.mid
-            return total / (len(self.last_closes_sma) + 1)
+        if self.sum_closes and self.mid:
+            total = self.sum_closes + self.mid
+            return total / (len(self.last_closes) + 1)
         return
