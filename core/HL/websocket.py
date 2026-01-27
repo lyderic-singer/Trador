@@ -5,11 +5,12 @@ import websockets
 from log.logger import Logger
 from log.messenger import Messenger
 from .info import Info
-from typing import Callable, Dict, Any, Optional
+from typing import Callable, Dict, Optional
+from .utils.types import Sub
 from .utils.functions import key, call, extract_subscription_error, cancel
 
 class Subscription:
-    def __init__(self, sub: Dict[str, Any], callback: Callable):
+    def __init__(self, sub: Sub, callback: Callable):
         self.type = sub["type"]
         self.user = sub.get("user")
         self.coin = sub.get("coin")
@@ -98,6 +99,7 @@ class WebSocket:
                 self.connected.clear()
     
     async def ping(self):
+        assert self.ws is not None
         while self.connected.is_set():
             await asyncio.sleep(self.ping_delay)
             await self.ws.send(json.dumps({"method": "ping"}))
@@ -105,6 +107,7 @@ class WebSocket:
                 raise ValueError("pong not received")
     
     async def handle(self):
+        assert self.ws is not None
         async for msg in self.ws:
             try:
                 msg = json.loads(msg)
@@ -125,7 +128,7 @@ class WebSocket:
                             await self._log.warning(f"unexpected method: {method}")
                 elif channel == "error" and data:
                     data = extract_subscription_error(data)
-                    sub = data.get("subscription")
+                    sub: Sub = data.get("subscription", {})
                     k = key(sub)
                     if k in self.subscriptions:
                         self.subscriptions[k].error.set()
@@ -139,7 +142,8 @@ class WebSocket:
                 await self._log.warning(f"{e}")
                 continue
     
-    async def subscribe(self, sub: Dict[str, Any], callback: Callable):
+    async def subscribe(self, sub: Sub, callback: Callable):
+        assert self.ws is not None
         subscription = None
         try:
             subscription = Subscription(sub, callback)
@@ -159,7 +163,8 @@ class WebSocket:
             await self._log.error(f"{e}")
             raise e
     
-    async def unsubscribe(self, sub: Dict[str, Any]):
+    async def unsubscribe(self, sub: Sub):
+        assert self.ws is not None
         k = None
         try:
             k = key(sub)
@@ -181,90 +186,90 @@ class WebSocket:
                 subscription = self.subscriptions.pop(k, None)
     
     async def all_mids(self, callback: Callable, dex: Optional[str] = None):
-        subscription = {"type": "allMids"}
+        subscription: Sub = {"type": "allMids"}
         if dex: subscription["dex"] = dex
         await self.subscribe(subscription, callback)
     
     async def notification(self, callback: Callable, user: str):
-        subscription = {"type": "notification", "user": user}
+        subscription: Sub = {"type": "notification", "user": user}
         await self.subscribe(subscription, callback)
     
     async def web_data3(self, callback: Callable, user: str):
-        subscription = {"type": "webData3", "user": user}
+        subscription: Sub = {"type": "webData3", "user": user}
         return await self.subscribe(subscription, callback)
     
     async def twap_states(self, callback: Callable, user: str, dex: Optional[str] = ""):
-        subscription = {"type": "twapStates", "user": user}
+        subscription: Sub = {"type": "twapStates", "user": user}
         if dex: subscription["dex"] = dex
         await self.subscribe(subscription, callback)
 
     async def clearinghouse_state(self, callback: Callable, user: str, dex: Optional[str] = ""):
-        subscription = {"type": "clearinghouseState", "user": user}
+        subscription: Sub = {"type": "clearinghouseState", "user": user}
         if dex: subscription["dex"] = dex
         await self.subscribe(subscription, callback)
 
     async def open_orders(self, callback: Callable, user: str, dex: Optional[str] = ""):
-        subscription = {"type": "openOrders", "user": user}
+        subscription: Sub = {"type": "openOrders", "user": user}
         if dex: subscription["dex"] = dex
         await self.subscribe(subscription, callback)
 
     async def candle(self, callback: Callable, x: str | int, interval: str):
         instrument = self.info.instrument(x)
-        subscription = {"type": "candle", "coin": instrument.coin, "interval": interval}
+        subscription: Sub = {"type": "candle", "coin": instrument.coin, "interval": interval}
         await self.subscribe(subscription, callback)
 
     async def l2_book(self, callback: Callable, x: str | int, n_sig_figs: Optional[int] = None, mantissa: Optional[int] = None):
         instrument = self.info.instrument(x)
-        subscription = {"type": "l2Book", "coin": instrument.coin}
+        subscription: Sub = {"type": "l2Book", "coin": instrument.coin}
         if n_sig_figs: subscription["nSigFigs"] = n_sig_figs
         if mantissa: subscription["mantissa"] = mantissa
         await self.subscribe(subscription, callback)
 
     async def trades(self, callback: Callable, x: str | int):
         instrument = self.info.instrument(x)
-        subscription = {"type": "trades", "coin": instrument.coin}
+        subscription: Sub = {"type": "trades", "coin": instrument.coin}
         await self.subscribe(subscription, callback)
 
     async def order_updates(self, callback: Callable, user: str):
-        subscription = {"type": "orderUpdates", "user": user}
+        subscription: Sub = {"type": "orderUpdates", "user": user}
         await self.subscribe(subscription, callback)
 
     async def user_events(self, callback: Callable, user: str):
-        subscription = {"type": "userEvents", "user": user}
+        subscription: Sub = {"type": "userEvents", "user": user}
         await self.subscribe(subscription, callback)
 
     async def user_fills(self, callback: Callable, user: str, aggregate_by_time: Optional[bool] = None):
-        subscription = {"type": "userFills", "user": user}
+        subscription: Sub = {"type": "userFills", "user": user}
         if aggregate_by_time is not None: subscription["aggregateByTime"] = aggregate_by_time
         await self.subscribe(subscription, callback)
 
     async def user_fundings(self, callback: Callable, user: str):
-        subscription = {"type": "userFundings", "user": user}
+        subscription: Sub = {"type": "userFundings", "user": user}
         await self.subscribe(subscription, callback)
 
     async def user_non_funding_ledger_updates(self, callback: Callable, user: str):
-        subscription = {"type": "userNonFundingLedgerUpdates", "user": user}
+        subscription: Sub = {"type": "userNonFundingLedgerUpdates", "user": user}
         await self.subscribe(subscription, callback)
 
     async def active_asset_ctx(self, callback: Callable, x: str | int):
         instrument = self.info.instrument(x)
-        subscription = {"type": "activeAssetCtx", "coin": instrument.coin}
+        subscription: Sub = {"type": "activeAssetCtx", "coin": instrument.coin}
         await self.subscribe(subscription, callback)
 
     async def active_asset_data(self, callback: Callable, user: str, x: str | int):
         instrument = self.info.instrument(x)
-        subscription = {"type": "activeAssetData", "user": user, "coin": instrument.coin}
+        subscription: Sub = {"type": "activeAssetData", "user": user, "coin": instrument.coin}
         await self.subscribe(subscription, callback)
 
     async def user_twap_slice_fills(self, callback: Callable, user: str):
-        subscription = {"type": "userTwapSliceFills", "user": user}
+        subscription: Sub = {"type": "userTwapSliceFills", "user": user}
         await self.subscribe(subscription, callback)
 
     async def user_twap_history(self, callback: Callable, user: str):
-        subscription = {"type": "userTwapHistory", "user": user}
+        subscription: Sub = {"type": "userTwapHistory", "user": user}
         await self.subscribe(subscription, callback)
 
     async def bbo(self, callback: Callable, x: str | int):
         instrument = self.info.instrument(x)
-        subscription = {"type": "bbo", "coin": instrument.coin}
+        subscription: Sub = {"type": "bbo", "coin": instrument.coin}
         await self.subscribe(subscription, callback)
