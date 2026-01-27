@@ -3,15 +3,7 @@ import asyncio
 import json
 from typing import Dict, Any
 
-def format_price(px: float, max_decimals: int, sz_decimals: int):
-    if (px.is_integer()) or (len(str(int(px))) > 4):
-        return str(int(px))
-    else:
-        decimals = max_decimals - sz_decimals
-        px = float(f"{px:.5g}")
-        px = round(px, decimals)
-        px = f"{px:.{decimals}f}"
-        return px.rstrip("0").rstrip(".")
+from core.HL.utils.types import Modify, Order
 
 def timestamp_ms():
     return int(time.time() * 1000)
@@ -29,7 +21,7 @@ def extract_subscription_error(s: str) -> dict:
     except Exception:
         return {}
 
-def key(dict: Dict[str, Any]) -> str:
+def key(dict: dict[str, Any]) -> str:
     d = dict.get("data")
     if d is not None: # dict is ws msg
         c = dict.get("channel")
@@ -77,7 +69,7 @@ def key(dict: Dict[str, Any]) -> str:
         if t == "bbo": return f'bbo:{dict["coin"].lower()}'
         raise ValueError(f"Unknown subscription type: {t}")
     
-async def cancel(task: asyncio.Task):
+async def cancel(task: asyncio.Task | None):
     if task is None or task.done():
         return
     task.cancel()
@@ -86,7 +78,7 @@ async def cancel(task: asyncio.Task):
     except asyncio.CancelledError:
         pass
 
-def get_order(instrument, is_buy: bool, size: float, price: float, type, reduce_only: bool = False, cloid = None):
+def get_order(instrument, is_buy: bool, size: float, price: float, type, reduce_only: bool = False, cloid = None) -> Order:
     order: Order = {
         "a": instrument.asset,
         "b": is_buy,
@@ -96,12 +88,12 @@ def get_order(instrument, is_buy: bool, size: float, price: float, type, reduce_
         "t": type
     }
     if cloid:
-        order["cloid"] = cloid
+        order["c"] = cloid
     return order
 
-def get_modify(order, instrument, new_price, new_size, tif):
+def get_modify(order, instrument, new_price, new_size, tif) -> Modify:
     type = {"limit": {"tif": tif}}
-    modify = {
+    modify: Modify = {
         "oid": order['oid'],
         "order": get_order(instrument,  order['side'] == 'B', new_size, new_price, type)
     }
