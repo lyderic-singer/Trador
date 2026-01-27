@@ -3,17 +3,16 @@ from .info import Info
 from .utils.constants import MAINNET_API_URL
 from .utils.signing import sign
 from .utils.functions import timestamp_ms, get_order, get_modify
-from .utils.types import Any, BuilderInfo, Cloid, List, Optional, Tif, Order, ExecutionType, Modify
+from .utils.types import TPSL, Any, BuilderInfo, Cloid, List, Optional, TIF, Order, ExecutionType, Modify, LimitOrderType, TriggerOrderType
 from log.logger import Logger
 from log.messenger import Messenger
 
 class Exchange:
-    def __init__(self, url , messenger: Messenger, wallet: LocalAccount, info: Info, vault_address: str = None, account_address: str = None):
+    def __init__(self, url , messenger: Messenger, wallet: LocalAccount, info: Info, vault_address: str | None = None):
         self.wallet = wallet
         self._log = Logger("HL Exchange", messenger)
         self.url = url
         self.vault_address = vault_address
-        self.account_address = account_address
         self.info = info
         self.expires_after: Optional[int] = None
 
@@ -27,25 +26,25 @@ class Exchange:
         }
         return await self.info.api.post("/exchange", payload)
 
-    async def order(self, x: str | int, is_buy: bool, size: float, price: float, type: ExecutionType, reduce_only: bool = False, cloid: Optional[Cloid] = None, builder: Optional[BuilderInfo] = None) -> Any:
+    async def order(self, x: str | int, is_buy: bool, size: float, price: float, execution_type: ExecutionType, reduce_only: bool = False, cloid: Optional[Cloid] = None, builder: Optional[BuilderInfo] = None) -> Any:
         instrument = self.info.instrument(x)
-        order = get_order(instrument, is_buy, size, price, type, reduce_only, cloid)
+        order = get_order(instrument, is_buy, size, price, execution_type, reduce_only, cloid)
         return await self.bulk_orders([order], builder)
 
-    async def limit(self, x: str | int, is_buy: bool, size: float, price: float, tif: Tif, reduce_only: bool = False, cloid: Optional[Cloid] = None, builder: Optional[BuilderInfo] = None):
-        type = {"limit": {"tif": tif}}
-        return await self.order(x, is_buy, size, price, type, reduce_only, cloid, builder)
+    async def limit(self, x: str | int, is_buy: bool, size: float, price: float, tif: TIF, reduce_only: bool = False, cloid: Optional[Cloid] = None, builder: Optional[BuilderInfo] = None):
+        execution_type: LimitOrderType = {"limit": {"tif": tif}}
+        return await self.order(x, is_buy, size, price, execution_type, reduce_only, cloid, builder)
 
     async def market(self, x: str | int, is_buy: bool, size: float, price: float, slippage: float, reduce_only: bool = False, cloid: Optional[Cloid] = None, builder: Optional[BuilderInfo] = None):
         price = price * ((1 + slippage) if is_buy else (1 - slippage))
-        type = {"limit": {"tif": "Ioc"}}
-        return await self.order(x, is_buy, size, price, type, reduce_only, cloid, builder)
+        execution_type: LimitOrderType = {"limit": {"tif": "Ioc"}}
+        return await self.order(x, is_buy, size, price, execution_type, reduce_only, cloid, builder)
     
-    async def trigger(self, x: str | int, is_buy: bool, size: float, trigger_px: float, is_market: bool, tpsl: str, price: Optional[float] = None, reduce_only: bool = True, cloid: Optional[Cloid] = None, builder: Optional[BuilderInfo] = None):
-        instr = self.info.instrument(x)
-        type = {"trigger": {"isMarket": is_market, "triggerPx": instr.format_price(trigger_px), "tpsl": tpsl}}
+    async def trigger(self, x: str | int, is_buy: bool, size: float, trigger_px: float, is_market: bool, tpsl: TPSL, price: Optional[float] = None, reduce_only: bool = True, cloid: Optional[Cloid] = None, builder: Optional[BuilderInfo] = None):
+        instrument = self.info.instrument(x)
+        execution_type: TriggerOrderType = {"trigger": {"isMarket": is_market, "triggerPx": instrument.format_price(trigger_px), "tpsl": tpsl}}
         px = trigger_px if is_market else price
-        return await self.order(x, is_buy, size, px, type, reduce_only, cloid, builder)
+        return await self.order(x, is_buy, size, px or 0, execution_type, reduce_only, cloid, builder)
 
     async def bulk_orders(self, orders: List[Order], builder: Optional[BuilderInfo] = None) -> Any:
         timestamp = timestamp_ms()
