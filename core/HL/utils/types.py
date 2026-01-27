@@ -1,34 +1,27 @@
 from __future__ import annotations
 from .constants import MAX_DECIMALS_PERP, MAX_DECIMALS_SPOT
-from .functions import format_price
 from typing import List, Literal, Optional, Tuple, TypedDict, Union, Any, NotRequired
 
-AssetInfo = TypedDict("AssetInfo", {"name": str, "szDecimals": int})
-Meta = TypedDict("Meta", {"universe": List[AssetInfo]})
-SIDE = Literal["A", "B"]
-TIF = Literal["Alo", "Ioc", "Gtc"]
-TPSL = Literal["tp", "sl"]
+class Cloid:
+    def __init__(self, raw_cloid: str):
+        self._raw_cloid: str = raw_cloid
+        self._validate()
 
+    def _validate(self):
+        if not self._raw_cloid[:2] == "0x":
+            raise TypeError("cloid is not a hex string")
+        if not len(self._raw_cloid[2:]) == 32:
+            raise TypeError("cloid is not 16 bytes")
 
-InstrumentType = Literal["perp", "spot", "hip3", ""]
-
-class Tif(TypedDict):
-    tif: TIF
-
-class TriggerType(TypedDict):
-    isMarket: bool
-    triggerPx: str
-    tpsl: TPSL
-
-LimitOrderType = TypedDict(
-    "OrderType",
-    {
-        "limit": Tif,
-    },
-    total=False,
-)
-
-BuilderInfo = TypedDict("BuilderInfo", {"b": str, "f": int})
+def format_price(px: float, max_decimals: int, sz_decimals: int) -> str:
+    if (px.is_integer()) or (len(str(int(px))) > 4):
+        return str(int(px))
+    else:
+        decimals = max_decimals - sz_decimals
+        px = float(f"{px:.5g}")
+        px = round(px, decimals)
+        px_str = f"{px:.{decimals}f}"
+        return px_str.rstrip("0").rstrip(".")
 
 class Instrument:
     def __init__(self, name: str, coin: str, asset: int, szDecimals: int):
@@ -53,31 +46,7 @@ class Instrument:
         return str(round(sz, self.szDecimals))
     
     def __str__(self):
-        return f"Instrument(name={self.name}, coin={self.coin}, asset={self.asset}, type={self.type}, dex={self.dex if self.dex else '""'}, decimals={self.szDecimals})"
-
-TriggerOrderType = TypedDict(
-    "TriggerOrderType",
-    {
-        "trigger": TriggerType,
-    },
-    total=False,
-)
-
-ExecutionType = Union[LimitOrderType, TriggerOrderType]
-
-class Order(TypedDict):
-    a: int
-    b: bool # buy ?
-    p: str
-    s: str
-    r: bool # reduceOnly ?
-    t: ExecutionType
-    c: Optional[Cloid]
-
-SpotAssetInfo = TypedDict(
-    "SpotAssetInfo",
-    {"name": str, "tokens": List[int], "index": int, "isCanonical": bool},
-)
+        return f"Instrument(name={self.name}, coin={self.coin}, asset={self.asset},\ntype={self.type}, dex={self.dex if self.dex else '""'}, decimals={self.szDecimals})"
 
 SpotTokenInfo = TypedDict(
     "SpotTokenInfo",
@@ -93,10 +62,6 @@ SpotTokenInfo = TypedDict(
     },
 )
 
-SpotMeta = TypedDict(
-    "SpotMeta",
-    {"universe": List[SpotAssetInfo], "tokens": List[SpotTokenInfo]},
-)
 
 SpotAssetCtx = TypedDict(
     "SpotAssetCtx",
@@ -110,42 +75,22 @@ SpotAssetCtx = TypedDict(
     },
 )
 
-SpotMetaAndAssetCtxs = Tuple[SpotMeta, List[SpotAssetCtx]]
-
-class Cloid:
-    def __init__(self, raw_cloid: str):
-        self._raw_cloid: str = raw_cloid
-        self._validate()
-
-    def _validate(self):
-        if not self._raw_cloid[:2] == "0x":
-            raise TypeError("cloid is not a hex string")
-        if not len(self._raw_cloid[2:]) == 32:
-            raise TypeError("cloid is not 16 bytes")
-
-    def __str__(self):
-        return str(self._raw_cloid)
-
-    def __repr__(self):
-        return str(self._raw_cloid)
-
-    @staticmethod
-    def from_int(cloid: int) -> Cloid:
-        return Cloid(f"{cloid:#034x}")
-
-    @staticmethod
-    def from_str(cloid: str) -> Cloid:
-        return Cloid(cloid)
-
-    def to_raw(self):
-        return self._raw_cloid
-
+AssetInfo = TypedDict("AssetInfo", {"name": str, "szDecimals": int})
+Meta = TypedDict("Meta", {"universe": List[AssetInfo]})
+SIDE = Literal["A", "B"]
+TIF = Literal["Alo", "Ioc", "Gtc"]
+TPSL = Literal["tp", "sl"]
+InstrumentType = Literal["perp", "spot", "hip3", ""]
+LimitOrder = TypedDict("LimitOrder", {"tif": TIF})
+LimitOrderType = TypedDict("LimitOrderType", {"limit": LimitOrder}, total=False)
+TriggerType = TypedDict("TriggerType", {"isMarket": bool, "triggerPx": str, "tpsl": TPSL})
+TriggerOrderType = TypedDict("TriggerOrderType", {"trigger": TriggerType}, total=False)
+ExecutionType = Union[LimitOrderType, TriggerOrderType]
+BuilderInfo = TypedDict("BuilderInfo", {"b": str, "f": int})
+SpotAssetInfo = TypedDict("SpotAssetInfo", {"name": str, "tokens": List[int], "index": int, "isCanonical": bool})
+SpotMeta = TypedDict("SpotMeta", {"universe": List[SpotAssetInfo], "tokens": List[SpotTokenInfo]})
+Sub = dict[str, Any]
 OidOrCloid = Union[int, Cloid]
-Modify = TypedDict(
-    "ModifyRequest",
-    {
-        "oid": OidOrCloid,
-        "order": Order,
-    },
-    total=False,
-)
+Order = TypedDict("Order", {"a": int, "b": bool, "p": str, "s": str, "r": bool, "t": ExecutionType, "c": NotRequired[Optional[Cloid]]})
+Modify = TypedDict("Modify", {"oid": OidOrCloid,"order": Order}, total=False)
+SpotMetaAndAssetCtxs = Tuple[SpotMeta, List[SpotAssetCtx]]
