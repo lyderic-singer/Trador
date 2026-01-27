@@ -1,12 +1,8 @@
-import time
-from decimal import Decimal
-
 import msgpack
 from eth_account import Account
 from eth_account.messages import encode_typed_data
-from eth_utils import keccak, to_hex
-
-from .types import Literal, NotRequired, Optional, TypedDict, Union
+from eth_utils.conversions import to_hex
+from eth_utils.crypto import keccak
 
 USD_SEND_SIGN_TYPES = [
     {"name": "hyperliquidChain", "type": "string"},
