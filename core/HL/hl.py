@@ -46,7 +46,7 @@ class HL:
         if not self.running:
             try:
                 await self._log.info("Starting")
-                await self.info.start([])
+                await self.info.start(["rrrrr"])
                 await self.websocket.start()
                 self.running = True
             except Exception as e:

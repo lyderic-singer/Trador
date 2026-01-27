@@ -23,7 +23,7 @@ class Info:
         self.instruments_table[coin] = asset
 
     def instrument(self, x: str | int) -> Instrument:
-        asset = self.instruments_table.get(x)
+        asset = self.instruments_table.get(x, -1)
         instrument = self.instruments_dict.get(asset)
         if instrument is None:
             raise ValueError("The ID provided does not correspond to any hyperliquid market")
@@ -78,7 +78,7 @@ class Info:
     async def user_fills_by_time(self, address: str, start_time: int, end_time: Optional[int] = None) -> Any:
         return await self.post({"type": "userFillsByTime", "user": address, "startTime": start_time, "endTime": end_time})
 
-    async def meta(self, dex: str = "", x: str | int = None) -> Meta:
+    async def meta(self, dex: str = "", x: str | int | None = None) -> Meta:
         payload = {"type": "meta", "dex": dex}
         if x:
             coin = self.instrument(x).coin

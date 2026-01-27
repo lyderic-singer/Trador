@@ -34,7 +34,6 @@ class MarketHL:
         self.sum_closes = None
 
     async def start(self):
-        self.instrument = self.hl.info.instrument(self.x)
         await self.hl.websocket.bbo(self.on_bbo, self.instrument.coin)
         await self.hl.websocket.active_asset_ctx(self.on_activeAssetCtx, self.instrument.coin)
         self.task = asyncio.create_task(self.handle_sma())
@@ -45,7 +44,7 @@ class MarketHL:
         self.running.clear()
         await cancel(task=self.task)
 
-    def on_bbo(self, msg):
+    async def on_bbo(self, msg):
         try:
             best_bid = float(msg["data"]["bbo"][0]["px"])
             best_ask = float(msg["data"]["bbo"][1]["px"])
