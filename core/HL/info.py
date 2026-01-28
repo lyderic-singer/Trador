@@ -26,7 +26,7 @@ class Info:
         asset = self.instruments_table.get(x, -1)
         instrument = self.instruments_dict.get(asset)
         if instrument is None:
-            raise ValueError("The ID provided does not correspond to any hyperliquid market")
+            raise ValueError(f"The ID provided ({x}) does not correspond to any hyperliquid market")
         return instrument
     
     async def _load_perp(self, dex: str, offset: int):

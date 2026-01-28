@@ -39,7 +39,7 @@ class Exchange:
         price = price * ((1 + slippage) if is_buy else (1 - slippage))
         execution_type: LimitOrderType = {"limit": {"tif": "Ioc"}}
         return await self.order(x, is_buy, size, price, execution_type, reduce_only, cloid, builder)
-    
+
     async def trigger(self, x: str | int, is_buy: bool, size: float, trigger_px: float, is_market: bool, tpsl: TPSL, price: Optional[float] = None, reduce_only: bool = True, cloid: Optional[Cloid] = None, builder: Optional[BuilderInfo] = None):
         instrument = self.info.instrument(x)
         execution_type: TriggerOrderType = {"trigger": {"isMarket": is_market, "triggerPx": instrument.format_price(trigger_px), "tpsl": tpsl}}
