@@ -75,6 +75,22 @@ SpotAssetCtx = TypedDict(
     },
 )
 
+Transfer = TypedDict(
+    "Transfer",
+    {
+        "type": str,
+        "hyperliquidChain": str,
+        "signatureChainId": str,
+        "destination": str,
+        "sourceDex": str,
+        "destinationDex": str,
+        "token": str,
+        "amount": str,
+        "fromSubAccount": str,
+        "nonce": int
+    }
+)
+
 AssetInfo = TypedDict("AssetInfo", {"name": str, "szDecimals": int})
 Meta = TypedDict("Meta", {"universe": List[AssetInfo]})
 SIDE = Literal["A", "B"]
