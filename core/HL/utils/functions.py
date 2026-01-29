@@ -3,9 +3,9 @@ import asyncio
 import json
 from typing import Dict, Any
 
-from core.HL.utils.types import Modify, Order
+from core.HL.utils.types import Modify, Order, Transfer
 
-def timestamp_ms():
+def timestamp_ms() -> int:
     return int(time.time() * 1000)
 
 async def call(fn, *args, **kwargs):
@@ -78,23 +78,41 @@ async def cancel(task: asyncio.Task | None):
     except asyncio.CancelledError:
         pass
 
-def get_order(instrument, is_buy: bool, size: float, price: float, type, reduce_only: bool = False, cloid = None) -> Order:
+def get_order(instrument, is_buy: bool, size: float, price: float, execution_type,
+              reduce_only: bool = False, cloid = None) -> Order:
     order: Order = {
         "a": instrument.asset,
         "b": is_buy,
         "p": instrument.format_price(price),
         "s": instrument.format_size(size),
         "r": reduce_only,
-        "t": type
+        "t": execution_type
     }
     if cloid:
         order["c"] = cloid
     return order
 
 def get_modify(order, instrument, new_price, new_size, tif) -> Modify:
-    type = {"limit": {"tif": tif}}
+    execution_type = {"limit": {"tif": tif}}
     modify: Modify = {
         "oid": order['oid'],
-        "order": get_order(instrument,  order['side'] == 'B', new_size, new_price, type)
+        "order": get_order(instrument,  order['side'] == 'B', new_size, new_price, execution_type)
     }
     return modify
+
+def get_transfer(token: str, amount: float, source_dex: str, destination_dex: str, destination_address: str, nonce: int,
+                 mainnet: bool = True, from_subaccount: str = "", signature_chain_id: str = "0xa4b1") -> Transfer:
+    chain = "Mainnet" if mainnet else "Testnet"
+    action: Transfer = {
+        "type": "sendAsset",
+        "hyperliquidChain": chain,
+        "signatureChainId": signature_chain_id,
+        "destination": destination_address,
+        "sourceDex": source_dex,
+        "destinationDex": destination_dex,
+        "token": token,
+        "amount": str(amount),
+        "fromSubAccount": from_subaccount,
+        "nonce": nonce
+    }
+    return action
