@@ -21,7 +21,7 @@ class RiskLimits:
         
         # Emergency stops
         self.min_margin_ratio = 0.2  # Stop if margin < 20%
-        self.max_drawdown_percent = 0.1  # 10% max drawdown
+        self.max_drawdown_percent = 0.3  # 30% max drawdown
         
         # Spreads and slippage
         self.max_spread = 0.05  # 5% max spread
