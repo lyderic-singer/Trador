@@ -142,7 +142,7 @@ class MarketHL:
                     
         except Exception as e:
             await self._log.error(f"Error in handle_sma: {e}")
-            self.running.set()  # Still mark as running even if SMA fails
+            self.running.set()  # Still mark as running
 
     def sma(self):
         """Get current SMA value"""

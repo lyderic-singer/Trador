@@ -1,5 +1,3 @@
-# ici tu respecte les rate limit tu dois modifier le account.py pour compter ton volume :
-
 import asyncio
 from time import time
 from log.logger import Logger
@@ -155,7 +153,6 @@ class ExecutorHL:
         Submit cancel requests (high priority)
         cancels: list of {"a": asset, "o": oid}
         """
-        # Cancels have 2x limit, so they're prioritized
         request = OrderRequest(cancels, priority=priority)
         request.is_cancel = True
         
@@ -180,7 +177,7 @@ class ExecutorHL:
                 await self._execute_request(request)
                 
                 # Stats
-                if time() - self.last_stats_time > 60:
+                if time() - self.last_stats_time > 300:  # Every 5 min
                     await self._log_stats()
                     self.last_stats_time = time()
                 
@@ -228,11 +225,10 @@ class ExecutorHL:
             self.orders_sent += batch_length
             self.total_volume_usd += volume_usd
             
-            # Parse result and check individual order statuses
+            # Parse result
             if result.get("status") == "ok":
                 request.result = result
                 
-                # Parse statuses array to count successes and errors
                 response = result.get("response", {})
                 data = response.get("data", {})
                 statuses = data.get("statuses", [])
@@ -253,16 +249,16 @@ class ExecutorHL:
                     self.orders_rejected += error_count
                     # Only log if ALL orders failed
                     if error_count == len(statuses):
-                        await self._log.info(f"All {error_count} orders rejected: {errors[0]}")
+                        await self._log.warning(f"All {error_count} orders rejected: {errors[0]}")
                     else:
                         await self._log.debug(f"{error_count}/{len(statuses)} orders rejected")
                 
-                # Log success only at debug level to reduce spam
+                # Success at debug level
                 if success_count > 0:
-                    await self._log.debug(f"{success_count}/{len(statuses)} orders accepted")
+                    await self._log.debug(f"✓ {success_count}/{len(statuses)} orders posted")
                     
             else:
-                # API-level error (not individual order errors)
+                # API-level error
                 request.error = result
                 self.orders_rejected += batch_length
                 await self._log.error(f"API error: {result}")
@@ -284,10 +280,13 @@ class ExecutorHL:
     
     async def _log_stats(self):
         """Log execution statistics"""
-        await self._log.info(
-            f"Stats: sent={self.orders_sent}, filled={self.orders_filled}, "
-            f"rejected={self.orders_rejected}, volume=${self.total_volume_usd:.2f}"
-        )
+        if self.orders_sent > 0:
+            success_rate = ((self.orders_sent - self.orders_rejected) / self.orders_sent) * 100
+            await self._log.info(
+                f"📈 Executor - Sent: {self.orders_sent} | "
+                f"Rejected: {self.orders_rejected} ({100-success_rate:.1f}%) | "
+                f"Volume: ${self.total_volume_usd:,.0f}"
+            )
         
         # Reset counters
         self.orders_sent = 0

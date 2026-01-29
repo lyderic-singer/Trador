@@ -35,9 +35,11 @@ class AccountPerpHL:
         # ==== Volume tracking ====
         self.cumulative_volume_usd = 0
         self.daily_volume_usd = 0
-        self.volume_by_coin = defaultdict(float)  # coin -> volume_usd
+        self.hourly_volume_usd = 0
+        self.volume_by_coin = defaultdict(float)
         self.last_volume_reset = time()
-        self.volume_stats_interval = 300  # Log stats every 5 minutes
+        self.last_hourly_reset = time()
+        self.volume_stats_interval = 300  # Log every 5 min
 
     async def start(self):
         """Start account monitoring"""
@@ -61,7 +63,7 @@ class AccountPerpHL:
                     )
                 )
             
-            # Subscribe to active asset data for each instrument
+            # Subscribe to active asset data
             subscriptions += [
                 self.hl.websocket.active_asset_data(
                     self.on_activeAssetData, 
@@ -85,7 +87,6 @@ class AccountPerpHL:
                 )
             )
             
-            # Wait for all subscriptions
             await asyncio.gather(*subscriptions)
             
             self.running.set()
@@ -107,6 +108,7 @@ class AccountPerpHL:
             self.margin_summary = ch["marginSummary"]
             self.cross_margin_summary = ch["crossMarginSummary"]
             self.withdrawable = float(ch["withdrawable"])
+            
             # Update positions
             self.positions.clear()
             for p in ch["assetPositions"]:
@@ -182,6 +184,7 @@ class AccountPerpHL:
         try:
             if msg.get("isSnapshot"):
                 return
+                
             for f in msg["fills"]:
                 fill = {
                     "coin": f["coin"],
@@ -200,13 +203,8 @@ class AccountPerpHL:
                 volume_usd = fill["px"] * fill["sz"]
                 self.cumulative_volume_usd += volume_usd
                 self.daily_volume_usd += volume_usd
+                self.hourly_volume_usd += volume_usd
                 self.volume_by_coin[fill["coin"]] += volume_usd
-                
-                # Log fill
-                await self._log.debug(
-                    f"Fill on {fill['coin']}: {fill['side']} {fill['sz']} @ {fill['px']} "
-                    f"(${volume_usd:.2f})"
-                )
                 
                 # Log volume stats periodically
                 current_time = time()
@@ -219,25 +217,36 @@ class AccountPerpHL:
     async def _log_volume_stats(self):
         """Log volume statistics"""
         try:
-            elapsed_hours = (time() - self.last_volume_reset) / 3600
-            volume_per_hour = self.daily_volume_usd / elapsed_hours if elapsed_hours > 0 else 0
+            current_time = time()
             
-            stats = f"Volume Stats - Total: ${self.cumulative_volume_usd:,.0f}, "
-            stats += f"Daily: ${self.daily_volume_usd:,.0f}, "
-            stats += f"Rate: ${volume_per_hour:,.0f}/hour"
+            # Hourly rate
+            hourly_elapsed = (current_time - self.last_hourly_reset) / 3600
+            hourly_rate = self.hourly_volume_usd / hourly_elapsed if hourly_elapsed > 0 else 0
+            
+            stats = (
+                f"📊 Volume - "
+                f"Total: ${self.cumulative_volume_usd:,.0f} | "
+                f"Daily: ${self.daily_volume_usd:,.0f} | "
+                f"Rate: ${hourly_rate:,.0f}/h"
+            )
             
             await self._log.info(stats, send_tg=False)
             
-            # Log per-coin volumes
+            # Per-coin volumes
             for coin, volume in sorted(self.volume_by_coin.items(), key=lambda x: -x[1]):
-                if volume > 100:  # Only log coins with >$100 volume
+                if volume > 100:
                     await self._log.debug(f"  {coin}: ${volume:,.0f}")
             
+            # Reset hourly
+            if (current_time - self.last_hourly_reset) > 3600:
+                self.hourly_volume_usd = 0
+                self.last_hourly_reset = current_time
+            
             # Reset daily if 24h passed
-            if (time() - self.last_volume_reset) > 86400:
+            if (current_time - self.last_volume_reset) > 86400:
                 self.daily_volume_usd = 0
                 self.volume_by_coin.clear()
-                self.last_volume_reset = time()
+                self.last_volume_reset = current_time
                 await self._log.info("Daily volume counters reset")
                 
         except Exception as e:
@@ -245,10 +254,11 @@ class AccountPerpHL:
     
     def get_volume_stats(self):
         """Get current volume statistics"""
-        elapsed_hours = (time() - self.last_volume_reset) / 3600
+        hourly_elapsed = (time() - self.last_hourly_reset) / 3600
         return {
             "cumulative_usd": self.cumulative_volume_usd,
             "daily_usd": self.daily_volume_usd,
-            "volume_per_hour": self.daily_volume_usd / elapsed_hours if elapsed_hours > 0 else 0,
+            "hourly_usd": self.hourly_volume_usd,
+            "hourly_rate": self.hourly_volume_usd / hourly_elapsed if hourly_elapsed > 0 else 0,
             "by_coin": dict(self.volume_by_coin)
         }

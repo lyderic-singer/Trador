@@ -1,4 +1,3 @@
-# ici tu me fais le moteur qui gere le risque, les ordres passent ici et il peut decider de couper et de neutraliser des position ou les reduire
 import asyncio
 from time import time
 from log.logger import Logger
@@ -13,7 +12,7 @@ class RiskLimits:
         
         # Order limits
         self.max_order_size_usd = 1000  # Max $1k per order
-        self.max_orders_per_coin = 100  # Max 100 orders per coin
+        self.max_orders_per_coin = 20  # Max 20 orders per coin (was 100)
         
         # Loss limits
         self.max_loss_per_coin = -500  # Max -$500 loss per coin
@@ -118,13 +117,13 @@ class RiskManager:
             self.state.peak_balance = balance
         
         self.state.last_reset = time()
-        await self._log.info(f"Risk state initialized: balance=${self.state.daily_start_balance:.2f}")
+        await self._log.info(f"Risk initialized: balance=${self.state.daily_start_balance:.2f}")
     
     async def _monitor_loop(self):
         """Monitor risk metrics continuously"""
         while self.running.is_set():
             try:
-                await asyncio.sleep(1)  # Check every second
+                await asyncio.sleep(5)  # Check every 5s
                 
                 # Update state
                 await self._update_state()
@@ -144,23 +143,17 @@ class RiskManager:
         """Process events from data manager (consumes risk queue)"""
         while self.running.is_set():
             try:
-                # Get event from queue (non-blocking with timeout)
                 event = await asyncio.wait_for(
                     self.data.risk_events.get(),
                     timeout=0.1
                 )
                 
                 # Process event based on type
-                # For now, we just consume events to prevent queue overflow
-                # In the future, we can add specific risk reactions here
                 if event.type == "fill":
-                    # Could track fill rate, update exposure, etc.
                     pass
                 elif event.type == "position_update":
-                    # Already handled in _update_state via account
                     pass
                 elif event.type == "book_update":
-                    # Could check for extreme volatility
                     pass
                 
             except asyncio.TimeoutError:
@@ -182,7 +175,7 @@ class RiskManager:
         if current_balance > self.state.peak_balance:
             self.state.peak_balance = current_balance
         
-        self.state.current_drawdown = (current_balance - self.state.peak_balance) / self.state.peak_balance
+        self.state.current_drawdown = (current_balance - self.state.peak_balance) / self.state.peak_balance if self.state.peak_balance > 0 else 0
         
         # Update per-coin positions and PnL
         for coin, pos in self.account.positions.items():
@@ -192,7 +185,7 @@ class RiskManager:
     async def _check_emergency_conditions(self):
         """Check if emergency stop conditions are met"""
         if self.state.emergency_stop:
-            return  # Already in emergency stop
+            return
         
         should_stop = False
         reason = ""
@@ -230,7 +223,7 @@ class RiskManager:
     async def _trigger_emergency_stop(self, reason):
         """Trigger emergency stop - cancel all orders and close positions"""
         self.state.emergency_stop = True
-        await self._log.critical(f"EMERGENCY STOP: {reason}", send_tg=True)
+        await self._log.critical(f"🚨 EMERGENCY STOP: {reason}", send_tg=True)
         
         try:
             # Cancel all open orders
