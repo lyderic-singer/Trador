@@ -11,6 +11,17 @@ USD_SEND_SIGN_TYPES = [
     {"name": "time", "type": "uint64"},
 ]
 
+SEND_ASSET_SIGN_TYPES = [
+    {"name": "hyperliquidChain", "type": "string"},
+    {"name": "destination", "type": "string"},
+    {"name": "sourceDex", "type": "string"},
+    {"name": "destinationDex", "type": "string"},
+    {"name": "token", "type": "string"},
+    {"name": "amount", "type": "string"},
+    {"name": "fromSubAccount", "type": "string"},
+    {"name": "nonce", "type": "uint64"},
+]
+
 SPOT_TRANSFER_SIGN_TYPES = [
     {"name": "hyperliquidChain", "type": "string"},
     {"name": "destination", "type": "string"},
@@ -240,6 +251,15 @@ def sign_spot_transfer_action(wallet, action, is_mainnet):
         action,
         SPOT_TRANSFER_SIGN_TYPES,
         "HyperliquidTransaction:SpotSend",
+        is_mainnet,
+    )
+
+def sign_send_asset_action(wallet, action, is_mainnet):
+    return sign_user_signed_action(
+        wallet,
+        action,
+        SEND_ASSET_SIGN_TYPES,
+        "HyperliquidTransaction:SendAsset",
         is_mainnet,
     )
 
