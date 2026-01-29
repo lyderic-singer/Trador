@@ -1,8 +1,8 @@
 from eth_account.signers.local import LocalAccount
 from .info import Info
 from .utils.constants import MAINNET_API_URL
-from .utils.signing import sign
-from .utils.functions import timestamp_ms, get_order, get_modify
+from .utils.signing import sign, sign_send_asset_action
+from .utils.functions import timestamp_ms, get_order, get_modify, get_transfer
 from .utils.types import TPSL, Any, BuilderInfo, Cloid, List, Optional, TIF, Order, ExecutionType, Modify, LimitOrderType, TriggerOrderType
 from log.logger import Logger
 from log.messenger import Messenger
@@ -82,3 +82,10 @@ class Exchange:
         cancel_action = {"type": t, "cancels": cancels}
         signature = sign(self.wallet, cancel_action, self.vault_address, timestamp, self.expires_after, self.url == MAINNET_API_URL)
         return await self.post(cancel_action, signature, timestamp)
+
+    async def transfer(self, token: str, amount: float, source_dex: str, destination_dex: str, destination_address: str, from_subaccount: str = "") -> Any:
+        timestamp = timestamp_ms()
+        action = get_transfer(token, amount, source_dex, destination_dex, destination_address, nonce=timestamp, from_subaccount=from_subaccount, mainnet= self.url == MAINNET_API_URL)
+        signature = sign_send_asset_action(self.wallet, action, self.url == MAINNET_API_URL,)
+        return await self.post(action, signature, timestamp)
+
