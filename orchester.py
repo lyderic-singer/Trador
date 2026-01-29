@@ -8,13 +8,13 @@ from log.telegram import Telegram
 from core.HL.hl import HL
 
 class Orchester:
-    def __init__(self, mainnet, bot = None):
+    def __init__(self, mainnet, bot = None, dexsHL: list[str] = []):
         self.messenger = Messenger("log/logs.txt")
         self.bot = bot
         self.telegram = Telegram(self.messenger)
         self.session = Session(self.messenger)
         self._log = Logger(self, self.messenger)
-        self.hl = HL(mainnet, self.messenger, self.session)
+        self.hl = HL(mainnet, self.messenger, self.session, dexsHL)
         self.address = self.hl.address
         self.bot_task = None
         self.running = False

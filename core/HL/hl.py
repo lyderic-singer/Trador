@@ -1,5 +1,7 @@
 import os
 from dotenv import load_dotenv
+
+from core.session import Session
 from .utils.constants import MAINNET_API_URL, MAINNET_WS_URL, TESTNET_API_URL, TESTNET_WS_URL
 from eth_account import Account
 from eth_account.signers.local import LocalAccount
@@ -28,7 +30,7 @@ def load_account_from_env(mainnet):
     return account, address
 
 class HL:
-    def __init__(self, mainnet, messenger: Messenger, session):
+    def __init__(self, mainnet, messenger: Messenger, session: Session, dexs: list[str] = []):
         self.messenger = messenger
         self._log = Logger("HL Core", messenger)
         account, address = load_account_from_env(mainnet)
@@ -37,6 +39,7 @@ class HL:
         url = MAINNET_API_URL if mainnet else TESTNET_API_URL
         self.session = session
         self.api = API(url, messenger, self.session)
+        self.dexs = dexs
         self.info = Info(url, messenger, self.api)
         self.websocket = WebSocket(MAINNET_WS_URL if mainnet else TESTNET_WS_URL, self.messenger, self.info)
         self.exchange = Exchange(url, messenger, account, self.info)
@@ -46,7 +49,7 @@ class HL:
         if not self.running:
             try:
                 await self._log.info("Starting")
-                await self.info.start([])
+                await self.info.start(self.dexs)
                 await self.websocket.start()
                 self.running = True
             except Exception as e:
