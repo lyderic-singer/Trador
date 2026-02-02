@@ -2,7 +2,7 @@ from eth_account.signers.local import LocalAccount
 from .info import Info
 from .utils.constants import MAINNET_API_URL
 from .utils.signing import sign, sign_send_asset_action
-from .utils.functions import timestamp_ms, get_order, get_modify, get_transfer
+from .utils.functions import get_cancel, timestamp_ms, get_order, get_modify, get_transfer
 from .utils.types import TPSL, Any, BuilderInfo, Cloid, List, Optional, TIF, Order, ExecutionType, Modify, LimitOrderType, TriggerOrderType
 from log.logger import Logger
 from log.messenger import Messenger
@@ -69,11 +69,9 @@ class Exchange:
         await self._log.debug(f"modifying {len(modifies)} orders")
         return await self.post(modify_action, signature, timestamp)
 
-    async def cancel(self, x: str | int, *, oid: int | None = None, cloid: Cloid | None = None) -> Any:
-        if (oid is None) == (cloid is None):
-            raise ValueError("oid xor cloid")
+    async def cancel(self, x: str | int, oid: int | None = None, cloid: Cloid | None = None) -> Any:
         instrument = self.info.instrument(x)
-        cancel = {"a": instrument.asset, "o": oid} if oid is not None else {"asset": instrument.asset, "cloid": cloid}
+        cancel = get_cancel(instrument, oid, cloid)
         return await self.bulk_cancel(oid is not None, [cancel])
 
     async def bulk_cancel(self, is_oid, cancels: list[dict]) -> Any:

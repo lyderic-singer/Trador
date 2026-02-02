@@ -92,6 +92,14 @@ def get_order(instrument, is_buy: bool, size: float, price: float, execution_typ
         order["c"] = cloid
     return order
 
+def get_cancel(instrument,  oid: int | None = None, cloid = None):
+    if (oid is None) == (cloid is None):
+        raise ValueError("oid xor cloid")
+    if oid is not None:
+        return {"a": instrument.asset, "o": oid}
+    else:
+        return {"asset": instrument.asset, "cloid": cloid}
+
 def get_modify(order, instrument, new_price, new_size, tif) -> Modify:
     execution_type = {"limit": {"tif": tif}}
     modify: Modify = {
