@@ -100,11 +100,11 @@ def get_cancel(instrument,  oid: int | None = None, cloid = None):
     else:
         return {"asset": instrument.asset, "cloid": cloid}
 
-def get_modify(order, instrument, new_price, new_size, tif) -> Modify:
+def get_modify(order, instrument, new_side, new_price, new_size, tif) -> Modify:
     execution_type = {"limit": {"tif": tif}}
     modify: Modify = {
         "oid": order['oid'],
-        "order": get_order(instrument,  order['side'] == 'B', new_size, new_price, execution_type)
+        "order": get_order(instrument, new_side, new_size, new_price, execution_type)
     }
     return modify
 
