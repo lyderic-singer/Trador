@@ -1,9 +1,8 @@
 import asyncio
-import math
 from collections import deque
 from time import time
-from ...core.HL.utils.functions import cancel
-from ...log.logger import Logger
+from core.HL.utils.functions import cancel
+from log.logger import Logger
 
 MIN_MS = 60 * 1000
 TIMEFRAME_MAP_MINUTE = {"1m":1,"3m":3,"5m":5,"15m":15,"1h":60}
@@ -86,6 +85,8 @@ class MarketHL:
                 self.sum_closes += self.mid
 
     def sma(self):
+        if self.last_closes is None:
+            raise ValueError("must start before request sma")
         if self.sum_closes and self.mid:
             total = self.sum_closes + self.mid
             return total / (len(self.last_closes) + 1)
