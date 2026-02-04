@@ -91,3 +91,11 @@ class MarketHL:
             total = self.sum_closes + self.mid
             return total / (len(self.last_closes) + 1)
         return
+
+    def __str__(self):
+        return (
+            f"<MarketHL {self.instrument.coin} | "
+            f"mid={self.mid} | "
+            f"best_bid={self.best_bid} | best_ask={self.best_ask} | spread={self.spread} | "
+            f"sma={self.sma() if self.last_closes else 'N/A'}>"
+        )

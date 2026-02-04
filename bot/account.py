@@ -128,3 +128,15 @@ class AccountPerpHL:
                 })
         except Exception as e:
             await self._log.error(f"{e}")
+
+    def __str__(self):
+        positions_summary = ", ".join(
+            f"{coin}: sz={p['szi']} px={p['entryPx']} pnl={p['unrealizedPnl']}"
+            for coin, p in self.positions.items()
+        ) or "No positions"
+        return (
+            f"<AccountPerpHL dexs={self.dexs} | "
+            f"withdrawable={self.withdrawable} | "
+            f"positions=[{positions_summary}] | "
+            f"open_orders_count={sum(len(o) for o in self.open_orders.values())}>"
+        )
