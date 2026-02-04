@@ -47,7 +47,7 @@ class AccountPerpHL:
 
     async def on_clearinghouseState(self, msg):
         try:
-            ch = msg["data"]["clearinghouseState"]
+            ch = msg["clearinghouseState"]
             self.margin_summary = ch["marginSummary"]
             self.cross_margin_summary = ch["crossMarginSummary"]
             self.withdrawable = float(ch["withdrawable"])
@@ -70,7 +70,7 @@ class AccountPerpHL:
 
     async def on_activeAssetData(self, msg):
         try:
-            data = msg["data"]
+            data = msg
             coin = data["coin"]
             self.leverage[coin] = data["leverage"]
             self.availableSzLong[coin] = float(data["maxTradeSzs"][0])
@@ -84,7 +84,7 @@ class AccountPerpHL:
 
     async def on_openOrders(self, msg):
         try:
-            orders = msg["data"]["orders"]
+            orders = msg["orders"]
             self.open_orders.clear()
             for o in orders:
                 self.open_orders[o["coin"]].append({
@@ -101,7 +101,7 @@ class AccountPerpHL:
 
     async def on_orderUpdates(self, msg):
         try:
-            for upd in msg["data"]:
+            for upd in msg:
                 self.order_updates.append({
                     "coin": upd["order"]["coin"],
                     "oid": upd["order"]["oid"],
@@ -115,7 +115,7 @@ class AccountPerpHL:
         try:
             if msg.get("isSnapshot"):
                 return
-            for f in msg["data"]["fills"]:
+            for f in msg["fills"]:
                 self.user_fills.append({
                     "coin": f["coin"],
                     "px": float(f["px"]),

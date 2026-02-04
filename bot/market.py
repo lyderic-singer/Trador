@@ -45,8 +45,8 @@ class MarketHL:
 
     async def on_bbo(self, msg):
         try:
-            best_bid = float(msg["data"]["bbo"][0]["px"])
-            best_ask = float(msg["data"]["bbo"][1]["px"])
+            best_bid = float(msg["bbo"][0]["px"])
+            best_ask = float(msg["bbo"][1]["px"])
             self.best_bid = best_bid
             self.best_ask = best_ask
             mid = (best_ask + best_bid) / 2
@@ -59,7 +59,7 @@ class MarketHL:
 
     async def on_activeAssetCtx(self, msg):
         try:
-            ctx = msg["cxt"]
+            ctx = msg["ctx"]
             self.funding = float(ctx["funding"])
             self.oracle = float(ctx["oraclePx"])
             self.mark = float(ctx["markPx"])
