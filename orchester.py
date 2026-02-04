@@ -18,16 +18,13 @@ class Orchester:
         self.address = self.hl.address
         self.running = False
 
-    async def start(self, bot = None):
+    async def start(self):
         try:
             t = time.time()
-            self.bot = bot
             await self.messenger.start(self.telegram)
             await self._log.info("Starting")
             await self.session.start()
             await self.hl.start()
-            if bot:
-                await call(bot.start(self))
             await self.telegram.start(self)
             self.running = True
             await self._log.success(f"Started in {(time.time()-t):.2f} s", send_tg= True)
@@ -39,7 +36,7 @@ class Orchester:
             await self._log.info("Stopping", send_tg= True)
             self.running = False
             if self.bot:
-                await call(self.bot.stop())
+                await call(self.bot.stop)
             await self.hl.stop()
             await self.session.stop()
             await self._log.success("Stopped", send_tg=True)
@@ -47,3 +44,13 @@ class Orchester:
             await self.messenger.stop()
         except Exception:
             await self._log.error("Stop failed")
+
+    async def set_bot(self, bot):
+        if not self.running:
+            raise ValueError("must init before set bot")
+        try:
+            self.bot = bot
+            await bot.start()
+        except Exception as e:
+            await self._log.error(f"{e}")
+
