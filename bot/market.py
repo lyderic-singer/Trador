@@ -31,11 +31,11 @@ class MarketHL:
         self.mark = None
         self.last_ctx = None
         # ==== sma ====
-        self.last_closes = None
+        self.last_closes = deque(maxlen=self.sma_period - 1)
         self.sum_closes = None
-        self.last_highs = None
+        self.last_highs = deque(maxlen=self.sma_period - 1)
         self.sum_highs = None
-        self.last_lows = None
+        self.last_lows = deque(maxlen=self.sma_period - 1)
         self.sum_lows = None
 
     async def start(self):
@@ -113,29 +113,22 @@ class MarketHL:
                 self.sum_lows += self.low
                 self.low = self.mid
 
-    def sma_close(self):
-        if not self.last_closes:
+    def sma(self, last_values: deque, sum_values: float | None, value: float | None):
+        if not last_values:
             raise ValueError("must start before request sma")
-        if self.sum_closes and self.mid:
-            total = self.sum_closes + self.mid
-            return total / (len(self.last_closes) + 1)
+        if sum_values and value:
+            total = sum_values + value
+            return total / (len(last_values) + 1)
         return
+
+    def sma_close(self):
+        return self.sma(self.last_closes, self.sum_closes, self.mid)
 
     def sma_high(self):
-        if not self.last_highs:
-            raise ValueError("must start before request sma")
-        if self.sum_highs and self.high:
-            total = self.sum_highs + self.high
-            return total / (len(self.last_highs) + 1)
-        return
+        return self.sma(self.last_highs, self.sum_highs, self.high)
 
     def sma_low(self):
-        if not self.last_lows:
-            raise ValueError("must start before request sma")
-        if self.sum_lows and self.low:
-            total = self.sum_lows + self.low
-            return total / (len(self.last_lows) + 1)
-        return
+        return self.sma(self.last_lows, self.sum_lows, self.low)
 
     def __str__(self):
         return (
