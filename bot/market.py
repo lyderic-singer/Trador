@@ -22,6 +22,8 @@ class MarketHL:
         self.best_ask = None
         self.mid = None
         self.spread = None
+        self.high = None
+        self.low = None
         self.last_bbo = None
         # ==== activeAssetCtx ====
         self.funding = None
@@ -31,11 +33,15 @@ class MarketHL:
         # ==== sma ====
         self.last_closes = None
         self.sum_closes = None
+        self.last_highs = None
+        self.sum_highs = None
+        self.last_lows = None
+        self.sum_lows = None
 
     async def start(self):
         await self.hl.websocket.bbo(self.on_bbo, self.instrument.coin)
         await self.hl.websocket.active_asset_ctx(self.on_activeAssetCtx, self.instrument.coin)
-        self.task = asyncio.create_task(self.handle_sma())
+        self.task = asyncio.create_task(self.run())
         await self.running.wait()
         await self._log.success("Started")
 
@@ -51,9 +57,11 @@ class MarketHL:
             self.best_ask = best_ask
             mid = (best_ask + best_bid) / 2
             spread = (best_ask / best_bid) - 1
-            self.last_bbo = time()
             self.mid = mid
+            self.high = max(self.high, mid)
+            self.low = min(self.low, mid)
             self.spread = spread
+            self.last_bbo = time()
         except Exception as e:
             await self._log.error(f"{e}")
 
@@ -67,13 +75,18 @@ class MarketHL:
         except Exception as e:
             await self._log.error(f"{e}")
 
-    async def handle_sma(self):
+    async def run(self):
         now = int(time()) * 1000
         first_candles = await self.hl.info.candles_snapshot( self.instrument.coin, self.sma_candles, now - (self.sma_period * TIMEFRAME_MAP_MINUTE[self.sma_candles] * MIN_MS), now)
         first_candles = first_candles[-(self.sma_period - 1):]
         self.last_closes = deque((float(c['c']) for c in first_candles), maxlen=(self.sma_period - 1))
         self.sum_closes = sum(self.last_closes)
-        self.mid = await self.hl.info.price(self.instrument.coin, self.instrument.dex)
+        self.last_highs = deque((float(c['h']) for c in first_candles), maxlen=(self.sma_period - 1))
+        self.sum_highs = sum(self.last_highs)
+        self.last_lows = deque((float(c['l']) for c in first_candles), maxlen=(self.sma_period - 1))
+        self.sum_lows = sum(self.last_lows)
+        mid = await self.hl.info.price(self.instrument.coin, self.instrument.dex)
+        self.mid, self.high, self.low = mid, mid, mid
         self.running.set()
         while self.running.is_set():
             await asyncio.sleep(TIMEFRAME_MAP_SECOND[self.sma_candles])
@@ -84,12 +97,44 @@ class MarketHL:
                 self.last_closes.append(self.mid)
                 self.sum_closes += self.mid
 
-    def sma(self):
-        if self.last_closes is None:
+            if self.high is not None:
+                if len(self.last_highs) == self.last_highs.maxlen:
+                    old = self.last_highs.popleft()
+                    self.sum_highs -= old
+                self.last_highs.append(self.high)
+                self.sum_highs += self.high
+                self.high = self.mid
+
+            if self.low is not None:
+                if len(self.last_lows) == self.last_lows.maxlen:
+                    old = self.last_lows.popleft()
+                    self.sum_lows -= old
+                self.last_lows.append(self.low)
+                self.sum_lows += self.low
+                self.low = self.mid
+
+    def sma_close(self):
+        if not self.last_closes:
             raise ValueError("must start before request sma")
         if self.sum_closes and self.mid:
             total = self.sum_closes + self.mid
             return total / (len(self.last_closes) + 1)
+        return
+
+    def sma_high(self):
+        if not self.last_highs:
+            raise ValueError("must start before request sma")
+        if self.sum_highs and self.high:
+            total = self.sum_highs + self.high
+            return total / (len(self.last_highs) + 1)
+        return
+
+    def sma_low(self):
+        if not self.last_lows:
+            raise ValueError("must start before request sma")
+        if self.sum_lows and self.low:
+            total = self.sum_lows + self.low
+            return total / (len(self.last_lows) + 1)
         return
 
     def __str__(self):
@@ -97,5 +142,7 @@ class MarketHL:
             f"<MarketHL {self.instrument.coin} | "
             f"mid={self.mid} | "
             f"best_bid={self.best_bid} | best_ask={self.best_ask} | spread={self.spread} | "
-            f"sma={self.sma() if self.last_closes else 'N/A'}>"
+            f"sma close={self.sma_close() if self.last_closes else 'N/A'}"
+            f"sma high={self.sma_high() if self.last_highs else 'N/A'}"
+            f"sma low={self.sma_low() if self.last_lows else 'N/A'}>"
         )
