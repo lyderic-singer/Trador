@@ -32,11 +32,11 @@ class MarketHL:
         self.last_ctx = None
         # ==== sma ====
         self.last_closes = deque(maxlen=self.sma_period - 1)
-        self.sum_closes = None
+        self.sum_closes = 0
         self.last_highs = deque(maxlen=self.sma_period - 1)
-        self.sum_highs = None
+        self.sum_highs = 0
         self.last_lows = deque(maxlen=self.sma_period - 1)
-        self.sum_lows = None
+        self.sum_lows = 0
 
     async def start(self):
         await self.hl.websocket.bbo(self.on_bbo, self.instrument.coin)
@@ -58,8 +58,9 @@ class MarketHL:
             mid = (best_ask + best_bid) / 2
             spread = (best_ask / best_bid) - 1
             self.mid = mid
-            self.high = max(self.high, mid)
-            self.low = min(self.low, mid)
+            if self.high and self.low:
+                self.high = max(self.high, mid)
+                self.low = min(self.low, mid)
             self.spread = spread
             self.last_bbo = time()
         except Exception as e:
@@ -75,42 +76,38 @@ class MarketHL:
         except Exception as e:
             await self._log.error(f"{e}")
 
+    def update(self, last_values: deque, sum_values: float, value: float):
+        if len(last_values) == last_values.maxlen:
+            sum_values -= last_values.popleft()
+        last_values.append(value)
+        return sum_values + value
+
     async def run(self):
         now = int(time()) * 1000
         first_candles = await self.hl.info.candles_snapshot( self.instrument.coin, self.sma_candles, now - (self.sma_period * TIMEFRAME_MAP_MINUTE[self.sma_candles] * MIN_MS), now)
         first_candles = first_candles[-(self.sma_period - 1):]
-        self.last_closes = deque((float(c['c']) for c in first_candles), maxlen=(self.sma_period - 1))
-        self.sum_closes = sum(self.last_closes)
-        self.last_highs = deque((float(c['h']) for c in first_candles), maxlen=(self.sma_period - 1))
-        self.sum_highs = sum(self.last_highs)
-        self.last_lows = deque((float(c['l']) for c in first_candles), maxlen=(self.sma_period - 1))
-        self.sum_lows = sum(self.last_lows)
+        for c in first_candles:
+            close = float(c['c'])
+            high = float(c['h'])
+            low = float(c['l'])
+            self.last_closes.append(close)
+            self.last_highs.append(high)
+            self.last_lows.append(low)
+            self.sum_closes += close
+            self.sum_highs += high
+            self.sum_lows += low
         mid = await self.hl.info.price(self.instrument.coin, self.instrument.dex)
         self.mid, self.high, self.low = mid, mid, mid
         self.running.set()
         while self.running.is_set():
             await asyncio.sleep(TIMEFRAME_MAP_SECOND[self.sma_candles])
             if self.mid is not None:
-                if len(self.last_closes) == self.last_closes.maxlen:
-                    old = self.last_closes.popleft()
-                    self.sum_closes -= old
-                self.last_closes.append(self.mid)
-                self.sum_closes += self.mid
-
+                self.sum_closes = self.update(self.last_closes, self.sum_closes, self.mid)
             if self.high is not None:
-                if len(self.last_highs) == self.last_highs.maxlen:
-                    old = self.last_highs.popleft()
-                    self.sum_highs -= old
-                self.last_highs.append(self.high)
-                self.sum_highs += self.high
+                self.sum_highs = self.update(self.last_highs, self.sum_highs, self.high)
                 self.high = self.mid
-
             if self.low is not None:
-                if len(self.last_lows) == self.last_lows.maxlen:
-                    old = self.last_lows.popleft()
-                    self.sum_lows -= old
-                self.last_lows.append(self.low)
-                self.sum_lows += self.low
+                self.sum_lows = self.update(self.last_lows, self.sum_lows, self.low)
                 self.low = self.mid
 
     def sma(self, last_values: deque, sum_values: float | None, value: float | None):
