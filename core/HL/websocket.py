@@ -4,10 +4,10 @@ from time import time
 import websockets
 from log.logger import Logger
 from log.messenger import Messenger
-from .info import Info
+from core.HL.info import Info
 from typing import Callable, Dict, Optional
-from .utils.types import Sub
-from .utils.functions import key, call, extract_subscription_error, cancel
+from core.HL.utils.types import Sub
+from core.HL.utils.functions import key, call, extract_subscription_error, cancel
 
 class Subscription:
     def __init__(self, sub: Sub, callback: Callable):

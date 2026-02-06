@@ -1,8 +1,8 @@
 import asyncio
 
 from core.HL.utils.functions import cancel
-from .market import MarketHL
-from .account import AccountPerpHL
+from bot.market import MarketHL
+from bot.account import AccountPerpHL
 from log.logger import Logger
 
 class EnveloppeHIP3:

@@ -1,9 +1,9 @@
 import json
 from json import JSONDecodeError
 from log.messenger import Messenger
-from .utils.error import ClientError, ServerError
-from .utils.types import Any
-from ..session import Session
+from core.HL.utils.error import ClientError, ServerError
+from core.HL.utils.types import Any
+from core.session import Session
 from log.logger import Logger
 
 class API:

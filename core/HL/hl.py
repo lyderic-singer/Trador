@@ -2,13 +2,13 @@ import os
 from dotenv import load_dotenv
 
 from core.session import Session
-from .utils.constants import MAINNET_API_URL, MAINNET_WS_URL, TESTNET_API_URL, TESTNET_WS_URL
+from core.HL.utils.constants import MAINNET_API_URL, MAINNET_WS_URL, TESTNET_API_URL, TESTNET_WS_URL
 from eth_account import Account
 from eth_account.signers.local import LocalAccount
-from .websocket import WebSocket
-from .api import API
-from .info import Info
-from .exchange import Exchange
+from core.HL.websocket import WebSocket
+from core.HL.api import API
+from core.HL.info import Info
+from core.HL.exchange import Exchange
 from log.logger import Logger
 from log.messenger import Messenger
 

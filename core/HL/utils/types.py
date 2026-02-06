@@ -1,5 +1,4 @@
-from __future__ import annotations
-from .constants import MAX_DECIMALS_PERP, MAX_DECIMALS_SPOT
+from core.HL.utils.constants import MAX_DECIMALS_PERP, MAX_DECIMALS_SPOT
 from typing import List, Literal, Optional, Tuple, TypedDict, Union, Any, NotRequired
 
 class Cloid:

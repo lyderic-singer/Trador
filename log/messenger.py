@@ -1,6 +1,6 @@
 import asyncio
 import sys
-from .logger import Logger, Message
+from log.logger import Logger, Message
 
 COLORS = {
     "RESET": "\033[0m",
