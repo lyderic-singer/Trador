@@ -46,15 +46,16 @@ class HL:
         self.running = False
 
     async def start(self) -> None:
-        if not self.running:
-            try:
-                await self._log.info("Starting")
-                await self.info.start(self.dexs)
-                await self.websocket.start()
-                self.running = True
-            except Exception as e:
-                await self._log.error(f"{e}")
-                raise
+        if self.running:
+            return await self._log.info("already started")
+        try:
+            await self._log.info("Starting")
+            await self.info.start(self.dexs)
+            await self.websocket.start()
+            self.running = True
+        except Exception as e:
+            await self._log.error(f"{e}")
+            raise
         await self._log.success("Started")
 
     async def stop(self) -> None:

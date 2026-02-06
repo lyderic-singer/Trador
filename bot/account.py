@@ -29,6 +29,8 @@ class AccountPerpHL:
         self.user_fills = deque(maxlen=500)
 
     async def start(self):
+        if self.running.is_set():
+            return await self._log.info("already started")
         subscriptions = []
         for dex in self.dexs:
             subscriptions.append(self.hl.websocket.clearinghouse_state(self.on_clearinghouseState, self.hl.address, dex))

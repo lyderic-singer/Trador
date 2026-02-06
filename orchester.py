@@ -19,6 +19,8 @@ class Orchester:
         self.running = False
 
     async def start(self):
+        if self.running:
+            return await self._log.info("already started")
         try:
             t = time.time()
             await self.messenger.start(self.telegram)

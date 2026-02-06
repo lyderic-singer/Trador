@@ -8,6 +8,8 @@ class Session:
 
     async def start(self):
         try:
+            if self.session and not self.session.closed:
+                return await self._log.info("already started")
             self.session = aiohttp.ClientSession(headers={"Content-Type": "application/json"})
             await self._log.success("Started")
         except Exception as e:

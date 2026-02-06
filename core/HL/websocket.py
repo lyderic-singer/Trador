@@ -56,6 +56,8 @@ class WebSocket:
         self.last_pong = 0
 
     async def start(self):
+        if self.running:
+            return await self._log.info("already started")
         try:
             self.running = True
             self.task = asyncio.create_task(self.run())

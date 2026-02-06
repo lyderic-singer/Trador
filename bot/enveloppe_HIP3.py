@@ -30,6 +30,8 @@ class EnveloppeHIP3:
         self.running = False
 
     async def start(self):
+        if self.running:
+            return await self._log.info("already started")
         await self.market.start()
         await self.account.start()
         self.running = True

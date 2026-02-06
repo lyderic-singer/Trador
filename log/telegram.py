@@ -28,6 +28,8 @@ class Telegram:
         self.application.add_handler(CommandHandler("address", self.on_adress))
 
     async def start(self, orchester):
+        if self.running:
+            return await self._log.info("already started")
         try:
             self.running = True
             self.orchester = orchester

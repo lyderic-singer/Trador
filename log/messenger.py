@@ -77,6 +77,8 @@ class Messenger:
             self.running = False
 
     async def start(self, telegram = None):
+        if self.running:
+            return await self._log.info("already started")
         try:
             self.telegram = telegram
             if self.task is None or self.task.done():

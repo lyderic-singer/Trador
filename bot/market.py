@@ -39,6 +39,8 @@ class MarketHL:
         self.sum_lows = 0
 
     async def start(self):
+        if self.running.is_set():
+            return await self._log.info("already started")
         await self.hl.websocket.bbo(self.on_bbo, self.instrument.coin)
         await self.hl.websocket.active_asset_ctx(self.on_activeAssetCtx, self.instrument.coin)
         self.task = asyncio.create_task(self.run())
