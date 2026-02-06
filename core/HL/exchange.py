@@ -3,7 +3,7 @@ from core.HL.info import Info
 from core.HL.utils.constants import MAINNET_API_URL
 from core.HL.utils.signing import sign, sign_send_asset_action
 from core.HL.utils.functions import get_cancel, timestamp_ms, get_order, get_modify, get_transfer
-from core.HL.utils.types import TPSL, Any, BuilderInfo, Cloid, List, Optional, TIF, Order, ExecutionType, Modify, LimitOrderType, TriggerOrderType
+from core.HL.utils.types import TPSL, Any, BuilderInfo, Cancel, Cloid, List, Optional, TIF, Order, ExecutionType, Modify, LimitOrderType, TriggerOrderType
 from log.logger import Logger
 from log.messenger import Messenger
 
@@ -74,7 +74,7 @@ class Exchange:
         cancel = get_cancel(instrument, oid, cloid)
         return await self.batch_cancel(oid is not None, [cancel])
 
-    async def batch_cancel(self, is_oid, cancels: list[dict]) -> Any:
+    async def batch_cancel(self, is_oid, cancels: list[Cancel]) -> Any:
         timestamp = timestamp_ms()
         t = "cancel" if is_oid else "cancelByCloid"
         cancel_action = {"type": t, "cancels": cancels}

@@ -3,7 +3,7 @@ import asyncio
 import json
 from typing import Any
 
-from core.HL.utils.types import Modify, Order, Transfer
+from core.HL.utils.types import Cancel, Modify, Order, Transfer
 
 def timestamp_ms() -> int:
     return int(time.time() * 1000)
@@ -92,7 +92,7 @@ def get_order(instrument, is_buy: bool, size: float, price: float, execution_typ
         order["c"] = cloid
     return order
 
-def get_cancel(instrument,  oid: int | None = None, cloid = None):
+def get_cancel(instrument,  oid: int | None = None, cloid = None) -> Cancel:
     if (oid is None) == (cloid is None):
         raise ValueError("oid xor cloid")
     if oid is not None:

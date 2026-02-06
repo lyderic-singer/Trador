@@ -105,7 +105,10 @@ BuilderInfo = TypedDict("BuilderInfo", {"b": str, "f": int})
 SpotAssetInfo = TypedDict("SpotAssetInfo", {"name": str, "tokens": List[int], "index": int, "isCanonical": bool})
 SpotMeta = TypedDict("SpotMeta", {"universe": List[SpotAssetInfo], "tokens": List[SpotTokenInfo]})
 Sub = dict[str, Any]
-OidOrCloid = Union[int, Cloid]
+OidOrCloid = Union[int, Cloid, None]
 Order = TypedDict("Order", {"a": int, "b": bool, "p": str, "s": str, "r": bool, "t": ExecutionType, "c": NotRequired[Optional[Cloid]]})
 Modify = TypedDict("Modify", {"oid": OidOrCloid,"order": Order}, total=False)
+CancelOid = TypedDict("CancelOid", {"a": str, "o": OidOrCloid}, total=False)
+CancelCloid = TypedDict("CancelCloid", {"asset": str, "cloid": OidOrCloid}, total=False)
+Cancel = CancelOid | CancelCloid
 SpotMetaAndAssetCtxs = Tuple[SpotMeta, List[SpotAssetCtx]]
