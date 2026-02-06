@@ -64,7 +64,7 @@ class MarketHL:
             self.spread = spread
             self.last_bbo = time()
         except Exception as e:
-            await self._log.error(f"{e}")
+            await self._log.error(f"{e}, {msg}")
 
     async def on_activeAssetCtx(self, msg):
         try:
@@ -74,7 +74,7 @@ class MarketHL:
             self.mark = float(ctx["markPx"])
             self.last_ctx = time()
         except Exception as e:
-            await self._log.error(f"{e}")
+            await self._log.error(f"{e}, {msg}")
 
     def update(self, last_values: deque, sum_values: float, value: float):
         if len(last_values) == last_values.maxlen:

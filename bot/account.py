@@ -46,7 +46,6 @@ class AccountPerpHL:
 
     async def on_clearinghouseState(self, msg):
         try:
-            await self._log.debug(msg, styles="YELLOW")
             ch = msg["clearinghouseState"]
             self.margin_summary = ch["marginSummary"]
             self.cross_margin_summary = ch["crossMarginSummary"]
@@ -66,11 +65,10 @@ class AccountPerpHL:
                 }
             self.last_clearinghouseState = time()
         except Exception as e:
-            await self._log.error(f"{e}")
+            await self._log.error(f"{e}, {msg}")
 
     async def on_activeAssetData(self, msg):
         try:
-            await self._log.debug(msg, styles="YELLOW ORANGE")
             data = msg
             coin = data["coin"]
             self.leverage[coin] = data["leverage"]
@@ -80,7 +78,7 @@ class AccountPerpHL:
             self.availableDolShort[coin] = float(data["availableToTrade"][1])
             self.last_activeAssetData[coin] = time()
         except Exception as e:
-            await self._log.error(f"{e}")
+            await self._log.error(f"{e}, {msg}")
 
     async def on_openOrders(self, msg):
         try:
@@ -97,7 +95,7 @@ class AccountPerpHL:
                     "ts": o["timestamp"],
                 })
         except Exception as e:
-            await self._log.error(f"{e}")
+            await self._log.error(f"{e}, {msg}")
 
     async def on_orderUpdates(self, msg):
         try:
@@ -109,7 +107,7 @@ class AccountPerpHL:
                     "ts": upd["statusTimestamp"],
                 })
         except Exception as e:
-            await self._log.error(f"{e}")
+            await self._log.error(f"{e}, {msg}")
 
     async def on_userFills(self, msg):
         try:
@@ -127,7 +125,7 @@ class AccountPerpHL:
                     "oid": f["oid"],
                 })
         except Exception as e:
-            await self._log.error(f"{e}")
+            await self._log.error(f"{e}, {msg}")
 
     def __str__(self):
         positions_summary = ", ".join(
