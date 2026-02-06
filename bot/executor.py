@@ -1,33 +1,40 @@
 import time
 import asyncio
 from typing import Any
+from core.HL.utils.functions import cancel
 from log.logger import Logger
 from core.HL.utils.types import Order
 from core.HL.exchange import Exchange
 from core.HL.hl import HL
 
-class Action:
-    def __init__(self, action, res):
-        self.action = action
-        self.res = None
+class Request:
+    def __init__(self, task, actions: list[Any], expected_type: str):
+        self.task = task
+        self.actions = actions
+        self.expected_type = expected_type
+        self.res = {}
         self.completed = asyncio.Event()
+        self.executed = []
 
 class Executor:
     def __init__(self, hl: HL):
         self.COOLDOWN = 10 # wait 10s minimum between each requests
         self.exchange: Exchange = hl.exchange
         self._log = Logger(self, hl.messenger)
-        self.actions = asyncio.Queue()
+        self.requests: asyncio.Queue[Request] = asyncio.Queue()
         self.running = False
         self.task = None
         self.last = 0
 
     async def start(self):
+        self.running = True
         self.task = asyncio.create_task(self.run())
         await self._log.success("Started")
 
     async def stop(self):
-
+        self.running = False
+        await cancel(self.task)
+        await self._log.success("Stopped")
 
     async def handle_order(self, statuses: list[Any], expected_type: str) -> tuple[list[bool], int]:
         executed = []
@@ -62,36 +69,38 @@ class Executor:
                 await self._log.warning(f"cancel unexpected return: {status}")
         return (executed, cpt)
 
-    async def handle(self, res: dict, expected_type: str, requests: list[Any]) -> list[bool]:
-        status = res.get("status")
-        response = res.get("response", {})
+    async def handle(self, request: Request) -> list[bool]:
+        status = request.res.get("status")
+        response = request.res.get("response", {})
         request_type = response.get("type")
         data = response.get("data", {})
         statuses = data.get("statuses", [])
 
         if not (status == "ok" and request_type and statuses):
-            await self._log.critical(f"{res}")
+            await self._log.critical(f"{request.res}")
             return []
-        check_type = "order" if expected_type == "modify" else expected_type
+        check_type = "order" if request.expected_type == "modify" else request.expected_type
         if request_type != check_type:
-            await self._log.critical(f"{expected_type} request returned {request_type}: {res}")
+            await self._log.critical(f"{request.expected_type} request returned {request_type}: {request.res}")
 
         if request_type == "order":
-            executed, cpt = await self.handle_order(statuses, expected_type)
+            executed, cpt = await self.handle_order(statuses, request.expected_type)
         elif request_type == "cancel":
             executed, cpt = await self.handle_cancel(statuses)
         else:
             executed, cpt = [], 0
-            await self._log.warning(f"unknown method: {request_type} | {res}")
-        if len(requests) > cpt:
-                await self._log.warning(f"{len(requests) - cpt} {expected_type} not executed")
+            await self._log.warning(f"unknown method: {request_type} | {request.res}")
+        if len(request.actions) > cpt:
+                await self._log.warning(f"{len(request.actions) - cpt} {request.expected_type} not executed")
         return executed
 
     async def run(self):
         try:
             while self.running:
-                action = await self.actions.get()
-                await action
+                request = await self.requests.get()
+                request.res = await request.task
+                request.executed = await self.handle(request)
+                request.completed.set()
                 self.last = time.time()
                 await asyncio.sleep(self.COOLDOWN)
         except asyncio.CancelledError:
@@ -99,9 +108,10 @@ class Executor:
         except Exception as e:
             await self._log.error(f"{e}")
         finally: return
-            
 
-    async def batch_order(self, orders: list[Order]):
-        action = self.exchange.batch_order(orders)
-        await self.actions.put(action)
-        # la je peux pas return handle(res) comment je fai
+    async def batch_order(self, orders: list[Order]) -> list[bool]:
+        task = self.exchange.batch_order(orders)
+        request = Request(task, orders, "order")
+        await self.requests.put(request)
+        await request.completed.wait()
+        return request.executed
