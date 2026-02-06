@@ -1,4 +1,5 @@
 import time
+from typing import Any
 from log.logger import Logger
 from core.HL.utils.types import Order
 from core.HL.exchange import Exchange
@@ -10,6 +11,39 @@ class Executor:
         self.exchange: Exchange = hl.exchange
         self._log = Logger(self, hl.messenger)
         self.last = 0
+
+    async def handle_order(self, statuses: list[Any], expected_type: str) -> tuple[list[bool], int]:
+        executed = []
+        cpt = 0
+        for status in statuses:
+            if not isinstance(status, dict):
+                executed.append(False)
+                await self._log.critical(f"{expected_type} unexpected return: {status}")
+            elif status.get("resting") is not None:
+                executed.append(True)
+                cpt += 1
+            elif status.get("error") is not None:
+                executed.append(False)
+                await self._log.error(f"{expected_type} failed: {status["error"]}")
+            else:
+                executed.append(False)
+                await self._log.warning(f"{expected_type} unexpected return: {status}")
+        return (executed, cpt)
+    
+    async def handle_cancel(self, statuses: list[Any]) -> tuple[list[bool], int]:
+        executed = []
+        cpt = 0
+        for status in statuses:
+            if status == "success":
+                executed.append(True)
+                cpt += 1
+            elif isinstance(status, dict) and (status.get("error") is not None):
+                executed.append(False)
+                await self._log.error(f"cancel failed: {status["error"]}")
+            else:
+                executed.append(False)
+                await self._log.warning(f"cancel unexpected return: {status}")
+        return (executed, cpt)
 
     async def handle(self, res, expected_type) -> list[bool]:
         status = res.get("status")
@@ -25,33 +59,11 @@ class Executor:
         if request_type != check_type:
             await self._log.critical(f"{expected_type} request returned {request_type}: {res}")
 
-        executed = []
-        cpt = 0
-        if request_type == "cancel":
-            for status in statuses:
-                if status == "success":
-                    executed.append(True)
-                    cpt += 1
-                elif isinstance(status, dict) and (status.get("error") is not None):
-                    executed.append(False)
-                    await self._log.error(f"cancel failed: {status["error"]}")
-                else:
-                    executed.append(False)
-                    await self._log.warning(f"cancel unexpected return: {status}")
-        elif request_type == "order":
-            for status in statuses:
-                if not isinstance(status, dict):
-                    executed.append(False)
-                    await self._log.critical(f"{expected_type} unexpected return: {status}")
-                elif status.get("resting") is not None:
-                    executed.append(True)
-                    cpt += 1
-                elif status.get("error") is not None:
-                    executed.append(False)
-                    await self._log.error(f"{expected_type} failed: {status["error"]}")
-                else:
-                    executed.append(False)
-                    await self._log.warning(f"{expected_type} unexpected return: {status}")
+        if request_type == "order":
+            executed, cpt = await self.handle_order(statuses, expected_type)
+        elif request_type == "cancel":
+            executed, cpt = await self.handle_cancel(statuses)
+            
         return executed
 
     async def batch_order(self, orders: list[Order]):
