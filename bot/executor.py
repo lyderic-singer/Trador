@@ -28,6 +28,8 @@ class Executor:
         self.last = 0
 
     async def start(self):
+        if self.running:
+            return await self._log.info("already started")
         self.running = True
         self.task = asyncio.create_task(self.run())
         await self._log.success("Started")
@@ -102,13 +104,14 @@ class Executor:
                 try:
                     if request.cancelled:
                         await self._log.info("request cancelled")
+                        request.completed.set()
                     else:
                         request.res = await request.task
                         request.executed = await self.handle(request)
                         self.last = time.time()
+                        request.completed.set()
                         await asyncio.sleep(self.COOLDOWN)
                 finally:
-                    request.completed.set()
                     self.requests.task_done()
         except asyncio.CancelledError:
             pass
