@@ -11,7 +11,7 @@ load_dotenv()
 class Telegram:
     def __init__(self, messenger, delay: float = 2):
         self.token = str(os.getenv("TG_TOKEN"))
-        self.chat_id = int(os.getenv("TG_CHAT_ID"))
+        self.chat_id = int(os.getenv("TG_CHAT_ID") or 0)
         self.orchester = None
         self._log = Logger(self, messenger)
         self.messages = asyncio.Queue()
@@ -21,7 +21,6 @@ class Telegram:
         self.running = False
         self.application.add_handler(CommandHandler("help", self.on_help))
         self.application.add_handler(CommandHandler("ping", self.on_ping))
-        self.application.add_handler(CommandHandler("run", self.on_run))
         self.application.add_handler(CommandHandler("perpinventory", self.on_perp_inventory))
         self.application.add_handler(CommandHandler("spotinventory", self.on_spot_inventory))
         self.application.add_handler(CommandHandler("stop", self.on_stop))
@@ -34,7 +33,8 @@ class Telegram:
             self.orchester = orchester
             await self.application.initialize()
             await self.application.start()
-            await self.application.updater.start_polling()
+            if self.application.updater:
+                await self.application.updater.start_polling()
             self.task = asyncio.create_task(self.handle())
             await self._log.success("Started")
         except Exception as e:
@@ -45,9 +45,11 @@ class Telegram:
         try:
             self.running = False
             await self.send(None)
-            await self.task
+            if self.task:
+                await self.task
             await cancel(self.task)
-            await self.application.updater.stop()
+            if self.application.updater:
+                await self.application.updater.stop()
             await self.application.stop()
             await self.application.shutdown()
             await self._log.success("Stopped")
@@ -77,7 +79,7 @@ class Telegram:
                 await self._log.error(f"Failed to send message after retries: {text}")
             self.messages.task_done()
 
-    async def send(self, msg: str):
+    async def send(self, msg: str | None):
         try:
             await self.messages.put(msg)
         except Exception as e:
@@ -100,19 +102,11 @@ class Telegram:
         await self._log.info("ping received")
         await self.send(f"pong")
 
-    async def on_run(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        await self._log.info("strategy run requested")
-        try:
-            await self.orchester.strategy.run()
-            await self.send("bot started")
-        except Exception as e:
-            await self._log.error(f"cannot run strategy: {e}")
-            await self.send("Erreur lors du lancement du bot.")
-
     async def on_stop(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         await self._log.info("stop strategy requested")
         try:
-            await self.orchester.strategy.stop()
+            if self.orchester:
+                await self.orchester.bot.stop()
             await self.send("strategy stopped")
         except Exception as e:
             await self._log.error(f"{e}")
@@ -121,27 +115,35 @@ class Telegram:
     async def on_perp_inventory(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         await self._log.info(f"perp inventory requested")
         try:
-            data = await self.orchester.core.info.user_state(self.orchester.address)
-            value = round(float(data['marginSummary']['accountValue']), 2)
-            positions = round(float(data['marginSummary']['totalNtlPos']), 2)
-            await self.send(f"(perp inventory) total value : {value}, positions value : {positions}")
+            if self.orchester:
+                data = await self.orchester.hl.info.user_state(self.orchester.address)
+                value = round(float(data['marginSummary']['accountValue']), 2)
+                positions = round(float(data['marginSummary']['totalNtlPos']), 2)
+                await self.send(f"(perp inventory) total value : {value}, positions value : {positions}")
+            else:
+                raise
         except Exception as e:
             await self.send("cannot fetch perp inventory")
     
     async def on_spot_inventory(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         await self._log.info(f"spot inventory requested")
         try:
-            data = await self.orchester.core.info.spot_user_state(self.orchester.address)
-            await self.send(f"spot inventory: {data}")
+            if self.orchester:
+                data = await self.orchester.hl.info.spot_user_state(self.orchester.address)
+                await self.send(f"spot inventory: {data}")
+            else:
+                raise
         except Exception as e:
             await self.send("cannot fetch spot inventory")
 
     async def on_kill(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         await self._log.info("kill requested")
-        await self.send("killing bot")
-        await self.orchester.stop()
+        if self.orchester:
+            await self.send("killing bot")
+            await self.orchester.stop()
         os._exit(0)
 
     async def on_adress(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         await self._log.info("address requested")
-        await self.send(self.orchester.address)
+        if self.orchester:
+            await self.send(self.orchester.address)
