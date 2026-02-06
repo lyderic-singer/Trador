@@ -1,4 +1,5 @@
 import time
+import asyncio
 from typing import Any
 from log.logger import Logger
 from core.HL.utils.types import Order
@@ -45,7 +46,7 @@ class Executor:
                 await self._log.warning(f"cancel unexpected return: {status}")
         return (executed, cpt)
 
-    async def handle(self, res, expected_type) -> list[bool]:
+    async def handle(self, res: dict, expected_type: str, actions: list[Any]) -> list[bool]:
         status = res.get("status")
         response = res.get("response", {})
         request_type = response.get("type")
@@ -53,7 +54,7 @@ class Executor:
         statuses = data.get("statuses", [])
 
         if not (status == "ok" and request_type and statuses):
-            await self._log.critical(res)
+            await self._log.critical(f"{res}")
             return []
         check_type = "order" if expected_type == "modify" else expected_type
         if request_type != check_type:
@@ -63,10 +64,18 @@ class Executor:
             executed, cpt = await self.handle_order(statuses, expected_type)
         elif request_type == "cancel":
             executed, cpt = await self.handle_cancel(statuses)
-            
+        else:
+            executed, cpt = [], 0
+            await self._log.warning(f"unknown method: {request_type} | {res}")
+        if len(actions) > cpt:
+                await self._log.warning(f"{len(actions) - cpt} {expected_type} not executed")
         return executed
 
     async def batch_order(self, orders: list[Order]):
+        timestamp = time.time()
+        laps = timestamp - self.last
+        if laps < self.COOLDOWN:
+            await asyncio.sleep(self.COOLDOWN - laps)
         res = await self.exchange.batch_order(orders)
         executed, n = await self.handle(res, "order")
         if len(orders) != len(executed):
