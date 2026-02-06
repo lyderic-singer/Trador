@@ -16,6 +16,15 @@ def get_function():
         except Exception:
             return "<unknown>"
 
+def get_line():
+    try:
+        return sys._getframe(3).f_lineno
+    except Exception:
+        try:
+            return inspect.stack()[3].lineno
+        except Exception:
+            return -1
+
 class LogLevel(str, Enum):
     INFO = "INFO"
     WARNING = "WARNING"
@@ -27,7 +36,7 @@ class LogLevel(str, Enum):
     CUSTOM = "CUSTOM"
 
 class Message:
-    def __init__(self, level: LogLevel, context: str, text: str, display: bool, save: bool = False, send_tg: bool = False, styles: str = None):
+    def __init__(self, level: LogLevel, context: str, text: str, display: bool, save: bool = False, send_tg: bool = False, styles: str | None = None):
         self.timestamp = time.time()
         self.date = None
         self.level = level
@@ -58,7 +67,10 @@ class Logger():
         else:
             self.filepath = get_file(objet)
 
-    async def custom(self, text: str, level: LogLevel = LogLevel.CUSTOM, context: str = None, display: bool = True, save: bool = True, send_tg: bool = False, styles: str = "BRIGHT_YELLOW"):
+    def get_context(self):
+        return self.filepath + ':' + f"{get_line()}" + " in " + get_function()
+
+    async def custom(self, text: str, level: LogLevel = LogLevel.CUSTOM, context: str | None = None, display: bool = True, save: bool = True, send_tg: bool = False, styles: str = "BRIGHT_YELLOW"):
         message = Message(level, context if context else self.filepath, text, display, save, send_tg, styles)
         await self.messenger.messages.put(message)
 
@@ -66,19 +78,19 @@ class Logger():
         await self.custom(text, LogLevel.INFO, self.filepath, display, save, send_tg, styles)
 
     async def warning(self, text: str, display: bool = True, save: bool = True, send_tg: bool = True, styles: str = "BRIGHT_ORANGE BOLD"):
-        await self.custom(text, LogLevel.WARNING, self.filepath + " in " + get_function(), display, save, send_tg, styles)
+        await self.custom(text, LogLevel.WARNING, self.get_context(), display, save, send_tg, styles)
 
     async def error(self, text: str, display: bool = True, save: bool = True, send_tg: bool = True, styles: str = "BRIGHT_RED BOLD"):
-        await self.custom(text, LogLevel.ERROR, self.filepath + " in " + get_function(), display, save, send_tg, styles)
+        await self.custom(text, LogLevel.ERROR, self.get_context(), display, save, send_tg, styles)
 
     async def critical(self, text: str, display: bool = True, save: bool = True, send_tg: bool = True, styles: str = "BRIGHT_RED BOLD REVERSE"):
-        await self.custom(text, LogLevel.CRITICAL, self.filepath + " in " + get_function(), display, save, send_tg, styles)
+        await self.custom(text, LogLevel.CRITICAL, self.get_context(), display, save, send_tg, styles)
 
     async def debug(self, text: str, display: bool = True, save: bool = False, send_tg: bool = False, styles: str = "BRIGHT_BLACK"):
-        await self.custom(text, LogLevel.DEBUG, self.filepath + " in " + get_function(), display, save, send_tg, styles)
+        await self.custom(text, LogLevel.DEBUG, self.get_context(), display, save, send_tg, styles)
 
     async def exception(self, text: str, display: bool = True, save: bool = True, send_tg: bool = True, styles: str = "MAGENTA BOLD"):
-        await self.custom(text, LogLevel.EXCEPTION, self.filepath + " in " + get_function(), display, save, send_tg, styles)
+        await self.custom(text, LogLevel.EXCEPTION, self.get_context(), display, save, send_tg, styles)
 
     async def success(self, text: str, display: bool = True, save: bool = True, send_tg: bool = False, styles: str = "BRIGHT_GREEN BOLD"):
         await self.custom(text, LogLevel.SUCCESS, self.filepath, display, save, send_tg, styles)
