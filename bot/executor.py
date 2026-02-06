@@ -14,7 +14,8 @@ class Request:
         self.expected_type = expected_type
         self.res = {}
         self.completed = asyncio.Event()
-        self.executed = []
+        self.executed = [] # sorted as actions
+        self.cancelled = False
 
 class Executor:
     def __init__(self, hl: HL):
@@ -75,44 +76,55 @@ class Executor:
         request_type = response.get("type")
         data = response.get("data", {})
         statuses = data.get("statuses", [])
-
         if not (status == "ok" and request_type and statuses):
             await self._log.critical(f"{request.res}")
-            return []
+            return [False] * len(request.actions)
         check_type = "order" if request.expected_type == "modify" else request.expected_type
         if request_type != check_type:
             await self._log.critical(f"{request.expected_type} request returned {request_type}: {request.res}")
-
         if request_type == "order":
             executed, cpt = await self.handle_order(statuses, request.expected_type)
         elif request_type == "cancel":
             executed, cpt = await self.handle_cancel(statuses)
         else:
-            executed, cpt = [], 0
+            executed, cpt = [False] * len(request.actions), 0
             await self._log.warning(f"unknown method: {request_type} | {request.res}")
         if len(request.actions) > cpt:
-                await self._log.warning(f"{len(request.actions) - cpt} {request.expected_type} not executed")
+            await self._log.warning(f"{len(request.actions) - cpt} {request.expected_type} not executed")
+        if len(request.actions) != len(executed):
+            await self._log.critical(f"{request.expected_type} request returned {len(executed)} while expecting {len(request.actions)}")
         return executed
 
     async def run(self):
         try:
             while self.running:
                 request = await self.requests.get()
-                request.res = await request.task
-                request.executed = await self.handle(request)
-                request.completed.set()
-                self.last = time.time()
-                await asyncio.sleep(self.COOLDOWN)
+                try:
+                    if request.cancelled:
+                        await self._log.info("request cancelled")
+                    else:
+                        request.res = await request.task
+                        request.executed = await self.handle(request)
+                        self.last = time.time()
+                        await asyncio.sleep(self.COOLDOWN)
+                finally:
+                    request.completed.set()
+                    self.requests.task_done()
         except asyncio.CancelledError:
             pass
         except Exception as e:
             await self._log.error(f"{e}")
         finally: return
 
-    async def execute(self, task, actions, expected_type):
+    async def execute(self, task, actions, expected_type, timeout=30):
         request = Request(task, actions, expected_type)
         await self.requests.put(request)
-        await asyncio.wait_for(request.completed.wait(), timeout=30)
+        try:
+            await asyncio.wait_for(request.completed.wait(), timeout=timeout)
+        except asyncio.TimeoutError:
+            request.cancelled = True
+            await self._log.critical(f"{expected_type} timed out for {actions}")
+            return [False] * len(actions)
         return request.executed
 
     async def batch_order(self, orders: list[Order]) -> list[bool]:
