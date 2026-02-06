@@ -1,5 +1,6 @@
 import asyncio
 import sys
+from core.HL.utils.functions import cancel
 from log.logger import Logger, Message
 
 COLORS = {
@@ -92,13 +93,7 @@ class Messenger:
         try:
             self.running = False
             await self.messages.join()
-            if self.task:
-                self.task.cancel()
-                try:
-                    await self.task
-                except asyncio.CancelledError:
-                    pass
-                self.task = None
+            await cancel(self.task)
             if self.file:
                 self.file.close()
                 self.file = None
