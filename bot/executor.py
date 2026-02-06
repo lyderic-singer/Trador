@@ -3,7 +3,7 @@ import asyncio
 from typing import Any
 from core.HL.utils.functions import cancel
 from log.logger import Logger
-from core.HL.utils.types import Order
+from core.HL.utils.types import Cancel, Modify, Order
 from core.HL.exchange import Exchange
 from core.HL.hl import HL
 
@@ -48,7 +48,7 @@ class Executor:
                 cpt += 1
             elif status.get("error") is not None:
                 executed.append(False)
-                await self._log.error(f"{expected_type} failed: {status["error"]}")
+                await self._log.error(f"{expected_type} failed: {status['error']}")
             else:
                 executed.append(False)
                 await self._log.warning(f"{expected_type} unexpected return: {status}")
@@ -63,7 +63,7 @@ class Executor:
                 cpt += 1
             elif isinstance(status, dict) and (status.get("error") is not None):
                 executed.append(False)
-                await self._log.error(f"cancel failed: {status["error"]}")
+                await self._log.error(f"cancel failed: {status['error']}")
             else:
                 executed.append(False)
                 await self._log.warning(f"cancel unexpected return: {status}")
@@ -109,9 +109,20 @@ class Executor:
             await self._log.error(f"{e}")
         finally: return
 
+    async def execute(self, task, actions, expected_type):
+        request = Request(task, actions, expected_type)
+        await self.requests.put(request)
+        await asyncio.wait_for(request.completed.wait(), timeout=30)
+        return request.executed
+
     async def batch_order(self, orders: list[Order]) -> list[bool]:
         task = self.exchange.batch_order(orders)
-        request = Request(task, orders, "order")
-        await self.requests.put(request)
-        await request.completed.wait()
-        return request.executed
+        return await self.execute(task, orders, "order")
+
+    async def batch_modify(self, modifies: list[Modify]):
+        task = self.exchange.batch_modify(modifies)
+        return await self.execute(task, modifies, "modify")
+
+    async def batch_cancel(self, cancels: list[Cancel]):
+        task = self.exchange.batch_cancel(True, cancels)
+        return await self.execute(task, cancels, "cancel")
