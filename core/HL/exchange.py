@@ -29,7 +29,7 @@ class Exchange:
     async def order(self, x: str | int, is_buy: bool, size: float, price: float, execution_type: ExecutionType, reduce_only: bool = False, cloid: Optional[Cloid] = None, builder: Optional[BuilderInfo] = None) -> Any:
         instrument = self.info.instrument(x)
         order = get_order(instrument, is_buy, size, price, execution_type, reduce_only, cloid)
-        return await self.bulk_orders([order], builder)
+        return await self.batch_order([order], builder)
 
     async def limit(self, x: str | int, is_buy: bool, size: float, price: float, tif: TIF, reduce_only: bool = False, cloid: Optional[Cloid] = None, builder: Optional[BuilderInfo] = None):
         execution_type: LimitOrderType = {"limit": {"tif": tif}}
@@ -46,7 +46,7 @@ class Exchange:
         px = trigger_px if is_market else price
         return await self.order(x, is_buy, size, px or 0, execution_type, reduce_only, cloid, builder)
 
-    async def bulk_orders(self, orders: List[Order], builder: Optional[BuilderInfo] = None) -> Any:
+    async def batch_order(self, orders: List[Order], builder: Optional[BuilderInfo] = None) -> Any:
         timestamp = timestamp_ms()
         if builder:
             builder["b"] = builder["b"].lower()
@@ -60,9 +60,9 @@ class Exchange:
     async def modify(self, order, new_price, new_size, tif) -> Any:
         instrument = self.info.instrument(order["coin"])
         modify = get_modify(order, instrument, new_price, new_size, tif)
-        return await self.bulk_modify([modify])
+        return await self.batch_modify([modify])
 
-    async def bulk_modify(self, modifies: List[Modify]) -> Any:
+    async def batch_modify(self, modifies: List[Modify]) -> Any:
         timestamp = timestamp_ms()
         modify_action = {"type": "batchModify", "modifies": modifies}
         signature = sign(self.wallet, modify_action, self.vault_address, timestamp, self.expires_after, self.url == MAINNET_API_URL)
@@ -72,9 +72,9 @@ class Exchange:
     async def cancel(self, x: str | int, oid: int | None = None, cloid: Cloid | None = None) -> Any:
         instrument = self.info.instrument(x)
         cancel = get_cancel(instrument, oid, cloid)
-        return await self.bulk_cancel(oid is not None, [cancel])
+        return await self.batch_cancel(oid is not None, [cancel])
 
-    async def bulk_cancel(self, is_oid, cancels: list[dict]) -> Any:
+    async def batch_cancel(self, is_oid, cancels: list[dict]) -> Any:
         timestamp = timestamp_ms()
         t = "cancel" if is_oid else "cancelByCloid"
         cancel_action = {"type": t, "cancels": cancels}
