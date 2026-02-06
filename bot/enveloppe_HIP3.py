@@ -14,8 +14,9 @@ class EnveloppeHIP3:
         self.TAKER_FEES = 0.00009 # 0.009%
         self.SMA_PERIOD = 9
         self.SMA_CANDLE = "1m"
-        self.LEVELS = 5
-        self.SPREAD_ORDERS = (self.SPREAD_MAX - self.SPREAD_MIN) / self.LEVELS
+        self.MAX_LEVELS = 5
+        self.MIN_LEVELS = 2
+        self.POLL_DELAY = 10.4
 
         # ==== DATA ====
         self.hl = hl
@@ -42,6 +43,13 @@ class EnveloppeHIP3:
 
     async def run(self):
         self.running = True
-        while self.running:
-            await self._log.debug(f"{self.market}, {self.account}")
-            await asyncio.sleep(10)
+        try:
+            while self.running:
+                await self._log.debug(f"{self.market}, {self.account}")
+                await asyncio.sleep(self.POLL_DELAY)
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            await self._log.error(f"{e}")
+            self.running = False
+

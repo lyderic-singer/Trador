@@ -22,7 +22,6 @@ class AccountPerpHL:
         self.availableSzShort = {}
         self.availableDolLong = {}
         self.availableDolShort = {}
-        self.markPx = {}
         self.last_activeAssetData = {}
         # ==== orders / fills ====
         self.open_orders = defaultdict(list)   # coin -> [orders]
@@ -47,6 +46,7 @@ class AccountPerpHL:
 
     async def on_clearinghouseState(self, msg):
         try:
+            await self._log.debug(msg, styles="YELLOW")
             ch = msg["clearinghouseState"]
             self.margin_summary = ch["marginSummary"]
             self.cross_margin_summary = ch["crossMarginSummary"]
@@ -60,7 +60,7 @@ class AccountPerpHL:
                     "positionValue": float(pos["positionValue"]),
                     "unrealizedPnl": float(pos["unrealizedPnl"]),
                     "roe": float(pos["returnOnEquity"]),
-                    "liqPx": float(pos["liquidationPx"]),
+                    "liqPx": float(pos["liquidationPx"] or 0),
                     "marginUsed": float(pos["marginUsed"]),
                     "leverage": pos["leverage"],
                 }
@@ -70,6 +70,7 @@ class AccountPerpHL:
 
     async def on_activeAssetData(self, msg):
         try:
+            await self._log.debug(msg, styles="YELLOW ORANGE")
             data = msg
             coin = data["coin"]
             self.leverage[coin] = data["leverage"]
@@ -77,7 +78,6 @@ class AccountPerpHL:
             self.availableSzShort[coin] = float(data["maxTradeSzs"][1])
             self.availableDolLong[coin] = float(data["availableToTrade"][0])
             self.availableDolShort[coin] = float(data["availableToTrade"][1])
-            self.markPx[coin] = float(data["markPx"])
             self.last_activeAssetData[coin] = time()
         except Exception as e:
             await self._log.error(f"{e}")
