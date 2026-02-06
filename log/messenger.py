@@ -60,7 +60,7 @@ class Messenger:
         try:
             while self.running:
                 message: Message = await self.messages.get()
-                if message.display != "debug":
+                if message.display:
                     flush(message.format(), message.styles)
                 if message.save and self.file:
                     await self.save(message)
