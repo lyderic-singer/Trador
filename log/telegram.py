@@ -35,7 +35,7 @@ class Telegram:
             await self.application.start()
             if self.application.updater:
                 await self.application.updater.start_polling()
-            self.task = asyncio.create_task(self.handle())
+            self.task = asyncio.create_task(self.run())
             await self._log.success("Started")
         except Exception as e:
             await self._log.error(f"{e}")
@@ -57,7 +57,7 @@ class Telegram:
             await self._log.error(f"{e}")
             raise
 
-    async def handle(self):
+    async def run(self):
         while True:
             text = await self.messages.get()
             if text is None:

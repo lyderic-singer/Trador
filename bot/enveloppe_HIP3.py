@@ -32,6 +32,7 @@ class EnveloppeHIP3:
     async def start(self):
         await self.market.start()
         await self.account.start()
+        self.running = True
         self.task = asyncio.create_task(self.run())
         await self._log.success("Started")
 
@@ -42,7 +43,6 @@ class EnveloppeHIP3:
         await self.account.stop()
 
     async def run(self):
-        self.running = True
         try:
             while self.running:
                 await self._log.debug(f"{self.market}, {self.account}")

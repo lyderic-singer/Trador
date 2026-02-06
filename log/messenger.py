@@ -55,8 +55,7 @@ class Messenger:
         except Exception as e:
             await self._log.error(f"{e}")
 
-    async def handle(self):
-        self.running = True
+    async def run(self):
         try:
             while self.running:
                 message: Message = await self.messages.get()
@@ -81,7 +80,8 @@ class Messenger:
         try:
             self.telegram = telegram
             if self.task is None or self.task.done():
-                self.task = asyncio.create_task(self.handle())
+                self.running = True
+                self.task = asyncio.create_task(self.run())
                 await self._log.success("Started")
             else:
                 await self._log.info("Already started")

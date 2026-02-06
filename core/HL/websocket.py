@@ -58,7 +58,7 @@ class WebSocket:
     async def start(self):
         try:
             self.running = True
-            self.task = asyncio.create_task(self.connect())
+            self.task = asyncio.create_task(self.run())
             await self.connected.wait()
             await self._log.success("Started")
         except Exception as e:
@@ -79,7 +79,7 @@ class WebSocket:
             await self._log.error(f"{e}")
             raise
     
-    async def connect(self):
+    async def run(self):
         while self.running:
             try:
                 self.ws = await websockets.connect(self.url)
