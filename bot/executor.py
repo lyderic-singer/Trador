@@ -6,12 +6,28 @@ from core.HL.utils.types import Order
 from core.HL.exchange import Exchange
 from core.HL.hl import HL
 
+class Action:
+    def __init__(self, action, res):
+        self.action = action
+        self.res = None
+        self.completed = asyncio.Event()
+
 class Executor:
     def __init__(self, hl: HL):
-        self.COOLDOWN = 10 # wait 10s minimum between each actions
+        self.COOLDOWN = 10 # wait 10s minimum between each requests
         self.exchange: Exchange = hl.exchange
         self._log = Logger(self, hl.messenger)
+        self.actions = asyncio.Queue()
+        self.running = False
+        self.task = None
         self.last = 0
+
+    async def start(self):
+        self.task = asyncio.create_task(self.run())
+        await self._log.success("Started")
+
+    async def stop(self):
+
 
     async def handle_order(self, statuses: list[Any], expected_type: str) -> tuple[list[bool], int]:
         executed = []
@@ -46,7 +62,7 @@ class Executor:
                 await self._log.warning(f"cancel unexpected return: {status}")
         return (executed, cpt)
 
-    async def handle(self, res: dict, expected_type: str, actions: list[Any]) -> list[bool]:
+    async def handle(self, res: dict, expected_type: str, requests: list[Any]) -> list[bool]:
         status = res.get("status")
         response = res.get("response", {})
         request_type = response.get("type")
@@ -67,15 +83,25 @@ class Executor:
         else:
             executed, cpt = [], 0
             await self._log.warning(f"unknown method: {request_type} | {res}")
-        if len(actions) > cpt:
-                await self._log.warning(f"{len(actions) - cpt} {expected_type} not executed")
+        if len(requests) > cpt:
+                await self._log.warning(f"{len(requests) - cpt} {expected_type} not executed")
         return executed
 
+    async def run(self):
+        try:
+            while self.running:
+                action = await self.actions.get()
+                await action
+                self.last = time.time()
+                await asyncio.sleep(self.COOLDOWN)
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            await self._log.error(f"{e}")
+        finally: return
+            
+
     async def batch_order(self, orders: list[Order]):
-        timestamp = time.time()
-        laps = timestamp - self.last
-        if laps < self.COOLDOWN:
-            await asyncio.sleep(self.COOLDOWN - laps)
-        res = await self.exchange.batch_order(orders)
-        executed, n = await self.handle(res, "order")
-        if len(orders) != len(executed):
+        action = self.exchange.batch_order(orders)
+        await self.actions.put(action)
+        # la je peux pas return handle(res) comment je fai
