@@ -26,7 +26,7 @@ class MarginSummary:
 class Position:
     def __init__(self, instrument):
         self.instrument = instrument
-        self.received = asyncio.Event() # received one activeAssetData
+        self.received_asset = asyncio.Event() # received one activeAssetData
         # ==== clearingHouseState ====
         self.size = None
         self.entry = None
@@ -69,7 +69,7 @@ class Position:
         maxTradeSzs = data["maxTradeSzs"]
         self.longable = float(maxTradeSzs[0])
         self.shortable = float(maxTradeSzs[1])
-        self.received.set()
+        self.received_asset.set()
 
 class AccountPerpDexHL:
     def __init__(self, dex, instruments, hl):
@@ -81,14 +81,14 @@ class AccountPerpDexHL:
         self._log = Logger(self, hl.messenger)
         self.running = False
         # ==== clearinghouseState ====
-        self.received = asyncio.Event()
+        self.received_state = asyncio.Event()
         self.account = MarginSummary()
         self.cross = MarginSummary()
         self.withdrawable = None
-        self.last_clearinghouseState = 0
+        self.last_state = 0
         # ==== activeAssetData ====
         self.positions: dict[str, Position] = {i.coin: Position(i) for i in instruments}
-        self.last_activeAssetData = 0
+        self.last_asset = 0
 
     async def start(self):
         if self.running:
@@ -97,16 +97,16 @@ class AccountPerpDexHL:
         subscriptions.append(self.hl.websocket.clearinghouse_state(self.on_clearinghouseState, self.hl.address, self.dex))
         subscriptions += [self.hl.websocket.active_asset_data(self.on_activeAssetData, self.hl.address, i.coin) for i in self.instruments]
         await asyncio.gather(*subscriptions)
-        await self.received.wait()
-        await asyncio.gather(*[p.received.wait() for p in self.positions.values()])
+        await self.received_state.wait()
+        await asyncio.gather(*[p.received_asset.wait() for p in self.positions.values()])
         await self._log.success("Started")
         self.running = True
     
     async def stop(self):
         self.running = False
-        self.received.clear()
+        self.received_state.clear()
         for p in self.positions.values():
-            p.received.clear()
+            p.received_asset.clear()
         await self._log.success("Stopped")
 
     async def on_clearinghouseState(self, msg):
@@ -123,8 +123,8 @@ class AccountPerpDexHL:
                 position_update = assetPosition["position"]
                 position = self.positions[position_update["coin"]]
                 position.update_clearingHouseState(position_update)
-            self.last_clearinghouseState = time()
-            self.received.set()
+            self.last_state = time()
+            self.received_state.set()
         except Exception as e:
             await self._log.error(f"{e}, {msg}")
 
@@ -135,7 +135,7 @@ class AccountPerpDexHL:
                 return await self._log.warning(f"received activeAssetData for unknown coin {coin}")
             position = self.positions[coin]
             position.update_activeAssetData(msg)
-            self.last_activeAssetData = time()
+            self.last_asset = time()
         except Exception as e:
             await self._log.error(f"{e}, {msg}")
 
