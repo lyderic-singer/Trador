@@ -23,6 +23,40 @@ class MarginSummary:
         if not self.running.is_set():
             self.running.set()
 
+class Position:
+    def __init__(self):
+        self.running = asyncio.Event()
+        # ==== clearingHouseState ====
+        self.size = None
+        self.entry = None
+        self.value = None
+        self.liquidation = None
+        self.margin = None
+        self.funding = None # dict {"allTime": "0.0", "sinceOpen": "0.0", "sinceChange": "0.0"}
+        # ==== activeAssetData
+        self.mode =  None # margin mode: "cross" or "isolated"
+        self.leverage = None
+        self.raw = None # rawUsd on hl | margin - positionValue
+        self.longable = None # maxTradeSzs[0] on hl | sz available to long
+        self.shortable = None # maxTradeSzs[1] on hl | sz available to short
+
+    def update_clearingHouseState(self, position):
+        self.size = float(position["szi"])
+        self.entry = float(position["entryPx"])
+        self.value = float(position["positionValue"])
+        self.liquidation  = float(position["liquidationPx"] or 0)
+        self.margin = float(position["marginUsed"])
+        self.funding = position["cumFunding"]
+        
+    def update_activeAssetData(self, data):
+        l = data["leverage"]
+        self.mode = l["type"]
+        self.leverage = l["value"]
+        self.raw = float(l["raw"])
+        maxTradeSzs = data["maxTradeSzs"]
+        self.longable = float(maxTradeSzs[0])
+        self.shortable = float(maxTradeSzs[1])
+
 class AccountPerpDexHL:
     def __init__(self, dex, instruments, hl):
         if [dex] != list({i.dex for i in instruments}):
