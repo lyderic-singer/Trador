@@ -3,26 +3,43 @@ import asyncio
 from log.logger import Logger
 from collections import defaultdict, deque
 
-class AccountPerpHL:
-    def __init__(self, instruments, hl):
+class MarginSummary:
+    def __init__(self):
+        # accountValue on HL | $ account value
+        self.value: float | None = None
+        # totalNtlPos on HL | sum(abs(positionValue))
+        self.notional: float | None = None
+        # totalRawUsd on HL | sum(margin) - sum(positionValue)
+        self.raw: float | None = None
+        # totalMarginUsed on HL | sum(marginUsed)
+        self.used: float | None = None
+        self.running = asyncio.Event()
+
+    def update(self, margin_summary: dict[str, str]):
+        self.value = float(margin_summary["accountValue"])
+        self.notional = float(margin_summary["totalNtlPos"])
+        self.raw = float(margin_summary["totalRawUsd"])
+        self.used = float(margin_summary["totalMarginUsed"])
+        if not self.running.is_set():
+            self.running.set()
+
+class AccountPerpDexHL:
+    def __init__(self, dex, instruments, hl):
+        if [dex] != list({i.dex for i in instruments}):
+            raise ValueError(f"several provided instrument in {[i.name for i in instruments]} doesn't belong to {dex if dex else '""'}")
+        self.dex = dex
         self.instruments = instruments
-        self.dexs = list({i.dex for i in instruments})
         self.hl = hl
         self._log = Logger(self, hl.messenger)
         self.running = asyncio.Event()
          # ==== clearinghouseState ====
-        self.margin_summary = None
-        self.cross_margin_summary = None
+        self.account = MarginSummary()
+        self.cross = MarginSummary()
         self.withdrawable = None
-        self.positions = {}  # coin -> position dict
-        self.last_clearinghouseState = None
+        self.last_clearinghouseState = 0
         # ==== activeAssetData ====
-        self.leverage = {}
-        self.availableSzLong = {}
-        self.availableSzShort = {}
-        self.availableDolLong = {}
-        self.availableDolShort = {}
-        self.last_activeAssetData = {}
+        self.positions = {}
+        self.last_activeAssetData = 0
         # ==== orders / fills ====
         self.open_orders = defaultdict(list)   # coin -> [orders]
         self.order_updates = deque(maxlen=500)
@@ -32,14 +49,12 @@ class AccountPerpHL:
         if self.running.is_set():
             return await self._log.info("already started")
         subscriptions = []
-        for dex in self.dexs:
-            subscriptions.append(self.hl.websocket.clearinghouse_state(self.on_clearinghouseState, self.hl.address, dex))
-            subscriptions.append(self.hl.websocket.open_orders(self.on_openOrders, self.hl.address, dex))
-        subscriptions += [self.hl.websocket.active_asset_data(self.on_activeAssetData, self.hl.address, instrument.coin) for instrument in self.instruments]
-        subscriptions.append(self.hl.websocket.order_updates(self.on_orderUpdates, self.hl.address))
-        subscriptions.append(self.hl.websocket.user_fills(self.on_userFills, self.hl.address))
+        subscriptions.append(self.hl.websocket.clearinghouse_state(self.on_clearinghouseState, self.hl.address, self.dex))
+        # subscriptions.append(self.hl.websocket.open_orders(self.on_openOrders, self.hl.address, self.dex))
+        subscriptions += [self.hl.websocket.active_asset_data(self.on_activeAssetData, self.hl.address, i.coin) for i in self.instruments]
+        # subscriptions.append(self.hl.websocket.order_updates(self.on_orderUpdates, self.hl.address))
+        # subscriptions.append(self.hl.websocket.user_fills(self.on_userFills, self.hl.address))
         await asyncio.gather(*subscriptions)
-        self.running.set()
         await self._log.success("Started")
     
     async def stop(self):
@@ -48,23 +63,13 @@ class AccountPerpHL:
 
     async def on_clearinghouseState(self, msg):
         try:
-            ch = msg["clearinghouseState"]
-            self.margin_summary = ch["marginSummary"]
-            self.cross_margin_summary = ch["crossMarginSummary"]
-            self.withdrawable = float(ch["withdrawable"])
-            self.positions.clear()
-            for p in ch["assetPositions"]:
-                pos = p["position"]
-                self.positions[pos["coin"]] = {
-                    "szi": float(pos["szi"]),
-                    "entryPx": float(pos["entryPx"]),
-                    "positionValue": float(pos["positionValue"]),
-                    "unrealizedPnl": float(pos["unrealizedPnl"]),
-                    "roe": float(pos["returnOnEquity"]),
-                    "liqPx": float(pos["liquidationPx"] or 0),
-                    "marginUsed": float(pos["marginUsed"]),
-                    "leverage": pos["leverage"],
-                }
+            dex = msg.get("dex")
+            if dex != self.dex:
+                return await self._log.warning(f"received msg for another dex {msg}")
+            clearing_house_state = msg["clearinghouseState"]
+            self.account.update(clearing_house_state["marginSummary"])
+            self.cross.update(clearing_house_state["crossMarginSummary"])
+            self.withdrawable = float(clearing_house_state["withdrawable"])
             self.last_clearinghouseState = time()
         except Exception as e:
             await self._log.error(f"{e}, {msg}")
