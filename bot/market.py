@@ -15,7 +15,9 @@ class MarketHL:
         self.timeframe = timeframe
         self.delay = TIMEFRAME_MAP[timeframe]
         self._log = Logger(f"{self.instrument.coin} Market", hl.messenger)
-        self.running = asyncio.Event()
+        self.running = False
+        self.received_bbo = asyncio.Event()
+        self.received_ctx = asyncio.Event()
         self.task = None
         # ==== bbo ====
         self.best_bid = None
@@ -29,7 +31,7 @@ class MarketHL:
         self.funding = None
         self.oracle = None
         self.mark = None
-        self.last_activeAssetCtx = None
+        self.last_ctx = None
         # ==== sma ====
         self.last_closes = deque(maxlen=self.window - 1)
         self.sum_closes = 0
@@ -39,7 +41,7 @@ class MarketHL:
         self.sum_lows = 0
 
     async def start(self):
-        if self.running.is_set():
+        if self.running:
             return await self._log.info("already started")
         await self.hl.websocket.bbo(self.on_bbo, self.instrument.coin)
         await self.hl.websocket.active_asset_ctx(self.on_activeAssetCtx, self.instrument.coin)
@@ -59,16 +61,18 @@ class MarketHL:
             self.sum_lows += low
         mid = await self.hl.info.price(self.instrument.coin, self.instrument.dex)
         self.mid, self.high, self.low = mid, mid, mid
-        self.running.set()
         last_candle = candles[-1]["T"] / 1000
         next_candle = last_candle + self.delay
         initial_delay = next_candle - time.time()
+        self.running= True
         self.task = asyncio.create_task(self.run(initial_delay))
+        await asyncio.gather(self.received_bbo.wait(), self.received_ctx.wait())
         await self._log.success("Started")
 
     async def stop(self):
-        self.running.clear()
+        self.running = False
         await cancel(task=self.task)
+        await self._log.success("Stopped")
 
     async def on_bbo(self, msg):
         try:
@@ -84,6 +88,7 @@ class MarketHL:
                 self.low = min(self.low, mid)
             self.spread = spread
             self.last_bbo = time.time()
+            self.received_bbo.set()
         except Exception as e:
             await self._log.error(f"{e}, {msg}")
 
@@ -93,7 +98,8 @@ class MarketHL:
             self.funding = float(ctx["funding"])
             self.oracle = float(ctx["oraclePx"])
             self.mark = float(ctx["markPx"])
-            self.last_activeAssetCtx = time.time()
+            self.last_ctx = time.time()
+            self.received_ctx.set()
         except Exception as e:
             await self._log.error(f"{e}, {msg}")
 
@@ -104,17 +110,23 @@ class MarketHL:
         return sum_values + value
 
     async def run(self, initial_delay):
-        await asyncio.sleep(initial_delay)
-        while self.running.is_set():
-            if self.mid is not None:
-                self.sum_closes = self.update(self.last_closes, self.sum_closes, self.mid)
-            if self.high is not None:
-                self.sum_highs = self.update(self.last_highs, self.sum_highs, self.high)
-                self.high = self.mid
-            if self.low is not None:
-                self.sum_lows = self.update(self.last_lows, self.sum_lows, self.low)
-                self.low = self.mid
-            await asyncio.sleep(self.delay)
+        try:
+            await asyncio.sleep(initial_delay)
+            while self.running:
+                if self.mid is not None:
+                    self.sum_closes = self.update(self.last_closes, self.sum_closes, self.mid)
+                if self.high is not None:
+                    self.sum_highs = self.update(self.last_highs, self.sum_highs, self.high)
+                    self.high = self.mid
+                if self.low is not None:
+                    self.sum_lows = self.update(self.last_lows, self.sum_lows, self.low)
+                    self.low = self.mid
+                await asyncio.sleep(self.delay)
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            await self._log.error(f"{e}")
+            self.running = False
 
     def sma(self, last_values: deque, sum_values: float | None, value: float | None):
         if not last_values:
