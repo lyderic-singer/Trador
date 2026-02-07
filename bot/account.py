@@ -20,11 +20,11 @@ class MarginSummary:
         self.notional = float(margin_summary["totalNtlPos"])
         self.raw = float(margin_summary["totalRawUsd"])
         self.used = float(margin_summary["totalMarginUsed"])
-        if not self.running.is_set():
-            self.running.set()
+        self.running.set()
 
 class Position:
-    def __init__(self):
+    def __init__(self, instrument):
+        self.instrument = instrument
         self.running = asyncio.Event()
         # ==== clearingHouseState ====
         self.size = None
@@ -41,6 +41,8 @@ class Position:
         self.shortable = None # maxTradeSzs[1] on hl | sz available to short
 
     def update_clearingHouseState(self, position):
+        if self.instrument.coin != position["coin"]:
+            raise ValueError(f"cannot update {self.instrument.coin} with {position["coin"]} data")
         self.size = float(position["szi"])
         self.entry = float(position["entryPx"])
         self.value = float(position["positionValue"])
@@ -49,6 +51,8 @@ class Position:
         self.funding = position["cumFunding"]
         
     def update_activeAssetData(self, data):
+        if self.instrument.coin != data["coin"]:
+            raise ValueError(f"cannot update {self.instrument.coin} with {data["coin"]} data")
         l = data["leverage"]
         self.mode = l["type"]
         self.leverage = l["value"]
@@ -56,6 +60,7 @@ class Position:
         maxTradeSzs = data["maxTradeSzs"]
         self.longable = float(maxTradeSzs[0])
         self.shortable = float(maxTradeSzs[1])
+        self.running.set()
 
 class AccountPerpDexHL:
     def __init__(self, dex, instruments, hl):
@@ -72,7 +77,7 @@ class AccountPerpDexHL:
         self.withdrawable = None
         self.last_clearinghouseState = 0
         # ==== activeAssetData ====
-        self.positions = {}
+        self.positions: dict[str, Position] = {i.coin: Position(i) for i in instruments}
         self.last_activeAssetData = 0
         # ==== orders / fills ====
         self.open_orders = defaultdict(list)   # coin -> [orders]
@@ -104,6 +109,11 @@ class AccountPerpDexHL:
             self.account.update(clearing_house_state["marginSummary"])
             self.cross.update(clearing_house_state["crossMarginSummary"])
             self.withdrawable = float(clearing_house_state["withdrawable"])
+            assetPositions = msg["assetPositions"]
+            for assetPosition in assetPositions:
+                position_update = assetPosition["position"]
+                position = self.positions[position_update["coin"]]
+                position.update_clearingHouseState(position_update)
             self.last_clearinghouseState = time()
         except Exception as e:
             await self._log.error(f"{e}, {msg}")
