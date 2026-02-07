@@ -19,6 +19,9 @@ class MarginSummary:
         self.notional = float(margin_summary["totalNtlPos"])
         self.raw = float(margin_summary["totalRawUsd"])
         self.used = float(margin_summary["totalMarginUsed"])
+    
+    def __str__(self):
+        return f"value={self.value}, notional={self.notional}, raw={self.raw}, used={self.used}"
 
 class Position:
     def __init__(self, instrument):
@@ -37,6 +40,14 @@ class Position:
         self.raw = None # rawUsd on hl | margin - positionValue
         self.longable = None # maxTradeSzs[0] on hl | sz available to long
         self.shortable = None # maxTradeSzs[1] on hl | sz available to short
+    
+    def __str__(self):
+        return (
+            f"{self.instrument.coin}: size={self.size}, entry={self.entry}, "
+            f"value={self.value}, liquidation={self.liquidation}, margin={self.margin}, "
+            f"mode={self.mode}, leverage={self.leverage}, raw={self.raw}, "
+            f"longable={self.longable}, shortable={self.shortable}"
+        )
 
     def update_clearingHouseState(self, position):
         if self.instrument.coin != position["coin"]:
@@ -54,7 +65,7 @@ class Position:
         l = data["leverage"]
         self.mode = l["type"]
         self.leverage = l["value"]
-        self.raw = float(l["raw"])
+        self.raw = float(l["rawUsd"])
         maxTradeSzs = data["maxTradeSzs"]
         self.longable = float(maxTradeSzs[0])
         self.shortable = float(maxTradeSzs[1])
@@ -107,7 +118,7 @@ class AccountPerpDexHL:
             self.account.update(clearing_house_state["marginSummary"])
             self.cross.update(clearing_house_state["crossMarginSummary"])
             self.withdrawable = float(clearing_house_state["withdrawable"])
-            assetPositions = msg["assetPositions"]
+            assetPositions = msg.get("assetPositions", [])
             for assetPosition in assetPositions:
                 position_update = assetPosition["position"]
                 position = self.positions[position_update["coin"]]
@@ -132,7 +143,7 @@ class AccountPerpDexHL:
         return (
             f"<AccountPerpDexHL dex={self.dex} | "
             f"accountMargin = {self.account} | "
-            f"crossMargin = {self.cross} | "
+            f"crossMargin = {self.cross} | " if self.dex == "" else ""
             f"withdrawable={self.withdrawable} | "
             f"positions=[{self.positions}]>"
         )
