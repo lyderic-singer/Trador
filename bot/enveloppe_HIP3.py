@@ -1,33 +1,34 @@
 import asyncio
-
 from core.HL.utils.functions import cancel
 from bot.market import MarketHL
-from bot.account import AccountPerpHL
+from bot.account import AccountPerpDexHL
+from core.HL.utils.types import Order, Modify
 from log.logger import Logger
 
-class EnveloppeHIP3:
+class EnveloppeHIP3: # place orders grid each separed with delta
     def __init__(self, x: str | int, hl):
-        # ==== CONSTANTS ====
-        self.SPREAD_MIN = 0.00001 # 0.001%
-        self.SPREAD_MAX = 0.01    # 1%
-        self.MAKER_FEES = 0.00003 # 0.003%
-        self.TAKER_FEES = 0.00009 # 0.009%
-        self.SMA_PERIOD = 9
-        self.SMA_CANDLE = "1m"
-        self.MAX_LEVELS = 5
-        self.MIN_LEVELS = 2
-        self.POLL_DELAY = 10.4
-
-        # ==== DATA ====
-        self.hl = hl
-        self._log = Logger(self, hl.messenger)
-        self.instrument = hl.info.instrument(x)
-        self.market = MarketHL(self.instrument, hl, self.SMA_PERIOD, self.SMA_CANDLE)
-        self.account = AccountPerpHL([self.instrument], hl)
-
-        # ==== STATE ====
         self.task = None
         self.running = False
+        # ==== CONSTANTS ====
+        self.MAKER_FEES = 0.00003 # 0.003%
+        self.TAKER_FEES = 0.00009 # 0.009%
+        self.SPREAD_MIN = 0.1     # x0.1
+        self.SPREAD_MAX = 5       # x5
+        self.MAX_LEVELS = 5
+        self.MIN_LEVELS = 2
+        self.LEVERAGE = 5
+        self.POLL_DELAY = 10.1
+        self.THRESHOLD = 0.0002
+        self.TIMEFRAME = "1m"
+        self.WINDOW = 9
+        # ==== DATA ====
+        self.hl = hl
+        self.address = hl.address
+        self._log = Logger(self, hl.messenger)
+        self.instrument = hl.info.instrument(x)
+        self.dex = self.instrument.dex
+        self.market = MarketHL(self.instrument, hl, self.WINDOW, self.TIMEFRAME)
+        self.account = AccountPerpDexHL(self.dex, [self.instrument], hl)
 
     async def start(self):
         if self.running:
@@ -44,14 +45,29 @@ class EnveloppeHIP3:
         await self.market.stop()
         await self.account.stop()
 
+    def get_deltas(self):
+        if not self.running:
+            raise ValueError("Must start before request deltas")
+        m = self.market
+        raw_bid = m.sma_low() + m.sma_close() - 2 * m.sma_high()
+
+    async def modify(self, bids, asks):
+        for 
+
     async def run(self):
         try:
             while self.running:
-                await self._log.debug(f"{self.market}, {self.account}")
+                curr_orders = await self.hl.info.open_orders(self.address, dex=self.dex)
+                curr_bids, curr_asks = [], []
+                for o in curr_orders:
+                    curr_bids.append(o) if o["side"] == 'B' else curr_asks.append(o)
+                mid = self.market.mid
+                sma_close = self.market.sma_close()
+                sma_high = self.market.sma_high()
+                sma_low = self.market.sma_low()
                 await asyncio.sleep(self.POLL_DELAY)
         except asyncio.CancelledError:
             pass
         except Exception as e:
             await self._log.error(f"{e}")
             self.running = False
-
