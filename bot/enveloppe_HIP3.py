@@ -14,11 +14,11 @@ class EnveloppeHIP3: # place orders grid each separed with delta
         self.TAKER_FEES = 0.00009 # 0.009%
         self.SPREAD_MIN = 0.1     # x0.1
         self.SPREAD_MAX = 5       # x5
-        self.MAX_LEVELS = 5
-        self.MIN_LEVELS = 2
+        self.LEVELS = 5
         self.LEVERAGE = 5
         self.POLL_DELAY = 10.1
         self.THRESHOLD = 0.0002
+        self.RANGE = self.SPREAD_MAX - self.SPREAD_MIN
         self.TIMEFRAME = "1m"
         self.WINDOW = 9
         # ==== DATA ====
@@ -48,8 +48,14 @@ class EnveloppeHIP3: # place orders grid each separed with delta
     def get_deltas(self):
         if not self.running:
             raise ValueError("Must start before request deltas")
-        m = self.market
-        raw_bid = m.sma_low() + m.sma_close() - 2 * m.sma_high()
+        close = self.market.sma_close()
+        high = self.market.sma_high()
+        low = self.market.sma_low()
+        raw_bid = low + close - 2 * high
+        raw_ask = 2 * low - high - close
+        delta_bid = self.RANGE * raw_bid / self.LEVELS
+        delta_ask = self.RANGE * raw_ask / self.LEVELS
+        return delta_bid, delta_ask
 
     async def modify(self, bids, asks):
         for 
