@@ -15,9 +15,10 @@ class EnveloppeHIP3: # place orders grid each separed with delta
         self.SPREAD_MIN = 0.1     # x0.1
         self.SPREAD_MAX = 5       # x5
         self.LEVELS = 5
+        self.MIN_VALUE = 10.5
         self.LEVERAGE = 5
         self.POLL_DELAY = 10.1
-        self.THRESHOLD = 0.0002
+        self.THRESHOLD = 0.0002   # 0.02%
         self.RANGE = self.SPREAD_MAX - self.SPREAD_MIN
         self.TIMEFRAME = "1m"
         self.WINDOW = 9
@@ -61,24 +62,37 @@ class EnveloppeHIP3: # place orders grid each separed with delta
         return offset_bid, raw_bid, delta_bid, offset_ask, raw_ask, delta_ask
 
     async def modify(self, bids, asks):
-        modifies = []
+        if not (bids or asks):
+            return await self._log.warning("nothing to modify")
         offset_bid, raw_bid, delta_bid, offset_ask, raw_ask, delta_ask = self.get_deltas()
-        position = self.account.positions[self.instrument.coin]
-        longable = position.longable
-        shortable = position.shortable
-        if not (longable and shortable):
-            raise ValueError(f"cannot get value from position.longable / shortable")
-        if max(len(asks), len(bids)) > self.LEVELS:
-            raise ValueError(f"more orders than expected: {len(bids)} bids and {len(asks)} asks")
-        size_bid = longable / len(bids)
-        size_ask = shortable / len(asks)
-        for i, b in enumerate(bids):
-            px = self.market.sma_close() - offset_bid - (self.LEVELS - 1 - i) * delta_bid
-            modifies.append(get_modify(b, self.instrument, size_bid, px, "Alo"))
-        for i, a in enumerate(asks):
-            px = self.market.sma_close() + offset_ask + (self.LEVELS - 1 - i) * delta_ask
-            modifies.append(get_modify(a, self.instrument, size_ask, px, "Alo"))
-        await self.executor.batch_modify(modifies)
+        position = self.account.positions.get(self.instrument.coin)
+        if position is None:
+            return await self._log.error("position not found in account")
+        longable, shortable = position.longable, position.shortable
+        if longable <= 0 and shortable <= 0:
+            return await self._log.warning("no collateral")
+        mid = self.market.sma_close()
+        mods = []
+        if bids and longable > 0:
+            sz = longable / len(bids)
+            for i, b in enumerate(bids):
+                px = mid - offset_bid - (len(bids) - 1 - i) * delta_bid
+                if sz * px < self.MIN_VALUE:
+                    continue
+                if abs(px - b["price"]) / b["price"] < self.THRESHOLD:
+                    continue
+                mods.append(get_modify(b, self.instrument, sz, px, "Alo"))
+        if asks and shortable > 0:
+            sz = shortable / len(asks)
+            for i, a in enumerate(asks):
+                px = mid + offset_ask + (len(asks) - 1 - i) * delta_ask
+                if sz * px < self.MIN_VALUE:
+                    continue
+                if abs(px - a["price"]) / a["price"] < self.THRESHOLD:
+                    continue
+                mods.append(get_modify(a, self.instrument, sz, px, "Alo"))
+        if mods:
+            await self.executor.batch_modify(mods)
 
     async def run(self):
         try:
