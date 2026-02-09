@@ -1,8 +1,8 @@
 import asyncio
-from core.HL.utils.functions import cancel
+from core.HL.utils.functions import cancel, get_modify
 from bot.market import MarketHL
 from bot.account import AccountPerpDexHL
-from core.HL.utils.types import Order, Modify
+from bot.executor import Executor
 from log.logger import Logger
 
 class EnveloppeHIP3: # place orders grid each separed with delta
@@ -27,6 +27,7 @@ class EnveloppeHIP3: # place orders grid each separed with delta
         self._log = Logger(self, hl.messenger)
         self.instrument = hl.info.instrument(x)
         self.dex = self.instrument.dex
+        self.executor = Executor(hl)
         self.market = MarketHL(self.instrument, hl, self.WINDOW, self.TIMEFRAME)
         self.account = AccountPerpDexHL(self.dex, [self.instrument], hl)
 
@@ -51,14 +52,33 @@ class EnveloppeHIP3: # place orders grid each separed with delta
         close = self.market.sma_close()
         high = self.market.sma_high()
         low = self.market.sma_low()
-        raw_bid = low + close - 2 * high
-        raw_ask = 2 * low - high - close
+        raw_bid = 2 * high - low - close
+        raw_ask =  high + close - 2 * low
         delta_bid = self.RANGE * raw_bid / self.LEVELS
         delta_ask = self.RANGE * raw_ask / self.LEVELS
-        return delta_bid, delta_ask
+        offset_bid = self.SPREAD_MIN * raw_bid
+        offset_ask = self.SPREAD_MIN * raw_ask
+        return offset_bid, raw_bid, delta_bid, offset_ask, raw_ask, delta_ask
 
     async def modify(self, bids, asks):
-        for 
+        modifies = []
+        offset_bid, raw_bid, delta_bid, offset_ask, raw_ask, delta_ask = self.get_deltas()
+        position = self.account.positions[self.instrument.coin]
+        longable = position.longable
+        shortable = position.shortable
+        if not (longable and shortable):
+            raise ValueError(f"cannot get value from position.longable / shortable")
+        if max(len(asks), len(bids)) > self.LEVELS:
+            raise ValueError(f"more orders than expected: {len(bids)} bids and {len(asks)} asks")
+        size_bid = longable / len(bids)
+        size_ask = shortable / len(asks)
+        for i, b in enumerate(bids):
+            px = self.market.sma_close() - offset_bid - (self.LEVELS - 1 - i) * delta_bid
+            modifies.append(get_modify(b, self.instrument, size_bid, px, "Alo"))
+        for i, a in enumerate(asks):
+            px = self.market.sma_close() + offset_ask + (self.LEVELS - 1 - i) * delta_ask
+            modifies.append(get_modify(a, self.instrument, size_ask, px, "Alo"))
+        await self.executor.batch_modify(modifies)
 
     async def run(self):
         try:
