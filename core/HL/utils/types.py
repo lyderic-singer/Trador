@@ -45,7 +45,15 @@ class Instrument:
         return str(round(sz, self.szDecimals))
     
     def __str__(self):
-        return f"Instrument(name={self.name}, coin={self.coin}, asset={self.asset},\ntype={self.type}, dex={self.dex if self.dex else '""'}, decimals={self.szDecimals})"
+        return (
+            f"Instrument(name={self.name}, coin={self.coin}, asset={self.asset},\ntype={self.type}, "
+            f"dex={self.dex if self.dex else '""'}, decimals={self.szDecimals})")
+
+class Node:
+    def __init__(self, value: float, left = None, right = None):
+        self.value = value
+        self.left: Node | None = left
+        self.right: Node | None = right
 
 SpotTokenInfo = TypedDict(
     "SpotTokenInfo",
