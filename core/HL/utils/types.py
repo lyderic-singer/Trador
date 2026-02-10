@@ -55,6 +55,46 @@ class Node:
         self.left: Node | None = left
         self.right: Node | None = right
 
+class LinkedList:
+    def __init__(self, l: list[float] = []):
+        if l:
+            self.queue = Node(l[0])
+            self.head = self.queue
+            self.pointer = self.queue
+            for i in range(1, len(l)):
+                self.insert_right(self.head, l[i])
+        else:
+            self.queue = None
+            self.head = None
+            self.pointer = None
+    
+    def insert_left(self, node: Node, value: float):
+        new = Node(value, node.left, node)
+        if node.left:
+            node.left.right = new
+        node.left = new
+        if node == self.queue:
+            self.queue = new
+
+    def insert_right(self, node: Node, value: float):
+        new = Node(value, node, node.right)
+        if node.right:
+            node.right.left = new
+        node.right = new
+        if node == self.head:
+            self.head = new
+
+    def __str__(self):
+        if self.queue:
+            values = []
+            node = self.queue
+            while node:
+                values.append(str(node.value))
+                node = node.right
+            return " <-> ".join(values)
+        else:
+            return "nil"
+
 SpotTokenInfo = TypedDict(
     "SpotTokenInfo",
     {
