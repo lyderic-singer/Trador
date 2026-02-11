@@ -84,6 +84,31 @@ class LinkedList:
         if node == self.head:
             self.head = new
 
+    def delete_left(self, node: Node):
+        if not node.left:
+            return
+        else:
+            if node.left.left:
+                node.left = node.left.left
+                node.left.right = node
+            else:
+                node.left = None
+                if self.pointer == self.queue:
+                    self.pointer = node
+                self.queue = node
+
+    def delete_right(self, node: Node):
+        if not node.right:
+            return
+        if node.right.right:
+            node.right = node.right.right
+            node.right.left = node
+        else:
+            node.right = None
+            if self.pointer == self.head:
+                self.pointer = node
+            self.head = node
+
     def __str__(self):
         if self.queue:
             values = []
