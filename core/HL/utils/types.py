@@ -49,77 +49,6 @@ class Instrument:
             f"Instrument(name={self.name}, coin={self.coin}, asset={self.asset},\ntype={self.type}, "
             f"dex={self.dex if self.dex else '""'}, decimals={self.szDecimals})")
 
-class Node:
-    def __init__(self, value: float, left = None, right = None):
-        self.value = value
-        self.left: Node | None = left
-        self.right: Node | None = right
-
-class LinkedList:
-    def __init__(self, l: list[float] = []):
-        if l:
-            self.queue = Node(l[0])
-            self.head = self.queue
-            self.pointer = self.queue
-            for i in range(1, len(l)):
-                self.insert_right(self.head, l[i])
-        else:
-            self.queue = None
-            self.head = None
-            self.pointer = None
-    
-    def insert_left(self, node: Node, value: float):
-        new = Node(value, node.left, node)
-        if node.left:
-            node.left.right = new
-        node.left = new
-        if node == self.queue:
-            self.queue = new
-
-    def insert_right(self, node: Node, value: float):
-        new = Node(value, node, node.right)
-        if node.right:
-            node.right.left = new
-        node.right = new
-        if node == self.head:
-            self.head = new
-
-    def delete_left(self, node: Node):
-        if not node.left:
-            return
-        else:
-            if node.left.left:
-                node.left = node.left.left
-                node.left.right = node
-            else:
-                node.left = None
-                if self.pointer == self.queue:
-                    self.pointer = node
-                self.queue = node
-
-    def delete_right(self, node: Node):
-        if not node.right:
-            return
-        if node.right.right:
-            node.right = node.right.right
-            node.right.left = node
-        else:
-            node.right = None
-            if self.pointer == self.head:
-                self.pointer = node
-            self.head = node
-
-    def __str__(self):
-        if self.queue:
-            values = []
-            node = self.queue
-            while node:
-                values.append(str(node.value))
-                node = node.right
-            return " <-> ".join(values)
-        else:
-            return "nil"
-
 SpotTokenInfo = TypedDict(
     "SpotTokenInfo",
     {
@@ -133,7 +62,6 @@ SpotTokenInfo = TypedDict(
         "fullName": Optional[str],
     },
 )
-
 
 SpotAssetCtx = TypedDict(
     "SpotAssetCtx",
