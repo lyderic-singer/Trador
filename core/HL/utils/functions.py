@@ -124,3 +124,26 @@ def get_transfer(token: str, amount: float, source_dex: str, destination_dex: st
         "nonce": nonce
     }
     return action
+
+def closests(l1: list[float], l2: list[float]):
+    if not l1:
+        return l2
+    elif len(l2) <= len(l1):
+        return []
+    else:
+        l = []
+        j = 0
+        for x in l1:
+            while (j < len(l2)) and (l2[j] < x):
+                l.append(l2[j])
+                j += 1
+            if j >= len(l2) - 1:
+                l.pop()
+            elif not l:
+                j += 1
+            elif abs(x - l2[j]) < abs(x - l2[j + 1]):
+                l.pop()
+            else:
+                j += 1
+        return l + l2[j:]
+
