@@ -3,6 +3,7 @@ from core.HL.utils.functions import cancel, get_order, get_modify, closests
 from bot.market import MarketHL
 from bot.account import AccountPerpDexHL
 from bot.executor import Executor
+from core.HL.utils.types import Modify
 from log.logger import Logger
 
 class Enveloppe:
@@ -74,7 +75,7 @@ class EnveloppeHIP3: # place orders grid each separed with delta
         await self.market.stop()
         await self.account.stop()
 
-    async def modify(self, bids, asks): # sorted increase (bids) , decrease (asks)
+    async def modify(self, bids: list, asks: list): # sorted ascending (bids) , descending (asks)
         if not (bids or asks):
             return await self._log.warning("nothing to modify")
         position = self.account.positions.get(self.instrument.coin)
@@ -83,29 +84,31 @@ class EnveloppeHIP3: # place orders grid each separed with delta
         longable, shortable = position.longable, position.shortable
         if longable <= 0 and shortable <= 0:
             return await self._log.warning("no collateral")
+        modifies: list[Modify] = []
         self.enveloppe.update()
         if bids and longable > 0:
             sz = longable / len(bids)
             for i, b in enumerate(bids):
-                px = mid - offset_bid - (len(bids) - 1 - i) * delta_bid
+                px = self.enveloppe.bids[i]
                 if sz * px < self.MIN_VALUE:
                     continue
                 if abs(px - b["limitPx"]) / b["limitPx"] < self.THRESHOLD:
                     continue
-                mods.append(get_modify(b, self.instrument, sz, px, "Alo"))
+                modifies.append(get_modify(b, self.instrument, sz, px, "Alo"))
         if asks and shortable > 0:
             sz = shortable / len(asks)
             for i, a in enumerate(asks):
-                px = mid + offset_ask + (len(asks) - 1 - i) * delta_ask
+                px = self.enveloppe.asks[i]
                 if sz * px < self.MIN_VALUE:
                     continue
                 if abs(px - a["limitPx"]) / a["limitPx"] < self.THRESHOLD:
                     continue
-                mods.append(get_modify(a, self.instrument, sz, px, "Alo"))
-        if mods:
-            await self.executor.batch_modify(mods)
+                modifies.append(get_modify(a, self.instrument, sz, px, "Alo"))
+        if modifies:
+            await self.executor.batch_modify(modifies)
+        else:
+            await self._log.warning("no modifies to send")
 
-    async def 
 
     async def run(self):
         try:
