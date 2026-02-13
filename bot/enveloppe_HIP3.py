@@ -3,7 +3,7 @@ from core.HL.utils.functions import cancel, get_order, get_modify, closests
 from bot.market import MarketHL
 from bot.account import AccountPerpDexHL
 from bot.executor import Executor
-from core.HL.utils.types import Modify
+from core.HL.utils.types import Modify, Order
 from log.logger import Logger
 
 class Enveloppe:
@@ -30,7 +30,7 @@ class Enveloppe:
         offset_bid = self.spread_min * raw_bid
         offset_ask = self.spread_min * raw_ask
         self.bids = [close - offset_bid - (delta_bid * i) for i in range(self.levels, -1, -1)] # ascending
-        self.asks = [close + offset_ask + (delta_ask * i) for i in range(self.levels, -1, -1)] # descending
+        self.asks = [close + offset_ask + (delta_ask * i) for i in range(self.levels)] # ascending
 
 class EnveloppeHIP3: # place orders grid each separed with delta
     def __init__(self, x: str | int, hl):
@@ -75,7 +75,7 @@ class EnveloppeHIP3: # place orders grid each separed with delta
         await self.market.stop()
         await self.account.stop()
 
-    async def modify(self, bids: list, asks: list): # sorted ascending (bids) , descending (asks)
+    async def modify(self, bids: list[float], asks: list[float]): # both bids and asks in ascending order
         if not (bids or asks):
             return await self._log.warning("nothing to modify")
         position = self.account.positions.get(self.instrument.coin)
@@ -92,16 +92,16 @@ class EnveloppeHIP3: # place orders grid each separed with delta
                 px = self.enveloppe.bids[i]
                 if sz * px < self.MIN_VALUE:
                     continue
-                if abs(px - b["limitPx"]) / b["limitPx"] < self.THRESHOLD:
+                if abs(px - b) / b < self.THRESHOLD:
                     continue
                 modifies.append(get_modify(b, self.instrument, sz, px, "Alo"))
         if asks and shortable > 0:
             sz = shortable / len(asks)
-            for i, a in enumerate(asks):
-                px = self.enveloppe.asks[i]
+            for i, a in enumerate(reversed(asks)):
+                px = self.enveloppe.asks[self.LEVELS - i - 1]
                 if sz * px < self.MIN_VALUE:
                     continue
-                if abs(px - a["limitPx"]) / a["limitPx"] < self.THRESHOLD:
+                if abs(px - a) / a < self.THRESHOLD:
                     continue
                 modifies.append(get_modify(a, self.instrument, sz, px, "Alo"))
         if modifies:
@@ -109,6 +109,14 @@ class EnveloppeHIP3: # place orders grid each separed with delta
         else:
             await self._log.warning("no modifies to send")
 
+    async def place(self, bids: list[float], asks: list[float]):
+        position = self.account.positions.get(self.instrument.coin)
+        if position is None:
+            return await self._log.error("position not found in account")
+        longable, shortable = position.longable, position.shortable
+        if longable <= 0 and shortable <= 0:
+            return await self._log.warning("no collateral")
+        orders: list[Order] = []
 
     async def run(self):
         try:
