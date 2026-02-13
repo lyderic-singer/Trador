@@ -75,8 +75,8 @@ class EnveloppeHIP3: # place orders grid each separed with delta
         await self.market.stop()
         await self.account.stop()
 
-    async def modify(self, bids: list[float], asks: list[float]): # both bids and asks in ascending order
-        if not (bids or asks):
+    async def modify(self, bids_px: list[float], asks_px: list[float]): # both bids and asks in ascending order
+        if not (bids_px or asks_px):
             return await self._log.warning("nothing to modify")
         position = self.account.positions.get(self.instrument.coin)
         if position is None:
@@ -86,18 +86,18 @@ class EnveloppeHIP3: # place orders grid each separed with delta
             return await self._log.warning("no collateral")
         modifies: list[Modify] = []
         self.enveloppe.update()
-        if bids and longable > 0:
-            sz = longable / len(bids)
-            for i, b in enumerate(bids):
+        if bids_px and longable > 0:
+            sz = longable / len(bids_px)
+            for i, b in enumerate(bids_px):
                 px = self.enveloppe.bids[i]
                 if sz * px < self.MIN_VALUE:
                     continue
                 if abs(px - b) / b < self.THRESHOLD:
                     continue
                 modifies.append(get_modify(b, self.instrument, sz, px, "Alo"))
-        if asks and shortable > 0:
-            sz = shortable / len(asks)
-            for i, a in enumerate(reversed(asks)):
+        if asks_px and shortable > 0:
+            sz = shortable / len(asks_px)
+            for i, a in enumerate(reversed(asks_px)):
                 px = self.enveloppe.asks[self.LEVELS - i - 1]
                 if sz * px < self.MIN_VALUE:
                     continue
@@ -109,14 +109,23 @@ class EnveloppeHIP3: # place orders grid each separed with delta
         else:
             await self._log.warning("no modifies to send")
 
-    async def place(self, bids: list[float], asks: list[float]):
+    async def place(self, bids_px: list[float], asks_px: list[float]):
         position = self.account.positions.get(self.instrument.coin)
         if position is None:
             return await self._log.error("position not found in account")
         longable, shortable = position.longable, position.shortable
         if longable <= 0 and shortable <= 0:
             return await self._log.warning("no collateral")
-        orders: list[Order] = []
+        self.enveloppe.update()
+        new_bids_px = closests(bids_px, self.enveloppe.bids)
+        new_asks_px = closests(asks_px, self.enveloppe.asks)
+        new_bids: list[Order] = [get_order(self.instrument, True, longable / len(new_bids_px), px, "Alo") for px in new_bids_px]
+        new_asks: list[Order] = [get_order(self.instrument, False, shortable / len(new_asks_px), px, "Alo") for px in new_asks_px]
+        orders: list[Order] = new_bids + new_asks
+        if orders:
+            await self.executor.batch_order(orders)
+        else:
+            await self._log.warning("no order to place")
 
     async def run(self):
         try:
