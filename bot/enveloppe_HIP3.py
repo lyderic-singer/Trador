@@ -75,8 +75,8 @@ class EnveloppeHIP3: # place orders grid each separed with delta
         await self.market.stop()
         await self.account.stop()
 
-    async def modify(self, bids_px: list[float], asks_px: list[float]): # both bids and asks in ascending order
-        if not (bids_px or asks_px):
+    async def modify(self, bids: list, asks: list): # both bids and asks in ascending order
+        if not (bids or asks):
             return await self._log.warning("nothing to modify")
         position = self.account.positions.get(self.instrument.coin)
         if position is None:
@@ -86,22 +86,22 @@ class EnveloppeHIP3: # place orders grid each separed with delta
             return await self._log.warning("no collateral")
         modifies: list[Modify] = []
         self.enveloppe.update()
-        if bids_px and longable > 0:
-            sz = longable / len(bids_px)
-            for i, b in enumerate(bids_px):
+        if bids and longable > 0:
+            sz = longable / len(bids)
+            for i, b in enumerate(bids):
                 px = self.enveloppe.bids[i]
                 if sz * px < self.MIN_VALUE:
                     continue
-                if abs(px - b) / b < self.THRESHOLD:
+                if abs(px - b["limitPx"]) / b["limitPx"] < self.THRESHOLD:
                     continue
                 modifies.append(get_modify(b, self.instrument, sz, px, "Alo"))
-        if asks_px and shortable > 0:
-            sz = shortable / len(asks_px)
-            for i, a in enumerate(reversed(asks_px)):
+        if asks and shortable > 0:
+            sz = shortable / len(asks)
+            for i, a in enumerate(reversed(asks)):
                 px = self.enveloppe.asks[self.LEVELS - i - 1]
                 if sz * px < self.MIN_VALUE:
                     continue
-                if abs(px - a) / a < self.THRESHOLD:
+                if abs(px - a["limitPx"]) / a["limitPx"] < self.THRESHOLD:
                     continue
                 modifies.append(get_modify(a, self.instrument, sz, px, "Alo"))
         if modifies:
@@ -109,7 +109,7 @@ class EnveloppeHIP3: # place orders grid each separed with delta
         else:
             await self._log.warning("no modifies to send")
 
-    async def place(self, bids_px: list[float], asks_px: list[float]):
+    async def place(self, bids_px: list[float], asks_px: list[float]): # both bids and asks in ascending order
         position = self.account.positions.get(self.instrument.coin)
         if position is None:
             return await self._log.error("position not found in account")
@@ -130,14 +130,18 @@ class EnveloppeHIP3: # place orders grid each separed with delta
     async def run(self):
         try:
             while self.running:
-                curr_orders = await self.hl.info.open_orders(self.address, dex=self.dex)
-                curr_bids, curr_asks = [], []
-                for o in curr_orders:
-                    curr_bids.append(o) if o["side"] == 'B' else curr_asks.append(o)
+                orders = await self.hl.info.open_orders(self.address, dex=self.dex)
+                orders.sort(key=lambda x: float(x["limitPx"]))
+                bids, asks, bids_px, asks_px = [], [], [], []
+                for o in orders:
+                    if o["side"] == 'B':
+                        bids.append(o)
+                        bids_px.append(float(o["limitPx"]))
+                    else:
+                        asks.append(o)
+                        asks_px.append(float(o["limitPx"]))
                 mid = self.market.mid
-                sma_close = self.market.sma_close()
-                sma_high = self.market.sma_high()
-                sma_low = self.market.sma_low()
+                sma = self.market.sma_close()
                 await asyncio.sleep(self.POLL_DELAY)
         except asyncio.CancelledError:
             pass
