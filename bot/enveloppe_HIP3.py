@@ -13,8 +13,10 @@ class Enveloppe:
         self.spread_min = spread_min
         self.spread_max = spread_max
         self.range = spread_max - spread_min
+        self.bids = []
+        self.asks = []
 
-    def get_deltas(self):
+    def update(self):
         if not self.running:
             raise ValueError("Must start before request deltas")
         close = self.market.sma_close()
@@ -26,7 +28,8 @@ class Enveloppe:
         delta_ask = self.range * raw_ask / self.levels
         offset_bid = self.spread_min * raw_bid
         offset_ask = self.spread_min * raw_ask
-        return offset_bid, raw_bid, delta_bid, offset_ask, raw_ask, delta_ask
+        self.bids = [close - offset_bid - (delta_bid * i) for i in range(self.levels, -1, -1)] # ascending
+        self.asks = [close + offset_ask + (delta_ask * i) for i in range(self.levels, -1, -1)] # descending
 
 class EnveloppeHIP3: # place orders grid each separed with delta
     def __init__(self, x: str | int, hl):
@@ -59,6 +62,7 @@ class EnveloppeHIP3: # place orders grid each separed with delta
         if self.running:
             return await self._log.info("already started")
         await self.market.start()
+        self.enveloppe.running = True
         await self.account.start()
         self.running = True
         self.task = asyncio.create_task(self.run())
@@ -73,15 +77,13 @@ class EnveloppeHIP3: # place orders grid each separed with delta
     async def modify(self, bids, asks): # sorted increase (bids) , decrease (asks)
         if not (bids or asks):
             return await self._log.warning("nothing to modify")
-        offset_bid, raw_bid, delta_bid, offset_ask, raw_ask, delta_ask = self.get_deltas()
         position = self.account.positions.get(self.instrument.coin)
         if position is None:
             return await self._log.error("position not found in account")
         longable, shortable = position.longable, position.shortable
         if longable <= 0 and shortable <= 0:
             return await self._log.warning("no collateral")
-        mid = self.market.sma_close()
-        mods = []
+        self.enveloppe.update()
         if bids and longable > 0:
             sz = longable / len(bids)
             for i, b in enumerate(bids):
