@@ -137,11 +137,7 @@ def closests(l1: list[float], l2: list[float]):
             while (j < len(l2)) and (l2[j] < x):
                 l.append(l2[j])
                 j += 1
-            if j >= len(l2) - 1:
-                l.pop()
-            elif not l:
-                j += 1
-            elif abs(x - l2[j]) < abs(x - l2[j + 1]):
+            if l and ((j >= len(l2) - 1) or (abs(x - l2[j]) < abs(x - l2[j + 1]))):
                 l.pop()
             else:
                 j += 1
