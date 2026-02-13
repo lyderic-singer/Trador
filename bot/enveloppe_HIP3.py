@@ -1,9 +1,32 @@
 import asyncio
-from core.HL.utils.functions import cancel, get_modify
+from core.HL.utils.functions import cancel, get_order, get_modify, closests
 from bot.market import MarketHL
 from bot.account import AccountPerpDexHL
 from bot.executor import Executor
 from log.logger import Logger
+
+class Enveloppe:
+    def __init__(self, market: MarketHL, levels: int, spread_min: float, spread_max: float):
+        self.running = False
+        self.market = market
+        self.levels = levels
+        self.spread_min = spread_min
+        self.spread_max = spread_max
+        self.range = spread_max - spread_min
+
+    def get_deltas(self):
+        if not self.running:
+            raise ValueError("Must start before request deltas")
+        close = self.market.sma_close()
+        high = self.market.sma_high()
+        low = self.market.sma_low()
+        raw_bid = 2 * high - low - close
+        raw_ask =  high + close - 2 * low
+        delta_bid = self.range * raw_bid / self.levels
+        delta_ask = self.range * raw_ask / self.levels
+        offset_bid = self.spread_min * raw_bid
+        offset_ask = self.spread_min * raw_ask
+        return offset_bid, raw_bid, delta_bid, offset_ask, raw_ask, delta_ask
 
 class EnveloppeHIP3: # place orders grid each separed with delta
     def __init__(self, x: str | int, hl):
@@ -19,7 +42,6 @@ class EnveloppeHIP3: # place orders grid each separed with delta
         self.LEVERAGE = 5
         self.POLL_DELAY = 10.1
         self.THRESHOLD = 0.0002   # 0.02%
-        self.RANGE = self.SPREAD_MAX - self.SPREAD_MIN
         self.TIMEFRAME = "1m"
         self.WINDOW = 9
         # ==== DATA ====
@@ -31,6 +53,7 @@ class EnveloppeHIP3: # place orders grid each separed with delta
         self.executor = Executor(hl)
         self.market = MarketHL(self.instrument, hl, self.WINDOW, self.TIMEFRAME)
         self.account = AccountPerpDexHL(self.dex, [self.instrument], hl)
+        self.enveloppe = Enveloppe(self.market, self.LEVELS, self.SPREAD_MIN, self.SPREAD_MAX)
 
     async def start(self):
         if self.running:
@@ -47,21 +70,7 @@ class EnveloppeHIP3: # place orders grid each separed with delta
         await self.market.stop()
         await self.account.stop()
 
-    def get_deltas(self):
-        if not self.running:
-            raise ValueError("Must start before request deltas")
-        close = self.market.sma_close()
-        high = self.market.sma_high()
-        low = self.market.sma_low()
-        raw_bid = 2 * high - low - close
-        raw_ask =  high + close - 2 * low
-        delta_bid = self.RANGE * raw_bid / self.LEVELS
-        delta_ask = self.RANGE * raw_ask / self.LEVELS
-        offset_bid = self.SPREAD_MIN * raw_bid
-        offset_ask = self.SPREAD_MIN * raw_ask
-        return offset_bid, raw_bid, delta_bid, offset_ask, raw_ask, delta_ask
-
-    async def modify(self, bids, asks):
+    async def modify(self, bids, asks): # sorted increase (bids) , decrease (asks)
         if not (bids or asks):
             return await self._log.warning("nothing to modify")
         offset_bid, raw_bid, delta_bid, offset_ask, raw_ask, delta_ask = self.get_deltas()
@@ -79,7 +88,7 @@ class EnveloppeHIP3: # place orders grid each separed with delta
                 px = mid - offset_bid - (len(bids) - 1 - i) * delta_bid
                 if sz * px < self.MIN_VALUE:
                     continue
-                if abs(px - b["price"]) / b["price"] < self.THRESHOLD:
+                if abs(px - b["limitPx"]) / b["limitPx"] < self.THRESHOLD:
                     continue
                 mods.append(get_modify(b, self.instrument, sz, px, "Alo"))
         if asks and shortable > 0:
@@ -88,11 +97,13 @@ class EnveloppeHIP3: # place orders grid each separed with delta
                 px = mid + offset_ask + (len(asks) - 1 - i) * delta_ask
                 if sz * px < self.MIN_VALUE:
                     continue
-                if abs(px - a["price"]) / a["price"] < self.THRESHOLD:
+                if abs(px - a["limitPx"]) / a["limitPx"] < self.THRESHOLD:
                     continue
                 mods.append(get_modify(a, self.instrument, sz, px, "Alo"))
         if mods:
             await self.executor.batch_modify(mods)
+
+    async def 
 
     async def run(self):
         try:
