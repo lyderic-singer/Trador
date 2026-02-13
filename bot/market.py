@@ -129,12 +129,10 @@ class MarketHL:
             self.running = False
 
     def sma(self, last_values: deque, sum_values: float | None, value: float | None):
-        if not last_values:
+        if not (last_values and sum_values and value):
             raise ValueError("must start before request sma")
-        if sum_values and value:
-            total = sum_values + value
-            return total / (len(last_values) + 1)
-        return
+        total = sum_values + value
+        return total / (len(last_values) + 1)
 
     def sma_close(self):
         return self.sma(self.last_closes, self.sum_closes, self.mid)

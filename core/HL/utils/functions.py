@@ -125,7 +125,7 @@ def get_transfer(token: str, amount: float, source_dex: str, destination_dex: st
     }
     return action
 
-def closests(l1: list[float], l2: list[float]):
+def closests(l1: list[float], l2: list[float]): # both l1 and l2 in ascending order
     if not l1:
         return l2
     elif len(l2) <= len(l1):
@@ -142,4 +142,3 @@ def closests(l1: list[float], l2: list[float]):
             else:
                 j += 1
         return l + l2[j:]
-

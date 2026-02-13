@@ -38,8 +38,8 @@ class Position:
         self.mode =  None # margin mode: "cross" or "isolated"
         self.leverage = None
         self.raw = None # rawUsd on hl | margin - positionValue
-        self.longable = None # maxTradeSzs[0] on hl | sz available to long
-        self.shortable = None # maxTradeSzs[1] on hl | sz available to short
+        self.longable = 0 # maxTradeSzs[0] on hl | sz available to long
+        self.shortable = 0 # maxTradeSzs[1] on hl | sz available to short
     
     def __str__(self):
         return (
