@@ -3,7 +3,7 @@ import asyncio
 import json
 from typing import Any
 
-from core.HL.utils.types import Cancel, Modify, Order, Transfer
+from core.HL.utils.types import TIF, Cancel, ExecutionType, Modify, Order, Transfer
 
 def timestamp_ms() -> int:
     return int(time.time() * 1000)
@@ -78,7 +78,7 @@ async def cancel(task: asyncio.Task | None):
     except asyncio.CancelledError:
         pass
 
-def get_order(instrument, is_buy: bool, size: float, price: float, execution_type,
+def get_order(instrument, is_buy: bool, size: float, price: float, execution_type: ExecutionType,
               reduce_only: bool = False, cloid = None) -> Order:
     order: Order = {
         "a": instrument.asset,
@@ -100,8 +100,8 @@ def get_cancel(instrument,  oid: int | None = None, cloid = None) -> Cancel:
     else:
         return {"asset": instrument.asset, "cloid": cloid}
 
-def get_modify(order, instrument, new_size, new_price, tif) -> Modify:
-    execution_type = {"limit": {"tif": tif}}
+def get_modify(order, instrument, new_size: float, new_price: float, tif: TIF) -> Modify:
+    execution_type: ExecutionType = {"limit": {"tif": tif}}
     modify: Modify = {
         "oid": order['oid'],
         "order": get_order(instrument, order['side'] == 'B', new_size, new_price, execution_type)
