@@ -36,6 +36,19 @@ class EnveloppeHIP3: # place orders grid each separed with delta
     def __init__(self, x: str | int, hl):
         self.task = None
         self.running = False
+        self.last_sma = None
+        self.placed = 0   # nb of place for stat
+        self.modified = 0 # nb of modify for stat
+        self.passed = 0   # nb of pass for stat
+        self.hl = hl
+        self.address = hl.address
+        self._log = Logger(self, hl.messenger)
+        self.instrument = hl.info.instrument(x)
+        self.dex = self.instrument.dex
+        self.executor = Executor(hl)
+        self.market = MarketHL(self.instrument, hl, self.WINDOW, self.TIMEFRAME)
+        self.account = AccountPerpDexHL(self.dex, [self.instrument], hl)
+        self.enveloppe = Enveloppe(self.market, self.LEVELS, self.SPREAD_MIN, self.SPREAD_MAX)
         # ==== CONSTANTS ====
         self.MAKER_FEES = 0.00003 # 0.003%
         self.TAKER_FEES = 0.00009 # 0.009%
@@ -48,16 +61,6 @@ class EnveloppeHIP3: # place orders grid each separed with delta
         self.THRESHOLD = 0.0002   # 0.02%
         self.TIMEFRAME = "1m"
         self.WINDOW = 9
-        # ==== DATA ====
-        self.hl = hl
-        self.address = hl.address
-        self._log = Logger(self, hl.messenger)
-        self.instrument = hl.info.instrument(x)
-        self.dex = self.instrument.dex
-        self.executor = Executor(hl)
-        self.market = MarketHL(self.instrument, hl, self.WINDOW, self.TIMEFRAME)
-        self.account = AccountPerpDexHL(self.dex, [self.instrument], hl)
-        self.enveloppe = Enveloppe(self.market, self.LEVELS, self.SPREAD_MIN, self.SPREAD_MAX)
 
     async def start(self):
         if self.running:
@@ -142,6 +145,14 @@ class EnveloppeHIP3: # place orders grid each separed with delta
                         asks_px.append(float(o["limitPx"]))
                 mid = self.market.mid
                 sma = self.market.sma_close()
+                if mid and ((mid > sma and len(bids) < self.LEVELS) or (mid < sma and len(asks) < self.LEVELS)):
+                    await self.place(bids_px, asks_px)
+                    self.placed += 1
+                elif self.last_sma and (abs(self.last_sma - sma) / sma) < self.THRESHOLD:
+                    self.passed += 1
+                else:
+                    await self.modify(bids, asks)
+                    self.modified += 1
                 await asyncio.sleep(self.POLL_DELAY)
         except asyncio.CancelledError:
             pass
