@@ -80,6 +80,18 @@ class EnveloppeHIP3: # place orders grid each separed with delta
         await self._log.info(f"{self.placed + self.modified + self.passed} actions: {self.placed} place, {self.modified} modifiy and {self.passed} pass")
         await self._log.success("Stopped")
 
+    def bid_px(self, px: float, mid: float | None = None) -> float | None:
+        if mid is None:
+            mid = self.market.mid
+        if mid and px:
+            return min(px, (1 - self.MAKER_FEES) * mid)
+
+    def ask_px(self, px: float, mid: float | None = None) -> float | None:
+        if mid is None:
+            mid = self.market.mid
+        if mid and px:
+            return max(px, (1 + self.MAKER_FEES) * mid)
+
     async def modify(self, bids: list, asks: list): # both bids and asks in ascending order
         if not (bids or asks):
             return await self._log.warning("nothing to modify")
@@ -90,20 +102,21 @@ class EnveloppeHIP3: # place orders grid each separed with delta
         if longable <= 0 and shortable <= 0:
             return await self._log.warning("no collateral")
         modifies: list[Modify] = []
+        mid = self.market.mid
         self.enveloppe.update()
         if bids and longable > 0:
             sz = longable / len(bids)
             for i, b in enumerate(bids):
-                px = self.enveloppe.bids[i]
+                px = self.bid_px(self.enveloppe.bids[i], mid)
                 if sz * px < self.MIN_VALUE:
                     continue
-                if abs(px - b["limitPx"]) / b["limitPx"] < self.THRESHOLD:
+                elif abs(px - b["limitPx"]) / b["limitPx"] < self.THRESHOLD:
                     continue
                 modifies.append(get_modify(b, self.instrument, sz, px, "Alo"))
         if asks and shortable > 0:
             sz = shortable / len(asks)
             for i, a in enumerate(reversed(asks)):
-                px = self.enveloppe.asks[self.LEVELS - i - 1]
+                px = self.ask_px(self.enveloppe.asks[self.LEVELS - i - 1], mid)
                 if sz * px < self.MIN_VALUE:
                     continue
                 if abs(px - a["limitPx"]) / a["limitPx"] < self.THRESHOLD:
@@ -111,6 +124,7 @@ class EnveloppeHIP3: # place orders grid each separed with delta
                 modifies.append(get_modify(a, self.instrument, sz, px, "Alo"))
         if modifies:
             await self.executor.batch_modify(modifies)
+            self.last_sma = self.market.sma_close()
         else:
             await self._log.warning("no modifies to send")
 
