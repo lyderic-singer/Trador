@@ -77,6 +77,8 @@ class EnveloppeHIP3: # place orders grid each separed with delta
         await cancel(self.task)
         await self.market.stop()
         await self.account.stop()
+        await self._log.info(f"{self.placed + self.modified + self.passed} actions: {self.placed} place, {self.modified} modifiy and {self.passed} pass")
+        await self._log.success("Stopped")
 
     async def modify(self, bids: list, asks: list): # both bids and asks in ascending order
         if not (bids or asks):
