@@ -47,7 +47,7 @@ class Orchester:
         except Exception:
             await self._log.error("Stop failed")
 
-    async def set_bot(self, bot):
+    async def set_strategy(self, bot):
         if not self.running:
             raise ValueError("must init before set bot")
         try:
