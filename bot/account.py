@@ -65,7 +65,8 @@ class Position:
         l = data["leverage"]
         self.mode = l["type"]
         self.leverage = l["value"]
-        self.raw = float(l["rawUsd"])
+        if self.mode == "isolated":
+            self.raw = float(l["rawUsd"])
         maxTradeSzs = data["maxTradeSzs"]
         self.longable = float(maxTradeSzs[0])
         self.shortable = float(maxTradeSzs[1])
