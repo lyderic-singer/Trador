@@ -29,7 +29,7 @@ class Enveloppe:
         delta_ask = self.range * raw_ask / self.levels
         offset_bid = self.spread_min * raw_bid
         offset_ask = self.spread_min * raw_ask
-        self.bids = [close - offset_bid - (delta_bid * i) for i in range(self.levels, -1, -1)] # ascending
+        self.bids = [close - offset_bid - (delta_bid * i) for i in range(self.levels -1, -1, -1)] # ascending
         self.asks = [close + offset_ask + (delta_ask * i) for i in range(self.levels)] # ascending
 
 class EnveloppeHIP3: # place orders grid each separed with delta
@@ -136,10 +136,16 @@ class EnveloppeHIP3: # place orders grid each separed with delta
         mid = self.market.mid
         new_bids_px = closests(bids_px, self.enveloppe.bids)
         new_asks_px = closests(asks_px, self.enveloppe.asks)
-        new_bids: list[Order] = [get_order(self.instrument, True, longable / len(new_bids_px), px_value, {"limit": {"tif": "Alo"}})
-                                 for px in new_bids_px if (px_value := self.bid_px(px, mid)) is not None]
-        new_asks: list[Order] = [get_order(self.instrument, False, shortable / len(new_asks_px), px_value, {"limit": {"tif": "Alo"}})
-                                 for px in new_asks_px if (px_value := self.ask_px(px, mid)) is not None]
+        sz_bid = longable / len(new_bids_px) if new_bids_px else 0
+        sz_ask = shortable / len(new_asks_px) if new_asks_px else 0
+        new_bids: list[Order] = []
+        new_asks: list[Order] = []
+        for px in new_bids_px:
+            if px and mid and px < mid:
+                new_bids.append(get_order(self.instrument, True, sz_bid, px, {"limit": {"tif": "Alo"}}))
+        for px in new_asks_px:
+            if px and mid and px > mid:
+                new_asks.append(get_order(self.instrument, False, sz_ask, px, {"limit": {"tif": "Alo"}}))
         orders: list[Order] = new_bids + new_asks
         if orders:
             await self.executor.batch_order(orders)
