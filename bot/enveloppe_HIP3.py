@@ -37,8 +37,8 @@ class EnveloppeHIP3: # place orders grid each separed with delta
         # ==== CONSTANTS ====
         self.MAKER_FEES = 0.00003 # 0.003%
         self.TAKER_FEES = 0.00009 # 0.009%
-        self.SPREAD_MIN = 0.1     # x0.1
-        self.SPREAD_MAX = 5       # x5
+        self.SPREAD_MIN = 0.05    # x0.05
+        self.SPREAD_MAX = 2.5     # x2.5
         self.LEVELS = 5
         self.CAP_VALUE = 0.95
         self.MIN_VALUE = 10.5
@@ -126,8 +126,6 @@ class EnveloppeHIP3: # place orders grid each separed with delta
             await self.executor.batch_modify(modifies)
             self.last_sma = self.market.sma_close()
             self.modified += 1
-        else:
-            await self._log.warning("no modifies to send")
 
     async def place(self, bids_px: list[float], asks_px: list[float]): # both bids and asks in ascending order
         position = self.account.positions.get(self.instrument.coin)
@@ -157,8 +155,6 @@ class EnveloppeHIP3: # place orders grid each separed with delta
         if orders:
             await self.executor.batch_order(orders)
             self.placed += 1
-        else:
-            await self._log.warning("no order to place")
 
     async def run(self):
         try:
@@ -183,6 +179,7 @@ class EnveloppeHIP3: # place orders grid each separed with delta
                     if mid and ((mid > sma and len(bids) < self.LEVELS) or (mid < sma and len(asks) < self.LEVELS)):
                         await self.place(bids_px, asks_px)
                     elif self.last_sma and (abs(self.last_sma - sma) / sma) < self.THRESHOLD:
+                        await self._log.debug("passing")
                         self.passed += 1
                     else:
                         await self.modify(bids, bids_value, asks, asks_value)
