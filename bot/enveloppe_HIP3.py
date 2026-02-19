@@ -38,7 +38,7 @@ class EnveloppeHIP3: # place orders grid each separed with delta
         self.MAKER_FEES = 0.00003 # 0.003%
         self.TAKER_FEES = 0.00009 # 0.009%
         self.SPREAD_MIN = 0.05    # x0.05
-        self.SPREAD_MAX = 2.5     # x2.5
+        self.SPREAD_MAX = 3.5     # x2.5
         self.LEVELS = 5
         self.CAP_VALUE = 0.95
         self.MIN_VALUE = 10.5
