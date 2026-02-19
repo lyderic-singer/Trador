@@ -40,6 +40,7 @@ class EnveloppeHIP3: # place orders grid each separed with delta
         self.SPREAD_MIN = 0.1     # x0.1
         self.SPREAD_MAX = 5       # x5
         self.LEVELS = 5
+        self.CAP_VALUE = 0.95
         self.MIN_VALUE = 10.5
         self.LEVERAGE = 5
         self.POLL_DELAY = 10.1
@@ -94,29 +95,32 @@ class EnveloppeHIP3: # place orders grid each separed with delta
         if mid and px:
             return max(px, (1 + self.MAKER_FEES) * mid)
 
-    async def modify(self, bids: list, asks: list): # both bids and asks in ascending order
+    async def modify(self, bids: list, bids_value: float, asks: list, asks_value: float): # both bids and asks in ascending order
         if not (bids or asks):
             return await self._log.warning("nothing to modify")
         position = self.account.positions.get(self.instrument.coin)
         if position is None:
             return await self._log.error("position not found in account")
-        longable, shortable = position.longable, position.shortable
+        mid = self.market.mid
+        if not mid:
+            return await self._log.error("mid not inited")
+        self.enveloppe.update()
+        longable = self.CAP_VALUE * (position.longable + bids_value) / mid
+        shortable = self.CAP_VALUE * (position.shortable + asks_value) / mid
         if longable <= 0 and shortable <= 0:
             return await self._log.warning("no collateral")
         modifies: list[Modify] = []
-        mid = self.market.mid
-        self.enveloppe.update()
         if bids and longable > 0:
             sz = longable / len(bids)
             for i, b in enumerate(bids):
                 px = self.bid_px(self.enveloppe.bids[i], mid)
-                if px and not ((sz * (px or 0) < self.MIN_VALUE) or (abs(px - b["limitPx"]) / b["limitPx"] < self.THRESHOLD)):
+                if px and not ((sz * (px or 0) < self.MIN_VALUE) or (abs(px - float(b["limitPx"])) / float(b["limitPx"]) < self.THRESHOLD)):
                     modifies.append(get_modify(b, self.instrument, sz, px, "Alo"))
         if asks and shortable > 0:
             sz = shortable / len(asks)
             for i, a in enumerate(reversed(asks)):
                 px = self.ask_px(self.enveloppe.asks[self.LEVELS - i - 1], mid)
-                if px and not ((sz * (px or 0) < self.MIN_VALUE) or (abs(px - a["limitPx"]) / a["limitPx"] < self.THRESHOLD)):
+                if px and not ((sz * (px or 0) < self.MIN_VALUE) or (abs(px - float(a["limitPx"])) / float(a["limitPx"]) < self.THRESHOLD)):
                     modifies.append(get_modify(a, self.instrument, sz, px, "Alo"))
         if modifies:
             await self.executor.batch_modify(modifies)
@@ -129,11 +133,14 @@ class EnveloppeHIP3: # place orders grid each separed with delta
         position = self.account.positions.get(self.instrument.coin)
         if position is None:
             return await self._log.error("position not found in account")
-        longable, shortable = position.longable, position.shortable
+        mid = self.market.mid
+        if not mid:
+            return await self._log.error("mid not inited")
+        self.enveloppe.update()
+        longable = self.CAP_VALUE * position.longable / mid
+        shortable = self.CAP_VALUE * position.shortable / mid
         if longable <= 0 and shortable <= 0:
             return await self._log.warning("no collateral")
-        self.enveloppe.update()
-        mid = self.market.mid
         new_bids_px = closests(bids_px, self.enveloppe.bids)
         new_asks_px = closests(asks_px, self.enveloppe.asks)
         sz_bid = longable / len(new_bids_px) if new_bids_px else 0
@@ -141,10 +148,10 @@ class EnveloppeHIP3: # place orders grid each separed with delta
         new_bids: list[Order] = []
         new_asks: list[Order] = []
         for px in new_bids_px:
-            if px and mid and px < mid:
+            if px and mid and px < mid and self.MIN_VALUE <= px * sz_bid: # account real size
                 new_bids.append(get_order(self.instrument, True, sz_bid, px, {"limit": {"tif": "Alo"}}))
         for px in new_asks_px:
-            if px and mid and px > mid:
+            if px and mid and px > mid and self.MIN_VALUE < px * sz_bid:
                 new_asks.append(get_order(self.instrument, False, sz_ask, px, {"limit": {"tif": "Alo"}}))
         orders: list[Order] = new_bids + new_asks
         if orders:
@@ -156,25 +163,32 @@ class EnveloppeHIP3: # place orders grid each separed with delta
     async def run(self):
         try:
             while self.running:
-                orders = await self.hl.info.open_orders(self.address, dex=self.dex)
-                orders.sort(key=lambda x: float(x["limitPx"]))
-                bids, asks, bids_px, asks_px = [], [], [], []
-                for o in orders:
-                    if o["side"] == 'B':
-                        bids.append(o)
-                        bids_px.append(float(o["limitPx"]))
+                try:
+                    orders = await self.hl.info.open_orders(self.address, dex=self.dex)
+                    orders.sort(key=lambda x: float(x["limitPx"]))
+                    bids, bids_px, bids_value, asks, asks_px, asks_value = [], [], 0, [], [], 0
+                    for o in orders:
+                        px = float(o["limitPx"])
+                        sz = float(o["sz"])
+                        if o["side"] == 'B':
+                            bids.append(o)
+                            bids_px.append(px)
+                            bids_value += px * sz
+                        else:
+                            asks.append(o)
+                            asks_px.append(float(o["limitPx"]))
+                            asks_value += px * sz
+                    mid = self.market.mid
+                    sma = self.market.sma_close()
+                    if mid and ((mid > sma and len(bids) < self.LEVELS) or (mid < sma and len(asks) < self.LEVELS)):
+                        await self.place(bids_px, asks_px)
+                    elif self.last_sma and (abs(self.last_sma - sma) / sma) < self.THRESHOLD:
+                        self.passed += 1
                     else:
-                        asks.append(o)
-                        asks_px.append(float(o["limitPx"]))
-                mid = self.market.mid
-                sma = self.market.sma_close()
-                if mid and ((mid > sma and len(bids) < self.LEVELS) or (mid < sma and len(asks) < self.LEVELS)):
-                    await self.place(bids_px, asks_px)
-                elif self.last_sma and (abs(self.last_sma - sma) / sma) < self.THRESHOLD:
-                    self.passed += 1
-                else:
-                    await self.modify(bids, asks)
-                await asyncio.sleep(self.POLL_DELAY)
+                        await self.modify(bids, bids_value, asks, asks_value)
+                    await asyncio.sleep(self.POLL_DELAY)
+                except Exception as e:
+                    await self._log.error(f"{e}")
         except asyncio.CancelledError:
             pass
         except Exception as e:

@@ -67,9 +67,9 @@ class Position:
         self.leverage = l["value"]
         if self.mode == "isolated":
             self.raw = float(l["rawUsd"])
-        maxTradeSzs = data["maxTradeSzs"]
-        self.longable = float(maxTradeSzs[0])
-        self.shortable = float(maxTradeSzs[1])
+        availableToTrade = data["availableToTrade"]
+        self.longable = float(availableToTrade[0]) * self.leverage
+        self.shortable = float(availableToTrade[1]) * self.leverage
         self.received_asset.set()
 
 class AccountPerpDexHL:
