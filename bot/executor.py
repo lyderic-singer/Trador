@@ -119,14 +119,14 @@ class Executor:
             await self._log.error(f"{e}")
         finally: return
 
-    async def execute(self, task, actions, expected_type, timeout=30):
+    async def execute(self, task, actions, expected_type, timeout=2):
         request = Request(task, actions, expected_type)
         await self.requests.put(request)
         try:
             await asyncio.wait_for(request.completed.wait(), timeout=timeout)
         except asyncio.TimeoutError:
             request.cancelled = True
-            await self._log.critical(f"{expected_type} timed out for {actions}")
+            await self._log.critical(f"{expected_type} timed out for {actions}, {self.requests.qsize()}")
             return [False] * len(actions)
         return request.executed
 
