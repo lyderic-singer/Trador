@@ -107,9 +107,13 @@ class Executor:
                         request.completed.set()
                     else:
                         request.res = await request.task
-                        request.executed = await self.handle(request)
+                        if isinstance(request.res, dict):
+                            request.executed = await self.handle(request)
+                        else:
+                            await self._log.error(f"{request.res}")
                         self.last = time.time()
                         request.completed.set()
+                        await self._log.debug(f"executed, qsize={self.requests.qsize()}")
                         await asyncio.sleep(self.COOLDOWN)
                 finally:
                     self.requests.task_done()
@@ -119,14 +123,15 @@ class Executor:
             await self._log.error(f"{e}")
         finally: return
 
-    async def execute(self, task, actions, expected_type, timeout=2):
+    async def execute(self, task, actions, expected_type, timeout=20):
         request = Request(task, actions, expected_type)
         await self.requests.put(request)
+        await self._log.debug(f"added, qsize={self.requests.qsize()}")
         try:
             await asyncio.wait_for(request.completed.wait(), timeout=timeout)
         except asyncio.TimeoutError:
             request.cancelled = True
-            await self._log.critical(f"{expected_type} timed out for {actions}, {self.requests.qsize()}")
+            await self._log.critical(f"{expected_type} timed out for {actions}, qsize={self.requests.qsize()}")
             return [False] * len(actions)
         return request.executed
 
