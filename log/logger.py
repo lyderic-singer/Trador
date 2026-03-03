@@ -9,10 +9,10 @@ def get_file(objet):
 
 def get_function():
     try:
-        return sys._getframe(2).f_code.co_name
+        return sys._getframe(3).f_code.co_name
     except Exception:
         try:
-            return inspect.stack()[2].function
+            return inspect.stack()[3].function
         except Exception:
             return "<unknown>"
 

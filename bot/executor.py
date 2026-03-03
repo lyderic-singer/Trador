@@ -1,5 +1,6 @@
 import time
 import asyncio
+import traceback
 from typing import Any
 from core.HL.utils.functions import cancel
 from log.logger import Logger
@@ -100,6 +101,8 @@ class Executor:
     async def run(self):
         try:
             while self.running:
+                if isinstance(self.requests, str):
+                    await self._log.critical(self.requests)
                 request = await self.requests.get()
                 try:
                     if request.cancelled:
@@ -115,12 +118,15 @@ class Executor:
                         request.completed.set()
                         await self._log.debug(f"executed, qsize={self.requests.qsize()}")
                         await asyncio.sleep(self.COOLDOWN)
+                except Exception as e:
+                    await self._log.error(f"{e}")
                 finally:
                     self.requests.task_done()
         except asyncio.CancelledError:
             pass
         except Exception as e:
-            await self._log.error(f"{e}")
+            tb = traceback.format_exc()
+            await self._log.error(f"{tb}")
         finally: return
 
     async def execute(self, task, actions, expected_type, timeout=20):
