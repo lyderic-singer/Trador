@@ -76,8 +76,14 @@ class Executor:
     async def handle(self, request: Request) -> list[bool]:
         status = request.res.get("status")
         response = request.res.get("response", {})
+        if not isinstance(response, dict):
+            await self._log.critical(f"{response}")
+            return [False] * len(request.actions)
         request_type = response.get("type")
         data = response.get("data", {})
+        if not isinstance(data, dict):
+            await self._log.critical(f"{data}")
+            return [False] * len(request.actions)
         statuses = data.get("statuses", [])
         if not (status == "ok" and request_type and statuses):
             await self._log.critical(f"{request.res}")
@@ -119,7 +125,8 @@ class Executor:
                         await self._log.debug(f"executed, qsize={self.requests.qsize()}")
                         await asyncio.sleep(self.COOLDOWN)
                 except Exception as e:
-                    await self._log.error(f"{e}")
+                    tb = traceback.format_exc()
+                    await self._log.error(f"{tb}, {e}, {request.res}")
                 finally:
                     self.requests.task_done()
         except asyncio.CancelledError:
