@@ -38,11 +38,11 @@ class EnveloppeHIP3: # place orders grid each separed with delta
         self.MAKER_FEES = 0.00003 # 0.003%
         self.TAKER_FEES = 0.00009 # 0.009%
         self.SPREAD_MIN = 0.05    # x0.05
-        self.SPREAD_MAX = 7       # x7
-        self.LEVELS = 5
-        self.CAP_VALUE = 0.95
+        self.SPREAD_MAX = 10      # x7
+        self.LEVELS = 8
+        self.CAP_VALUE = 0.90
         self.MIN_VALUE = 10.5
-        self.LEVERAGE = 5
+        self.LEVERAGE = 10
         self.POLL_DELAY = 10.1
         self.THRESHOLD = 0.0002   # 0.02%
         self.TIMEFRAME = "1m"
@@ -114,18 +114,29 @@ class EnveloppeHIP3: # place orders grid each separed with delta
             sz = longable / len(bids)
             for i, b in enumerate(bids):
                 px = self.bid_px(self.enveloppe.bids[i], mid)
-                if px and not ((sz * (px or 0) < self.MIN_VALUE) or (abs(px - float(b["limitPx"])) / float(b["limitPx"]) < self.THRESHOLD)):
-                    modifies.append(get_modify(b, self.instrument, sz, px, "Alo"))
+                modified = get_modify(b, self.instrument, sz, px or 0, "Alo")
+                order = modified.get("order", {})
+                p, s = float(order.get("p", 0)), float(order.get("s", 0))
+                value = p * s
+                if (value > self.MIN_VALUE):
+                    modifies.append(modified)
         if asks and shortable > 0:
             sz = shortable / len(asks)
             for i, a in enumerate(reversed(asks)):
                 px = self.ask_px(self.enveloppe.asks[self.LEVELS - i - 1], mid)
-                if px and not ((sz * (px or 0) < self.MIN_VALUE) or (abs(px - float(a["limitPx"])) / float(a["limitPx"]) < self.THRESHOLD)):
-                    modifies.append(get_modify(a, self.instrument, sz, px, "Alo"))
+                modified = get_modify(a, self.instrument, sz, px or 0, "Alo")
+                order = modified.get("order", {})
+                p, s = float(order.get("p", 0)), float(order.get("s", 0))
+                value = p * s
+                if (value > self.MIN_VALUE):
+                    modifies.append(modified)
         if modifies:
             await self.executor.batch_modify(modifies)
             self.last_sma = self.market.sma_close()
             self.modified += 1
+        else:
+            await self._log.debug("passing", styles="YELLOW")
+            self.passed += 1
 
     async def place(self, bids_px: list[float], asks_px: list[float]): # both bids and asks in ascending order
         position = self.account.positions.get(self.instrument.coin)
