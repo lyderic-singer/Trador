@@ -99,7 +99,7 @@ class Executor:
             executed, cpt = [False] * len(request.actions), 0
             await self._log.warning(f"unknown method: {request_type} | {request.res}")
         if len(request.actions) > cpt:
-            await self._log.warning(f"{len(request.actions) - cpt} {request.expected_type} not executed")
+            await self._log.warning(f"{len(request.actions) - cpt}/{len(request.actions)} {request.expected_type} not executed")
         if len(request.actions) != len(executed):
             await self._log.critical(f"{request.expected_type} request returned {len(executed)} while expecting {len(request.actions)}")
         return executed

@@ -56,7 +56,7 @@ class Message:
         return f"[{self.format_date()}] [{self.level.value}] [{self.context}] {self.text}"
 
     def format_tg(self) -> str:
-        emoji = {'DEBUG': '🔧', 'INFO': 'ℹ️', 'WARNING': '⚠️', 'ERROR': '❌', 'CRITICAL': '🔥', 'SUCCESS': '✅'}.get(self.level.value, '📌')
+        emoji = {'DEBUG': '🔧', 'INFO': 'ℹ️', 'WARNING': '⚠️', 'ERROR': '❌', 'CRITICAL': '🔥🔥🔥🔥🔥🔥', 'SUCCESS': '✅'}.get(self.level.value, '📌')
         return f"{emoji} [{self.context}] {self.text}"
 
 class Logger():
