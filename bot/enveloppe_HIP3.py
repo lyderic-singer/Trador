@@ -157,15 +157,24 @@ class EnveloppeHIP3: # place orders grid each separed with delta
         new_bids: list[Order] = []
         new_asks: list[Order] = []
         for px in new_bids_px:
-            if px and mid and px < mid and self.MIN_VALUE <= px * sz_bid: # account real size
-                new_bids.append(get_order(self.instrument, True, sz_bid, px, {"limit": {"tif": "Alo"}}))
+            order = get_order(self.instrument, True, sz_bid, px, {"limit": {"tif": "Alo"}})
+            p, s = float(order.get("p", 0)), float(order.get("s", 0))
+            value = p * s
+            if px and mid and px < mid and self.MIN_VALUE < value:
+                new_bids.append(order)
         for px in new_asks_px:
-            if px and mid and px > mid and self.MIN_VALUE < px * sz_bid:
-                new_asks.append(get_order(self.instrument, False, sz_ask, px, {"limit": {"tif": "Alo"}}))
+            order = get_order(self.instrument, False, sz_ask, px, {"limit": {"tif": "Alo"}})
+            p, s = float(order.get("p", 0)), float(order.get("s", 0))
+            value = p * s
+            if px and mid and px > mid and self.MIN_VALUE < value:
+                new_asks.append(order)
         orders: list[Order] = new_bids + new_asks
         if orders:
             await self.executor.batch_order(orders)
             self.placed += 1
+        else:
+            await self._log.debug("passing", styles="ORANGE")
+            self.passed += 1
 
     async def run(self):
         try:
