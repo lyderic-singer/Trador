@@ -30,11 +30,11 @@ class Grid:
         raw_ask =  high + close - 2 * low
         offset_bid = self.width_min * raw_bid
         offset_ask = self.width_min * raw_ask
-        if self.width_min * raw_bid / sma > self.spread_max:
+        if self.width_max * raw_bid / sma > self.spread_max:
             delta_bid = self.width_range * raw_bid / self.levels
         else:
             delta_bid = (self.spread_max * sma - offset_bid) / self.levels
-        if self.width_min * raw_ask / sma > self.spread_max:
+        if self.width_max * raw_ask / sma > self.spread_max:
             delta_ask = self.width_range * raw_ask / self.levels
         else:
             delta_ask = (self.spread_max * sma - offset_ask) / self.levels
