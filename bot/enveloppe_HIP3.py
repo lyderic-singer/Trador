@@ -1,4 +1,5 @@
 import asyncio
+from asyncio.windows_events import INFINITE
 from core.HL.utils.functions import cancel, get_order, get_modify, closests
 from bot.market import MarketHL
 from bot.account import AccountPerpDexHL
@@ -47,7 +48,7 @@ class EnveloppeHIP3: # place orders grid each separed with delta
         self.TAKER_FEES = 0.00009 # 0.009%
         self.WIDTH_MIN = 0.05     # x0.05
         self.WIDTH_MAX = 13       # x13
-        self.SPREAD_MAX = 0.0002  # 0.02%
+        self.SPREAD_MAX = 0.002   # 0.2%
         self.LEVELS = 8
         self.CAP_VALUE = 0.90
         self.MIN_VALUE = 10.5
@@ -127,7 +128,7 @@ class EnveloppeHIP3: # place orders grid each separed with delta
                 order = modified.get("order", {})
                 p, s = float(order.get("p", 0)), float(order.get("s", 0))
                 value = p * s
-                if (value > self.MIN_VALUE) and (p <= (self.market.best_bid or 0)):
+                if self.market.best_ask and (value > self.MIN_VALUE) and (p < self.market.best_ask):
                     modifies.append(modified)
         if asks and shortable > 0:
             sz = shortable / len(asks)
@@ -137,7 +138,7 @@ class EnveloppeHIP3: # place orders grid each separed with delta
                 order = modified.get("order", {})
                 p, s = float(order.get("p", 0)), float(order.get("s", 0))
                 value = p * s
-                if (value > self.MIN_VALUE) and p >= (self.market.best_ask or 0):
+                if self.market.best_bid and (value > self.MIN_VALUE) and (p > self.market.best_bid):
                     modifies.append(modified)
         if modifies:
             await self.executor.batch_modify(modifies)
@@ -169,13 +170,13 @@ class EnveloppeHIP3: # place orders grid each separed with delta
             order = get_order(self.instrument, True, sz_bid, px, {"limit": {"tif": "Alo"}})
             p, s = float(order.get("p", 0)), float(order.get("s", 0))
             value = p * s
-            if (value > self.MIN_VALUE) and (p <= (self.market.best_bid or 0)):
+            if self.market.best_ask and (value > self.MIN_VALUE) and (p < self.market.best_ask):
                 new_bids.append(order)
         for px in new_asks_px:
             order = get_order(self.instrument, False, sz_ask, px, {"limit": {"tif": "Alo"}})
             p, s = float(order.get("p", 0)), float(order.get("s", 0))
             value = p * s
-            if (value > self.MIN_VALUE) and p >= (self.market.best_ask or 0):
+            if self.market.best_bid and (value > self.MIN_VALUE) and (p > self.market.best_bid):
                 new_asks.append(order)
         orders: list[Order] = new_bids + new_asks
         if orders:
