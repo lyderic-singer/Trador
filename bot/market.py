@@ -39,6 +39,11 @@ class MarketHL:
         self.sum_highs = 0
         self.last_lows = deque(maxlen=self.window - 1)
         self.sum_lows = 0
+        # ==== ema ====
+        self.alpha = 2 / (self.window + 1)
+        self.ema_closes = None
+        self.ema_highs = None
+        self.ema_lows = None
 
     async def start(self):
         if self.running:
@@ -60,7 +65,9 @@ class MarketHL:
             self.sum_highs += high
             self.sum_lows += low
         mid = await self.hl.info.price(self.instrument.coin, self.instrument.dex)
+        n = len(candles)
         self.mid, self.high, self.low = mid, mid, mid
+        self.ema_closes, self.ema_highs, self.ema_lows = self.sum_closes / n, self.sum_highs / n, self.sum_lows / n
         last_candle = candles[-1]["T"] / 1000
         next_candle = last_candle + self.delay
         initial_delay = next_candle - time.time()
@@ -113,12 +120,15 @@ class MarketHL:
         try:
             await asyncio.sleep(initial_delay)
             while self.running:
-                if self.mid is not None:
+                if self.mid and self.ema_closes:
+                    self.ema_closes = self.alpha * self.mid + (1 - self.alpha) * self.ema_closes
                     self.sum_closes = self.update(self.last_closes, self.sum_closes, self.mid)
-                if self.high is not None:
+                if self.high and self.ema_highs:
+                    self.ema_highs = self.alpha * self.high + (1 - self.alpha) * self.ema_highs
                     self.sum_highs = self.update(self.last_highs, self.sum_highs, self.high)
                     self.high = self.mid
-                if self.low is not None:
+                if self.low and self.ema_lows:
+                    self.ema_lows = self.alpha * self.low + (1 - self.alpha) * self.ema_lows
                     self.sum_lows = self.update(self.last_lows, self.sum_lows, self.low)
                     self.low = self.mid
                 await asyncio.sleep(self.delay)
