@@ -127,7 +127,7 @@ class EnveloppeHIP3: # place orders grid each separed with delta
                 order = modified.get("order", {})
                 p, s = float(order.get("p", 0)), float(order.get("s", 0))
                 value = p * s
-                if (value > self.MIN_VALUE):
+                if (value > self.MIN_VALUE) and (p <= (self.market.best_bid or 0)):
                     modifies.append(modified)
         if asks and shortable > 0:
             sz = shortable / len(asks)
@@ -137,7 +137,7 @@ class EnveloppeHIP3: # place orders grid each separed with delta
                 order = modified.get("order", {})
                 p, s = float(order.get("p", 0)), float(order.get("s", 0))
                 value = p * s
-                if (value > self.MIN_VALUE):
+                if (value > self.MIN_VALUE) and p >= (self.market.best_ask or 0):
                     modifies.append(modified)
         if modifies:
             await self.executor.batch_modify(modifies)
@@ -169,13 +169,13 @@ class EnveloppeHIP3: # place orders grid each separed with delta
             order = get_order(self.instrument, True, sz_bid, px, {"limit": {"tif": "Alo"}})
             p, s = float(order.get("p", 0)), float(order.get("s", 0))
             value = p * s
-            if px and mid and px < mid and self.MIN_VALUE < value:
+            if (value > self.MIN_VALUE) and (p <= (self.market.best_bid or 0)):
                 new_bids.append(order)
         for px in new_asks_px:
             order = get_order(self.instrument, False, sz_ask, px, {"limit": {"tif": "Alo"}})
             p, s = float(order.get("p", 0)), float(order.get("s", 0))
             value = p * s
-            if px and mid and px > mid and self.MIN_VALUE < value:
+            if (value > self.MIN_VALUE) and p >= (self.market.best_ask or 0):
                 new_asks.append(order)
         orders: list[Order] = new_bids + new_asks
         if orders:
