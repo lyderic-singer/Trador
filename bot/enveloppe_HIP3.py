@@ -7,12 +7,13 @@ from core.HL.utils.types import Modify, Order
 from log.logger import Logger
 
 class Grid:
-    def __init__(self, market: MarketHL, levels: int, width_min: float, width_max: float):
+    def __init__(self, market: MarketHL, levels: int, width_min: float, width_max: float, spread_max: float):
         self.running = False
         self.market = market
         self.levels = levels
         self.width_min = width_min
         self.width_max = width_max
+        self.spread_max = spread_max
         self.width_range = width_max - width_min
         self.bids = []
         self.asks = []
@@ -28,8 +29,14 @@ class Grid:
         raw_ask =  high + close - 2 * low
         offset_bid = self.width_min * raw_bid
         offset_ask = self.width_min * raw_ask
-        delta_bid = self.width_range * raw_bid / self.levels
-        delta_ask = self.width_range * raw_ask / self.levels
+        if self.width_min * raw_bid / sma > self.spread_max:
+            delta_bid = self.width_range * raw_bid / self.levels
+        else:
+            delta_bid = (self.spread_max * sma - offset_bid) / self.levels
+        if self.width_min * raw_ask / sma > self.spread_max:
+            delta_ask = self.width_range * raw_ask / self.levels
+        else:
+            delta_ask = (self.spread_max * sma - offset_ask) / self.levels
         self.bids = [sma - offset_bid - (delta_bid * i) for i in range(self.levels -1, -1, -1)] # ascending
         self.asks = [sma + offset_ask + (delta_ask * i) for i in range(self.levels)] # ascending
 
@@ -64,7 +71,7 @@ class EnveloppeHIP3: # place orders grid each separed with delta
         self.executor = Executor(hl)
         self.market = MarketHL(self.instrument, hl, self.WINDOW, self.TIMEFRAME)
         self.account = AccountPerpDexHL(self.dex, [self.instrument], hl)
-        self.grid = Grid(self.market, self.LEVELS, self.WIDTH_MIN, self.WIDTH_MAX)
+        self.grid = Grid(self.market, self.LEVELS, self.WIDTH_MIN, self.WIDTH_MAX, self.SPREAD_MAX)
 
     async def start(self):
         if self.running:
