@@ -6,39 +6,41 @@ from bot.executor import Executor
 from core.HL.utils.types import Modify, Order
 from log.logger import Logger
 
-class Enveloppe:
-    def __init__(self, market: MarketHL, levels: int, spread_min: float, spread_max: float):
+class Grid:
+    def __init__(self, market: MarketHL, levels: int, width_min: float, width_max: float):
         self.running = False
         self.market = market
         self.levels = levels
-        self.spread_min = spread_min
-        self.spread_max = spread_max
-        self.range = spread_max - spread_min
+        self.width_min = width_min
+        self.width_max = width_max
+        self.width_range = width_max - width_min
         self.bids = []
         self.asks = []
 
     def update(self):
         if not self.running:
             raise ValueError("Must start before request deltas")
-        close = self.market.sma_close()
-        high = self.market.sma_high()
-        low = self.market.sma_low()
+        sma = self.market.sma_close()
+        close = self.market.ema_close()
+        high = self.market.ema_high()
+        low = self.market.ema_low()
         raw_bid = 2 * high - low - close
         raw_ask =  high + close - 2 * low
-        delta_bid = self.range * raw_bid / self.levels
-        delta_ask = self.range * raw_ask / self.levels
-        offset_bid = self.spread_min * raw_bid
-        offset_ask = self.spread_min * raw_ask
-        self.bids = [close - offset_bid - (delta_bid * i) for i in range(self.levels -1, -1, -1)] # ascending
-        self.asks = [close + offset_ask + (delta_ask * i) for i in range(self.levels)] # ascending
+        offset_bid = self.width_min * raw_bid
+        offset_ask = self.width_min * raw_ask
+        delta_bid = self.width_range * raw_bid / self.levels
+        delta_ask = self.width_range * raw_ask / self.levels
+        self.bids = [sma - offset_bid - (delta_bid * i) for i in range(self.levels -1, -1, -1)] # ascending
+        self.asks = [sma + offset_ask + (delta_ask * i) for i in range(self.levels)] # ascending
 
 class EnveloppeHIP3: # place orders grid each separed with delta
     def __init__(self, x: str | int, hl):
         # ==== CONSTANTS ====
         self.MAKER_FEES = 0.00003 # 0.003%
         self.TAKER_FEES = 0.00009 # 0.009%
-        self.SPREAD_MIN = 0.05    # x0.05
-        self.SPREAD_MAX = 13      # x13
+        self.WIDTH_MIN = 0.05     # x0.05
+        self.WIDTH_MAX = 13       # x13
+        self.SPREAD_MAX = 0.0002  # 0.02%
         self.LEVELS = 8
         self.CAP_VALUE = 0.90
         self.MIN_VALUE = 10.5
@@ -62,13 +64,13 @@ class EnveloppeHIP3: # place orders grid each separed with delta
         self.executor = Executor(hl)
         self.market = MarketHL(self.instrument, hl, self.WINDOW, self.TIMEFRAME)
         self.account = AccountPerpDexHL(self.dex, [self.instrument], hl)
-        self.enveloppe = Enveloppe(self.market, self.LEVELS, self.SPREAD_MIN, self.SPREAD_MAX)
+        self.grid = Grid(self.market, self.LEVELS, self.WIDTH_MIN, self.WIDTH_MAX)
 
     async def start(self):
         if self.running:
             return await self._log.info("already started")
         await self.market.start()
-        self.enveloppe.running = True
+        self.grid.running = True
         await self.account.start()
         await self.executor.start()
         self.running = True
@@ -104,7 +106,7 @@ class EnveloppeHIP3: # place orders grid each separed with delta
         mid = self.market.mid
         if not mid:
             return await self._log.error("mid not inited")
-        self.enveloppe.update()
+        self.grid.update()
         longable = self.CAP_VALUE * (position.longable + bids_value) / mid
         shortable = self.CAP_VALUE * (position.shortable + asks_value) / mid
         if longable <= 0 and shortable <= 0:
@@ -113,7 +115,7 @@ class EnveloppeHIP3: # place orders grid each separed with delta
         if bids and longable > 0:
             sz = longable / len(bids)
             for i, b in enumerate(bids):
-                px = self.bid_px(self.enveloppe.bids[i], mid)
+                px = self.bid_px(self.grid.bids[i], mid)
                 modified = get_modify(b, self.instrument, sz, px or 0, "Alo")
                 order = modified.get("order", {})
                 p, s = float(order.get("p", 0)), float(order.get("s", 0))
@@ -123,7 +125,7 @@ class EnveloppeHIP3: # place orders grid each separed with delta
         if asks and shortable > 0:
             sz = shortable / len(asks)
             for i, a in enumerate(reversed(asks)):
-                px = self.ask_px(self.enveloppe.asks[self.LEVELS - i - 1], mid)
+                px = self.ask_px(self.grid.asks[self.LEVELS - i - 1], mid)
                 modified = get_modify(a, self.instrument, sz, px or 0, "Alo")
                 order = modified.get("order", {})
                 p, s = float(order.get("p", 0)), float(order.get("s", 0))
@@ -145,13 +147,13 @@ class EnveloppeHIP3: # place orders grid each separed with delta
         mid = self.market.mid
         if not mid:
             return await self._log.error("mid not inited")
-        self.enveloppe.update()
+        self.grid.update()
         longable = self.CAP_VALUE * position.longable / mid
         shortable = self.CAP_VALUE * position.shortable / mid
         if longable <= 0 and shortable <= 0:
             return await self._log.warning("no collateral")
-        new_bids_px = closests(bids_px, self.enveloppe.bids)
-        new_asks_px = closests(asks_px, self.enveloppe.asks)
+        new_bids_px = closests(bids_px, self.grid.bids)
+        new_asks_px = closests(asks_px, self.grid.asks)
         sz_bid = longable / len(new_bids_px) if new_bids_px else 0
         sz_ask = shortable / len(new_asks_px) if new_asks_px else 0
         new_bids: list[Order] = []
