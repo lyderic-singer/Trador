@@ -121,14 +121,14 @@ class MarketHL:
             await asyncio.sleep(initial_delay)
             while self.running:
                 if self.mid and self.ema_closes:
-                    self.ema_closes = self.alpha * self.mid + (1 - self.alpha) * self.ema_closes
+                    self.ema_closes = self.ema_close()
                     self.sum_closes = self.update(self.last_closes, self.sum_closes, self.mid)
                 if self.high and self.ema_highs:
-                    self.ema_highs = self.alpha * self.high + (1 - self.alpha) * self.ema_highs
+                    self.ema_highs = self.ema_high()
                     self.sum_highs = self.update(self.last_highs, self.sum_highs, self.high)
                     self.high = self.mid
                 if self.low and self.ema_lows:
-                    self.ema_lows = self.alpha * self.low + (1 - self.alpha) * self.ema_lows
+                    self.ema_lows = self.ema_low()
                     self.sum_lows = self.update(self.last_lows, self.sum_lows, self.low)
                     self.low = self.mid
                 await asyncio.sleep(self.delay)
@@ -144,6 +144,11 @@ class MarketHL:
         total = sum_values + value
         return total / (len(last_values) + 1)
 
+    def ema(self, ema_values: float | None, value: float | None):
+        if not (ema_values and value):
+            raise ValueError("must start before request ema")
+        return self.alpha * value + (1 - self.alpha) * ema_values
+
     def sma_close(self):
         return self.sma(self.last_closes, self.sum_closes, self.mid)
 
@@ -152,6 +157,15 @@ class MarketHL:
 
     def sma_low(self):
         return self.sma(self.last_lows, self.sum_lows, self.low)
+
+    def ema_close(self):
+        return self.ema(self.ema_closes, self.mid)
+
+    def ema_high(self):
+        return self.ema(self.ema_highs, self.high)
+
+    def ema_low(self):
+        return self.ema(self.ema_lows, self.low)
 
     def __str__(self):
         return (
