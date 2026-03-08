@@ -40,14 +40,6 @@ class Position:
         self.raw = None # rawUsd on hl | margin - positionValue
         self.longable = 0 # maxTradeSzs[0] on hl | sz available to long
         self.shortable = 0 # maxTradeSzs[1] on hl | sz available to short
-    
-    def __str__(self):
-        return (
-            f"{self.instrument.coin}: size={self.size}, entry={self.entry}, "
-            f"value={self.value}, liquidation={self.liquidation}, margin={self.margin}, "
-            f"mode={self.mode}, leverage={self.leverage}, raw={self.raw}, "
-            f"longable={self.longable}, shortable={self.shortable}"
-        )
 
     def update_clearingHouseState(self, position):
         if self.instrument.coin != position["coin"]:
@@ -71,6 +63,14 @@ class Position:
         self.longable = float(availableToTrade[0]) * self.leverage
         self.shortable = float(availableToTrade[1]) * self.leverage
         self.received_asset.set()
+
+    def __str__(self):
+        return (
+            f"{self.instrument.coin}: size={self.size}, entry={self.entry}, "
+            f"value={self.value}, liquidation={self.liquidation}, margin={self.margin}, "
+            f"mode={self.mode}, leverage={self.leverage}, raw={self.raw}, "
+            f"longable={self.longable}, shortable={self.shortable}"
+        )
 
 class AccountPerpDexHL:
     def __init__(self, dex, instruments, hl):

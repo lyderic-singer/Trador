@@ -170,9 +170,7 @@ class MarketHL:
     def __str__(self):
         return (
             f"<MarketHL {self.instrument.coin} | "
-            f"mid={self.mid} | "
-            f"best_bid={self.best_bid} | best_ask={self.best_ask} | spread={self.spread} | "
-            f"sma close={self.sma_close() if self.last_closes else 'N/A'}"
-            f"sma high={self.sma_high() if self.last_highs else 'N/A'}"
-            f"sma low={self.sma_low() if self.last_lows else 'N/A'}>"
-        )
+            f"mid={self.mid} | best_bid={self.best_bid} | best_ask={self.best_ask} | spread={self.spread} | "
+            f"close: SMA={self.sma_close() if self.last_closes else 'N/A'}; EMA={self.ema_closes if self.ema_closes is not None else 'N/A'} | "
+            f"high: SMA={self.sma_high() if self.last_highs else 'N/A'}; EMA={self.ema_highs if self.ema_highs is not None else 'N/A'} | "
+            f"low: SMA={self.sma_low() if self.last_lows else 'N/A'}; EMA={self.ema_lows if self.ema_lows is not None else 'N/A'}>")
