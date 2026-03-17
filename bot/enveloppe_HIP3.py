@@ -53,7 +53,7 @@ class EnveloppeHIP3: # place orders grid each separed with delta
         self.MIN_VALUE = 10.5
         self.LEVERAGE = 10
         self.POLL_DELAY = 10.1
-        self.THRESHOLD = 0.0002   # 0.02%
+        self.THRESHOLD = 0.0001   # 0.01%
         self.TIMEFRAME = "1m"
         self.WINDOW = 9
         # ==== UTILS ====
