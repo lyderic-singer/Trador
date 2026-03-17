@@ -15,7 +15,8 @@ class Request:
         self.expected_type = expected_type
         self.res = {}
         self.completed = asyncio.Event()
-        self.executed = [] # sorted as actions
+        self.executed = []
+        self.error = False
         self.cancelled = False
 
 class Executor:
@@ -73,21 +74,21 @@ class Executor:
                 await self._log.warning(f"cancel unexpected return: {status}")
         return (executed, cpt)
 
-    async def handle(self, request: Request) -> list[bool]:
+    async def handle(self, request: Request) -> tuple[list[bool], bool]:
         status = request.res.get("status")
         response = request.res.get("response", {})
         if not isinstance(response, dict):
             await self._log.critical(f"{response}")
-            return [False] * len(request.actions)
+            return ([False] * len(request.actions), True)
         request_type = response.get("type")
         data = response.get("data", {})
         if not isinstance(data, dict):
             await self._log.critical(f"{data}")
-            return [False] * len(request.actions)
+            return ([False] * len(request.actions), True)
         statuses = data.get("statuses", [])
         if not (status == "ok" and request_type and statuses):
             await self._log.critical(f"{request.res}")
-            return [False] * len(request.actions)
+            return ([False] * len(request.actions), True)
         check_type = "order" if request.expected_type == "modify" else request.expected_type
         if request_type != check_type:
             await self._log.critical(f"{request.expected_type} request returned {request_type}: {request.res}")
@@ -98,11 +99,9 @@ class Executor:
         else:
             executed, cpt = [False] * len(request.actions), 0
             await self._log.warning(f"unknown method: {request_type} | {request.res}")
-        if len(request.actions) > cpt:
-            await self._log.warning(f"{len(request.actions) - cpt}/{len(request.actions)} {request.expected_type} not executed")
         if len(request.actions) != len(executed):
             await self._log.critical(f"{request.expected_type} request returned {len(executed)} while expecting {len(request.actions)}")
-        return executed
+        return (executed, len(request.actions) > cpt)
 
     async def run(self):
         try:
@@ -117,7 +116,7 @@ class Executor:
                     else:
                         request.res = await request.task
                         if isinstance(request.res, dict):
-                            request.executed = await self.handle(request)
+                            request.executed, request.error = await self.handle(request)
                         else:
                             await self._log.error(f"{request.res}")
                         self.last = time.time()
@@ -136,7 +135,7 @@ class Executor:
             await self._log.error(f"{tb}")
         finally: return
 
-    async def execute(self, task, actions, expected_type, timeout=20):
+    async def execute(self, task, actions, expected_type, timeout=20) -> tuple[list[bool], bool]:
         request = Request(task, actions, expected_type)
         await self.requests.put(request)
         await self._log.debug(f"added, qsize={self.requests.qsize()}")
@@ -145,17 +144,17 @@ class Executor:
         except asyncio.TimeoutError:
             request.cancelled = True
             await self._log.critical(f"{expected_type} timed out for {actions}, qsize={self.requests.qsize()}")
-            return [False] * len(actions)
-        return request.executed
+            return ([False] * len(actions), True)
+        return request.executed, request.error
 
-    async def batch_order(self, orders: list[Order]) -> list[bool]:
+    async def batch_order(self, orders: list[Order]) -> tuple[list[bool], bool]:
         task = self.exchange.batch_order(orders)
         return await self.execute(task, orders, "order")
 
-    async def batch_modify(self, modifies: list[Modify]):
+    async def batch_modify(self, modifies: list[Modify]) -> tuple[list[bool], bool]:
         task = self.exchange.batch_modify(modifies)
         return await self.execute(task, modifies, "modify")
 
-    async def batch_cancel(self, cancels: list[Cancel]):
+    async def batch_cancel(self, cancels: list[Cancel]) -> tuple[list[bool], bool]:
         task = self.exchange.batch_cancel(True, cancels)
         return await self.execute(task, cancels, "cancel")
