@@ -46,7 +46,7 @@ class EnveloppeHIP3: # place orders grid each separed with delta
         self.MAKER_FEES = 0.00003 # 0.003%
         self.TAKER_FEES = 0.00009 # 0.009%
         self.WIDTH_MIN = 0.05     # x0.05
-        self.WIDTH_MAX = 13       # x13
+        self.WIDTH_MAX = 8        # x8
         self.SPREAD_MAX = 0.002   # 0.2%
         self.LEVELS = 8
         self.CAP_VALUE = 0.90
@@ -63,6 +63,8 @@ class EnveloppeHIP3: # place orders grid each separed with delta
         self.placed = 0   # nb of place for stat
         self.modified = 0 # nb of modify for stat
         self.passed = 0   # nb of pass for stat
+        self.placed_error = 0 # nb of errors while place for stat
+        self.modified_error = 0 # nb of errors while modify for stat
         self.hl = hl
         self.address = hl.address
         self._log = Logger(self, hl.messenger)
@@ -89,7 +91,7 @@ class EnveloppeHIP3: # place orders grid each separed with delta
         await cancel(self.task)
         await self.market.stop()
         await self.account.stop()
-        await self._log.info(f"{self.placed + self.modified + self.passed} actions: {self.placed} place, {self.modified} modify and {self.passed} pass")
+        await self._log.info(f"{self.placed + self.modified + self.passed} actions: {self.placed - self.placed_error}/{self.placed} place, {self.modified - self.modified_error}{self.modified} modify and {self.passed} pass")
         await self._log.success("Stopped")
 
     def bid_px(self, px: float, mid: float | None = None) -> float | None:
@@ -140,7 +142,10 @@ class EnveloppeHIP3: # place orders grid each separed with delta
                 if self.market.best_bid and (value > self.MIN_VALUE) and (p > self.market.best_bid):
                     modifies.append(modified)
         if modifies:
-            await self.executor.batch_modify(modifies)
+            executed, error = await self.executor.batch_modify(modifies)
+            if error:
+                self.modified_error += 1
+                await self._log.warning(f"{sum(executed)}/{len(executed)} modifies executed, longable={longable}, shortable={shortable}: {executed}")
             self.last_sma = self.market.sma_close()
             self.modified += 1
         else:
@@ -179,7 +184,10 @@ class EnveloppeHIP3: # place orders grid each separed with delta
                 new_asks.append(order)
         orders: list[Order] = new_bids + new_asks
         if orders:
-            await self.executor.batch_order(orders)
+            executed, error = await self.executor.batch_order(orders)
+            if error:
+                self.placed_error += 1
+                await self._log.warning(f"{sum(executed)}/{len(executed)} orders executed, longable={longable}, shortable={shortable}: {executed}")
             self.placed += 1
         else:
             await self._log.debug("passing", styles="ORANGE")
