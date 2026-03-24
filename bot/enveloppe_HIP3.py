@@ -91,7 +91,7 @@ class EnveloppeHIP3: # place orders grid each separed with delta
         await cancel(self.task)
         await self.market.stop()
         await self.account.stop()
-        await self._log.info(f"{self.placed + self.modified + self.passed} actions: {self.placed - self.placed_error}/{self.placed} place, {self.modified - self.modified_error}{self.modified} modify and {self.passed} pass")
+        await self._log.info(f"{self.placed + self.modified + self.passed} actions: {self.placed - self.placed_error}/{self.placed} place, {self.modified - self.modified_error}/{self.modified} modify and {self.passed} pass")
         await self._log.success("Stopped")
 
     def bid_px(self, px: float, mid: float | None = None) -> float | None:
