@@ -82,6 +82,7 @@ class Exchange:
         return await self.post(cancel_action, signature, timestamp)
 
     async def transfer(self, token: str, amount: float, source_dex: str, destination_dex: str, destination_address: str, from_subaccount: str = "") -> Any:
+        # use token: "USDC:0x6d1e7cde53ba9467b783cb7c530ce054" for USDC on Mainnet
         timestamp = timestamp_ms()
         action = get_transfer(token, amount, source_dex, destination_dex, destination_address, nonce=timestamp, from_subaccount=from_subaccount, mainnet= self.url == MAINNET_API_URL)
         signature = sign_send_asset_action(self.wallet, action, self.url == MAINNET_API_URL,)
