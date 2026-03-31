@@ -1,3 +1,4 @@
+import traceback as tb
 from core.HL.api import API
 from core.HL.utils.types import (Any, Meta, Optional, SpotMeta, SpotMetaAndAssetCtxs, Instrument)
 from log.logger import Logger
@@ -36,11 +37,12 @@ class Info:
     
     async def _load_spot(self):
         spot_meta = await self.spot_meta()
+        tokens = {t["index"]: t for t in spot_meta["tokens"]}
         for info in spot_meta["universe"]:
             asset = info["index"] + 10000
             base, quote = info["tokens"]
-            base_info = spot_meta["tokens"][base]
-            quote_info = spot_meta["tokens"][quote]
+            base_info = tokens[base]
+            quote_info = tokens[quote]
             self._register(f'{base_info["name"]}/{quote_info["name"]}', info['name'], asset, base_info["szDecimals"])
 
     async def start(self, dexs=None):
@@ -54,6 +56,7 @@ class Info:
                     await self._load_perp(dex, offset)
             await self._log.success("fetched datas")
         except Exception as e:
+            tb.print_exc()
             await self._log.error(f"{e}")
             raise
 
