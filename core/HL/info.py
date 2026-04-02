@@ -60,11 +60,36 @@ class Info:
             await self._log.error(f"{e}")
             raise
 
+    async def all_perp_metas(self) -> Any:
+        return await self.post({"type": "allPerpMetas"})
+
+    async def spot_meta(self) -> SpotMeta:
+        return await self.post({"type": "spotMeta"})
+
+    async def outcome_meta(self) -> Any:
+        return await self.post({"type": "outcomeMeta"})
+
+    async def meta(self, dex: str = "", x: str | int | None = None) -> Meta:
+        payload = {"type": "meta", "dex": dex}
+        if x:
+            coin = self.instrument(x).coin
+            payload["coin"] = coin
+        return await self.post(payload)
+
+    async def meta_and_asset_ctxs(self) -> Any:
+        return await self.post({"type": "metaAndAssetCtxs"})
+
+    async def spot_meta_and_asset_ctxs(self) -> SpotMetaAndAssetCtxs:
+        return await self.post({"type": "spotMetaAndAssetCtxs"})
+
     async def clearing_house_state(self, address: str, dex: str = "") -> Any:
         return await self.post({"type": "clearinghouseState", "user": address, "dex": dex})
 
     async def spot_clearing_house_state(self, address: str) -> Any:
         return await self.post({"type": "spotClearinghouseState", "user": address})
+
+    async def perp_dexs(self) -> Any:
+        return await self.post({"type": "perpDexs"})
 
     async def open_orders(self, address: str, dex: str = "") -> Any:
         return await self.post({"type": "openOrders", "user": address, "dex": dex})
@@ -80,25 +105,6 @@ class Info:
 
     async def user_fills_by_time(self, address: str, start_time: int, end_time: Optional[int] = None) -> Any:
         return await self.post({"type": "userFillsByTime", "user": address, "startTime": start_time, "endTime": end_time})
-
-    async def meta(self, dex: str = "", x: str | int | None = None) -> Meta:
-        payload = {"type": "meta", "dex": dex}
-        if x:
-            coin = self.instrument(x).coin
-            payload["coin"] = coin
-        return await self.post(payload)
-
-    async def meta_and_asset_ctxs(self) -> Any:
-        return await self.post({"type": "metaAndAssetCtxs"})
-
-    async def perp_dexs(self) -> Any:
-        return await self.post({"type": "perpDexs"})
-
-    async def spot_meta(self) -> SpotMeta:
-        return await self.post({"type": "spotMeta"})
-
-    async def spot_meta_and_asset_ctxs(self) -> SpotMetaAndAssetCtxs:
-        return await self.post({"type": "spotMetaAndAssetCtxs"})
     
     async def price(self, x: str | int, dex = ""):
         prices = await self.all_mids(dex)
