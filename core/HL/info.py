@@ -16,7 +16,7 @@ class Info:
     async def post(self, payload):
         return await self.api.post("/info", payload)
     
-    def _register(self, name: str, coin: str, asset: int, szDecimals: int):
+    def register(self, name: str, coin: str, asset: int, szDecimals: int):
         inst = Instrument(name, coin, asset, szDecimals)
         self.instruments_dict[asset] = inst
         self.instruments_table[asset] = asset
@@ -30,12 +30,15 @@ class Info:
             raise ValueError(f"The ID provided ({x}) does not correspond to any hyperliquid market")
         return instrument
     
-    async def _load_perp(self, dex: str, offset: int):
-        meta = await self.meta(dex=dex)
-        for i, info in enumerate(meta["universe"]):
-            self._register(info["name"], info["name"], offset + i, info["szDecimals"])
+    async def load_perp(self):
+        perp_meta = await self.all_perp_metas()
+        for perp_dex_index, infos in enumerate(perp_meta):
+            for index_in_meta, token in enumerate(infos["universe"]):
+                offset = 100000 if perp_dex_index > 0 else 0
+                asset = offset + perp_dex_index * 10000 + index_in_meta
+                self.register(token["name"], token["name"], asset, token["szDecimals"])
     
-    async def _load_spot(self):
+    async def load_spot(self):
         spot_meta = await self.spot_meta()
         tokens = {t["index"]: t for t in spot_meta["tokens"]}
         for info in spot_meta["universe"]:
@@ -43,18 +46,12 @@ class Info:
             base, quote = info["tokens"]
             base_info = tokens[base]
             quote_info = tokens[quote]
-            self._register(f'{base_info["name"]}/{quote_info["name"]}', info['name'], asset, base_info["szDecimals"])
+            self.register(f'{base_info["name"]}/{quote_info["name"]}', info['name'], asset, base_info["szDecimals"])
 
-    async def start(self, dexs=None):
+    async def start(self):
         try:
-            await self._load_spot()
-            await self._load_perp("", 0)
-            perp_dexs = await self.perp_dexs()
-            for i, dex in enumerate([d["name"] for d in perp_dexs[1:]]):
-                offset = 110000 + i * 10000
-                if (dexs is None) or (dexs and (dex in dexs)):
-                    await self._load_perp(dex, offset)
-            await self._log.success("fetched datas")
+            await self.load_spot()
+            await self.load_perp()
         except Exception as e:
             tb.print_exc()
             await self._log.error(f"{e}")
