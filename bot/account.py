@@ -1,5 +1,7 @@
 from time import time
 import asyncio
+from core.HL.hl import HL
+from core.HL.utils.types import Instrument
 from log.logger import Logger
 from collections import defaultdict, deque
 
@@ -73,7 +75,7 @@ class Position:
         )
 
 class AccountPerpDexHL:
-    def __init__(self, dex, instruments, hl):
+    def __init__(self, dex: str, instruments: list[Instrument], hl: HL, events: asyncio.Queue):
         if [dex] != list({i.dex for i in instruments}):
             raise ValueError(f"several provided instrument in {[i.name for i in instruments]} doesn't belong to {dex if dex else '""'}")
         self.dex = dex
@@ -90,6 +92,8 @@ class AccountPerpDexHL:
         # ==== activeAssetData ====
         self.positions: dict[str, Position] = {i.coin: Position(i) for i in instruments}
         self.last_asset = 0
+        # ==== orderUpdates ====
+        self.events = events
 
     async def start(self):
         if self.running:
@@ -137,6 +141,14 @@ class AccountPerpDexHL:
             position = self.positions[coin]
             position.update_activeAssetData(msg)
             self.last_asset = time()
+        except Exception as e:
+            await self._log.error(f"{e}, {msg}")
+
+    async def on_orderUpdates(self, msg):
+        try:
+            status = msg.get("status")
+            if status == "filled":
+                await self.events.put(msg)
         except Exception as e:
             await self._log.error(f"{e}, {msg}")
 
