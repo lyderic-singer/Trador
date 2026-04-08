@@ -101,6 +101,8 @@ class AccountPerpDexHL:
         subscriptions = []
         subscriptions.append(self.hl.websocket.clearinghouse_state(self.on_clearinghouseState, self.hl.address, self.dex))
         subscriptions += [self.hl.websocket.active_asset_data(self.on_activeAssetData, self.hl.address, i.coin) for i in self.instruments]
+        if self.events:
+            subscriptions.append(self.hl.websocket.order_updates(self.on_orderUpdates, self.hl.address))
         await asyncio.gather(*subscriptions)
         await self.received_state.wait()
         await asyncio.gather(*[p.received_asset.wait() for p in self.positions.values()])
@@ -147,7 +149,7 @@ class AccountPerpDexHL:
     async def on_orderUpdates(self, msg):
         try:
             status = msg.get("status")
-            if status == "filled":
+            if self.events and status == "filled":
                 await self.events.put(msg)
         except Exception as e:
             await self._log.error(f"{e}, {msg}")
