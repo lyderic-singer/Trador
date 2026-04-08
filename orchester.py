@@ -10,7 +10,7 @@ from core.HL.hl import HL
 class Orchester:
     def __init__(self, mainnet):
         self.messenger = Messenger("log/logs.txt")
-        self.bot = None
+        self.strategy = None
         self.telegram = Telegram(self.messenger)
         self.session = Session(self.messenger)
         self._log = Logger(self, self.messenger)
@@ -37,8 +37,8 @@ class Orchester:
         try:
             await self._log.info("Stopping", send_tg= True)
             self.running = False
-            if self.bot:
-                await call(self.bot.stop)
+            if self.strategy:
+                await call(self.strategy.stop)
             await self.hl.stop()
             await self.session.stop()
             await self._log.success("Stopped", send_tg=True)
@@ -47,12 +47,12 @@ class Orchester:
         except Exception:
             await self._log.error("Stop failed")
 
-    async def set_strategy(self, bot):
+    async def set_strategy(self, strategy):
         if not self.running:
             raise ValueError("must init before set bot")
         try:
-            self.bot = bot
-            await bot.start()
+            self.strategy = strategy
+            await strategy.start()
         except Exception as e:
             await self._log.error(f"{e}")
 
