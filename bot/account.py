@@ -75,7 +75,7 @@ class Position:
         )
 
 class AccountPerpDexHL:
-    def __init__(self, dex: str, instruments: list[Instrument], hl: HL, events: asyncio.Queue | None  = None):
+    def __init__(self, dex: str, instruments: list[Instrument], hl: HL, events: asyncio.Queue | None = None):
         if [dex] != list({i.dex for i in instruments}):
             raise ValueError(f"several provided instrument in {[i.name for i in instruments]} doesn't belong to {dex if dex else '""'}")
         self.dex = dex
