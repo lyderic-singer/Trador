@@ -100,11 +100,14 @@ def get_cancel(instrument,  oid: int | None = None, cloid = None) -> Cancel:
     else:
         return {"asset": instrument.asset, "cloid": cloid}
 
-def get_modify(order, instrument, new_size: float, new_price: float, tif: TIF) -> Modify:
-    execution_type: ExecutionType = {"limit": {"tif": tif}}
+def get_modify(order, instrument, new_size: float | None = None, new_price: float | None = None, tif: TIF | None = None, new_order: Order | None = None) -> Modify:
+    if (new_order is None) and ((new_price is None) or (new_size is None) or (tif is None)):
+        raise ValueError("new_order or (new_price and new_size and tif) must be provided")
+    if (not new_order) and new_size and new_price and tif:
+        new_order = get_order(instrument, order['side'] == 'B', new_size, new_price, {"limit": {"tif": tif}})
     modify: Modify = {
         "oid": order['oid'],
-        "order": get_order(instrument, order['side'] == 'B', new_size, new_price, execution_type)
+        "order": new_order
     }
     return modify
 
