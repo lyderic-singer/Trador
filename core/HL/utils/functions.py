@@ -3,7 +3,7 @@ import asyncio
 import json
 from typing import Any
 
-from core.HL.utils.types import TIF, Cancel, ExecutionType, Modify, Order, Transfer
+from core.HL.utils.types import TIF, Cancel, ExecutionType, Instrument, Modify, Order, Transfer
 
 def timestamp_ms() -> int:
     return int(time.time() * 1000)
@@ -100,11 +100,12 @@ def get_cancel(instrument,  oid: int | None = None, cloid = None) -> Cancel:
     else:
         return {"asset": instrument.asset, "cloid": cloid}
 
-def get_modify(order, instrument, new_size: float | None = None, new_price: float | None = None, tif: TIF | None = None, new_order: Order | None = None) -> Modify:
-    if (new_order is None) and ((new_price is None) or (new_size is None) or (tif is None)):
-        raise ValueError("new_order or (new_price and new_size and tif) must be provided")
-    if (not new_order) and new_size and new_price and tif:
-        new_order = get_order(instrument, order['side'] == 'B', new_size, new_price, {"limit": {"tif": tif}})
+def get_modify(order, instrument: Instrument | None = None, new_size: float | None = None, new_price: float | None = None, tif: TIF | None = None, new_order: Order | None = None) -> Modify:
+    if (new_order is None):
+        if ((new_price is None) or (new_size is None) or (tif is None) or (instrument is None)):
+            raise ValueError("new_order or (new_price and new_size and tif and instrument) must be provided")
+        else:
+            new_order = get_order(instrument, order['side'] == 'B', new_size, new_price, {"limit": {"tif": tif}})
     modify: Modify = {
         "oid": order['oid'],
         "order": new_order
