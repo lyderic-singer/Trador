@@ -75,7 +75,7 @@ class Position:
         )
 
 class AccountPerpDexHL:
-    def __init__(self, dex: str, instruments: list[Instrument], hl: HL, events: asyncio.Queue | None = None):
+    def __init__(self, dex: str, instruments: list[Instrument], hl: HL):
         if [dex] != list({i.dex for i in instruments}):
             raise ValueError(f"several provided instrument in {[i.name for i in instruments]} doesn't belong to {dex if dex else '""'}")
         self.dex = dex
@@ -92,8 +92,6 @@ class AccountPerpDexHL:
         # ==== activeAssetData ====
         self.positions: dict[str, Position] = {i.coin: Position(i) for i in instruments}
         self.last_asset = 0
-        # ==== orderUpdates ====
-        self.events = events
 
     async def start(self):
         if self.running:
@@ -101,8 +99,6 @@ class AccountPerpDexHL:
         subscriptions = []
         subscriptions.append(self.hl.websocket.clearinghouse_state(self.on_clearinghouseState, self.hl.address, self.dex))
         subscriptions += [self.hl.websocket.active_asset_data(self.on_activeAssetData, self.hl.address, i.coin) for i in self.instruments]
-        if self.events:
-            subscriptions.append(self.hl.websocket.order_updates(self.on_orderUpdates, self.hl.address))
         await asyncio.gather(*subscriptions)
         await self.received_state.wait()
         await asyncio.gather(*[p.received_asset.wait() for p in self.positions.values()])
@@ -143,14 +139,6 @@ class AccountPerpDexHL:
             position = self.positions[coin]
             position.update_activeAssetData(msg)
             self.last_asset = time()
-        except Exception as e:
-            await self._log.error(f"{e}, {msg}")
-
-    async def on_orderUpdates(self, msg):
-        try:
-            status = msg.get("status")
-            if self.events and status == "filled":
-                await self.events.put(msg)
         except Exception as e:
             await self._log.error(f"{e}, {msg}")
 
