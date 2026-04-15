@@ -106,6 +106,23 @@ class EnveloppeHIP3: # place orders grid each separed with delta
         if mid and px:
             return max(px, (1 + self.MAKER_FEES) * mid)
 
+    async def state(self):
+        orders = await self.hl.info.open_orders(self.address, dex=self.dex)
+        orders.sort(key=lambda x: float(x["limitPx"]))
+        bids, bids_px, bids_value, asks, asks_px, asks_value = [], [], 0, [], [], 0
+        for o in orders:
+            px = float(o["limitPx"])
+            sz = float(o["sz"])
+            if o["side"] == 'B':
+                bids.append(o)
+                bids_px.append(px)
+                bids_value += px * sz
+            else:
+                asks.append(o)
+                asks_px.append(float(o["limitPx"]))
+                asks_value += px * sz
+        return bids, bids_px, bids_value, asks, asks_px, asks_value
+
     async def modify(self, bids: list, bids_value: float, asks: list, asks_value: float): # both bids and asks in ascending order
         if not (bids or asks):
             return await self._log.warning("nothing to modify")
@@ -197,20 +214,7 @@ class EnveloppeHIP3: # place orders grid each separed with delta
         try:
             while self.running:
                 try:
-                    orders = await self.hl.info.open_orders(self.address, dex=self.dex)
-                    orders.sort(key=lambda x: float(x["limitPx"]))
-                    bids, bids_px, bids_value, asks, asks_px, asks_value = [], [], 0, [], [], 0
-                    for o in orders:
-                        px = float(o["limitPx"])
-                        sz = float(o["sz"])
-                        if o["side"] == 'B':
-                            bids.append(o)
-                            bids_px.append(px)
-                            bids_value += px * sz
-                        else:
-                            asks.append(o)
-                            asks_px.append(float(o["limitPx"]))
-                            asks_value += px * sz
+                    bids, bids_px, bids_value, asks, asks_px, asks_value = await self.state()
                     mid = self.market.mid
                     sma = self.market.sma_close()
                     if mid and ((mid > sma and len(bids) < self.LEVELS) or (mid < sma and len(asks) < self.LEVELS)):
