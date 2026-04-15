@@ -124,14 +124,8 @@ class EnveloppeHIP3: # place orders grid each separed with delta
         return bids, bids_px, bids_value, asks, asks_px, asks_value
 
     async def modify(self, bids: list, bids_value: float, asks: list, asks_value: float): # both bids and asks in ascending order
-        if not (bids or asks):
-            return await self._log.warning("nothing to modify")
         position = self.account.positions.get(self.instrument.coin)
-        if position is None:
-            return await self._log.error("position not found in account")
         mid = self.market.mid
-        if not mid:
-            return await self._log.error("mid not inited")
         self.grid.update()
         longable = self.CAP_VALUE * (position.longable + bids_value) / mid
         shortable = self.CAP_VALUE * (position.shortable + asks_value) / mid
@@ -171,11 +165,7 @@ class EnveloppeHIP3: # place orders grid each separed with delta
 
     async def place(self, bids_px: list[float], asks_px: list[float]): # both bids and asks in ascending order
         position = self.account.positions.get(self.instrument.coin)
-        if position is None:
-            return await self._log.error("position not found in account")
         mid = self.market.mid
-        if not mid:
-            return await self._log.error("mid not inited")
         self.grid.update()
         longable = self.CAP_VALUE * position.longable / mid
         shortable = self.CAP_VALUE * position.shortable / mid
