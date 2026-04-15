@@ -36,6 +36,7 @@ class Position:
         self.liquidation = None
         self.margin = None
         self.funding = None # dict {"allTime": "0.0", "sinceOpen": "0.0", "sinceChange": "0.0"}
+        self.pnl = None
         # ==== activeAssetData ====
         self.mode =  None # margin mode: "cross" or "isolated"
         self.leverage = None
@@ -52,6 +53,7 @@ class Position:
         self.liquidation  = float(position["liquidationPx"] or 0)
         self.margin = float(position["marginUsed"])
         self.funding = position["cumFunding"]
+        self.pnl = float(position["unrealizedPnl"])
         
     def update_activeAssetData(self, data):
         if self.instrument.coin != data["coin"]:
@@ -82,6 +84,7 @@ class AccountPerpDexHL:
         self.instruments = instruments
         self.hl = hl
         self._log = Logger(self, hl.messenger)
+        self.pnl: float = 0
         self.running = False
         # ==== clearinghouseState ====
         self.received_state = asyncio.Event()
@@ -122,10 +125,13 @@ class AccountPerpDexHL:
             self.cross.update(clearing_house_state["crossMarginSummary"])
             self.withdrawable = float(clearing_house_state["withdrawable"])
             assetPositions = msg.get("assetPositions", [])
+            pnl = 0
             for assetPosition in assetPositions:
                 position_update = assetPosition["position"]
                 position = self.positions[position_update["coin"]]
                 position.update_clearingHouseState(position_update)
+                pnl += position.pnl if position.pnl else 0
+            self.pnl = pnl
             self.last_state = time()
             self.received_state.set()
         except Exception as e:
