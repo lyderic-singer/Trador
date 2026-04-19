@@ -7,13 +7,13 @@ from log.logger import Logger
 class MarginSummary:
     def __init__(self):
         # accountValue on HL | $ account value
-        self.value: float | None = None
+        self.value: float = 0
         # totalNtlPos on HL | sum(abs(positionValue))
-        self.notional: float | None = None
+        self.notional: float = 0
         # totalRawUsd on HL | sum(margin) - sum(positionValue)
-        self.raw: float | None = None
+        self.raw: float = 0
         # totalMarginUsed on HL | sum(marginUsed)
-        self.used: float | None = None
+        self.used: float = 0
 
     def update(self, margin_summary: dict[str, str]):
         self.value = float(margin_summary["accountValue"])
@@ -39,13 +39,14 @@ class Position:
         self.pnl = 0
         # ==== activeAssetData ====
         self.mode =  None # margin mode: "cross" or "isolated"
-        self.leverage = None
+        self.leverage = 1
         self.raw = None # rawUsd on hl | margin - positionValue
         self.longable = 0 # maxTradeSzs[0] on hl | $ available to long (poorly calculated from hl data: doesn't take into account current orders while their value is under positionValue)
         self.shortable = 0 # maxTradeSzs[1] on hl | $ available to short (poorly calculated from hl data: doesn't take into account current orders while their value is under positionValue)
 
     def update_clearingHouseState(self, position):
-        if position is None:
+        if position is None and self.active:
+            self.active = False
             self.size = 0
             self.entry = None
             self.value = 0
@@ -53,7 +54,7 @@ class Position:
             self.margin = 0
             self.funding = {"allTime": "0.0", "sinceOpen": "0.0", "sinceChange": "0.0"}
             self.pnl = 0
-        else:
+        elif position:
             if self.instrument.coin != position["coin"]:
                 raise ValueError(f"cannot update {self.instrument.coin} with {position["coin"]} data")
             self.size = float(position["szi"])
@@ -70,7 +71,7 @@ class Position:
         l = data["leverage"]
         self.mode = l["type"]
         self.leverage = l["value"]
-        if self.mode == "isolated":
+        if self.mode == "isolated": # be carefull
             self.raw = float(l["rawUsd"])
         availableToTrade = data["availableToTrade"]
         self.longable = float(availableToTrade[0]) * self.leverage
@@ -134,13 +135,20 @@ class AccountPerpDexHL:
             self.cross.update(clearing_house_state["crossMarginSummary"])
             self.withdrawable = float(clearing_house_state["withdrawable"])
             assetPositions = msg.get("assetPositions", [])
-            pnl = 0
+            to_update = set(self.positions)
             for assetPosition in assetPositions:
                 position_update = assetPosition["position"]
-                position = self.positions[position_update["coin"]]
+                coin = position_update["coin"]
+                position = self.positions.get(coin)
+                if not position:
+                    instrument = self.hl.info.instrument(coin)
+                    position = Position(instrument)
+                    self.positions[instrument.coin] = position
                 position.update_clearingHouseState(position_update)
-                pnl += position.pnl if position.pnl else 0
-            self.pnl = pnl
+                to_update.discard(coin)
+            for coin in to_update:
+                position = self.positions[coin]
+                position.update_clearingHouseState(None)
             self.last_state = time()
             self.received_state.set()
         except Exception as e:
