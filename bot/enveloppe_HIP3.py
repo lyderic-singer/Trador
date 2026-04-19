@@ -94,30 +94,16 @@ class EnveloppeHIP3: # place orders grid each separed with delta
         await self._log.info(f"{self.placed + self.modified + self.passed} actions: {self.placed - self.placed_error}/{self.placed} place, {self.modified - self.modified_error}/{self.modified} modify and {self.passed} pass")
         await self._log.success("Stopped")
 
-    def bid_px(self, px: float, mid: float | None = None) -> float | None:
-        if mid is None:
-            mid = self.market.mid
-        if mid and px:
-            return min(px, (1 - self.MAKER_FEES) * mid)
-
-    def ask_px(self, px: float, mid: float | None = None) -> float | None:
-        if mid is None:
-            mid = self.market.mid
-        if mid and px:
-            return max(px, (1 + self.MAKER_FEES) * mid)
-
-    def capacity(self, bids_value: float = 0.0, asks_value: float = 0.0):
+    def sizes(self, mid: float, bids_value: float = 0.0, asks_value: float = 0.0):
         account = self.account
         position = account.positions.get(self.instrument.coin)
-        mid = self.market.mid
         if position is None: raise ValueError("position not found")
-        if mid is None: raise ValueError("market nor inited")
         position_value = position.value if position.size >= 0 else -position.value
         leveraged_account_value = account.account.value * position.leverage
         longable = max(leveraged_account_value - position_value - bids_value, 0) # TODO adapt for multiple coins
         shortable = max(leveraged_account_value + position_value - asks_value, 0) # TODO adapt for multiple coins
-        factor = self.CAP / mid
-        return factor * longable, factor * shortable
+        factor = self.CAP / mid # normalize $ to get [COIN]
+        return factor * longable, factor * shortable # max_sz_bid, max_sz_ask
 
     async def state(self):
         orders = await self.hl.info.open_orders(self.address, dex=self.dex)
@@ -136,27 +122,27 @@ class EnveloppeHIP3: # place orders grid each separed with delta
                 asks_value += px * sz
         return bids, bids_px, bids_value, asks, asks_px, asks_value
 
-    async def modify(self, bids: list, bids_value: float, asks: list, asks_value: float): # both bids and asks in ascending order
-        position = self.account.positions.get(self.instrument.coin)
+    async def modify(self, bids: list, asks: list): # both bids and asks in ascending order
         mid = self.market.mid
-        self.grid.update()
-        longable = self.CAP * (position.longable + bids_value) / mid
-        shortable = self.CAP * (position.shortable + asks_value) / mid
+        if mid is None: raise ValueError("market nor inited")
+        longable, shortable = self.sizes(mid, 0, 0) # disregard bids and asks value because they gonna modified
         modifies: list[Modify] = []
-        if bids and longable > 0:
+        min_sz = self.MIN_VALUE / mid
+        if bids and longable > len(bids) * min_sz:
             sz = longable / len(bids)
             for i, b in enumerate(bids):
-                px = self.bid_px(self.grid.bids[i], mid)
+                px = min(self.grid.bids[i], (1 - self.MAKER_FEES) * mid)
                 modified = get_modify(b, self.instrument, sz, px or 0, "Alo")
                 order = modified.get("order", {})
                 p, s = float(order.get("p", 0)), float(order.get("s", 0))
                 value = p * s
                 if self.market.best_ask and (value > self.MIN_VALUE) and (p < self.market.best_ask):
                     modifies.append(modified)
-        if asks and shortable > 0:
+        if asks and shortable > len(asks) * min_sz:
             sz = shortable / len(asks)
             for i, a in enumerate(reversed(asks)):
-                px = self.ask_px(self.grid.asks[self.LEVELS - i - 1], mid)
+                max(self.grid.asks[self.LEVELS - i - 1], (1 + self.MAKER_FEES) * mid)
+                px = max(self.grid.asks[self.LEVELS - i - 1], (1 + self.MAKER_FEES) * mid)
                 modified = get_modify(a, self.instrument, sz, px or 0, "Alo")
                 order = modified.get("order", {})
                 p, s = float(order.get("p", 0)), float(order.get("s", 0))
@@ -174,12 +160,10 @@ class EnveloppeHIP3: # place orders grid each separed with delta
             await self._log.debug("passing", styles="YELLOW")
             self.passed += 1
 
-    async def place(self, bids_px: list[float], asks_px: list[float]): # both bids and asks in ascending order
-        position = self.account.positions.get(self.instrument.coin)
+    async def place(self, bids_px: list[float], asks_px: list[float], bids_value: float, asks_value: float): # both bids and asks in ascending order
         mid = self.market.mid
-        self.grid.update()
-        longable = self.CAP * position.longable / mid
-        shortable = self.CAP * position.shortable / mid
+        if mid is None: raise ValueError("market nor inited")
+        longable, shortable = self.sizes(mid, bids_value, asks_value)
         new_bids_px = closests(bids_px, self.grid.bids)
         new_asks_px = closests(asks_px, self.grid.asks)
         sz_bid = longable / len(new_bids_px) if new_bids_px else 0
@@ -217,12 +201,12 @@ class EnveloppeHIP3: # place orders grid each separed with delta
                     mid = self.market.mid
                     sma = self.market.sma_close()
                     if mid and ((mid > sma and len(bids) < self.LEVELS) or (mid < sma and len(asks) < self.LEVELS)):
-                        await self.place(bids_px, asks_px)
+                        await self.place(bids_px, asks_px, bids_value, asks_value)
                     elif self.last_sma and (abs(self.last_sma - sma) / sma) < self.THRESHOLD:
                         await self._log.debug("passing")
                         self.passed += 1
                     else:
-                        await self.modify(bids, bids_value, asks, asks_value)
+                        await self.modify(bids, asks)
                     await asyncio.sleep(self.POLL_DELAY)
                 except Exception as e:
                     await self._log.error(f"{e}")
