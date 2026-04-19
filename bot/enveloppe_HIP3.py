@@ -49,7 +49,7 @@ class EnveloppeHIP3: # place orders grid each separed with delta
         self.WIDTH_MAX = 8        # x8
         self.SPREAD_MAX = 0.002   # 0.2%
         self.LEVELS = 8
-        self.CAP_VALUE = 0.90
+        self.CAP = 0.90
         self.MIN_VALUE = 10.5
         self.LEVERAGE = 10
         self.POLL_DELAY = 10.1
@@ -106,6 +106,19 @@ class EnveloppeHIP3: # place orders grid each separed with delta
         if mid and px:
             return max(px, (1 + self.MAKER_FEES) * mid)
 
+    def capacity(self, bids_value: float = 0.0, asks_value: float = 0.0):
+        account = self.account
+        position = account.positions.get(self.instrument.coin)
+        mid = self.market.mid
+        if position is None: raise ValueError("position not found")
+        if mid is None: raise ValueError("market nor inited")
+        position_value = position.value if position.size >= 0 else -position.value
+        leveraged_account_value = account.account.value * position.leverage
+        longable = max(leveraged_account_value - position_value - bids_value, 0) # TODO adapt for multiple coins
+        shortable = max(leveraged_account_value + position_value - asks_value, 0) # TODO adapt for multiple coins
+        factor = self.CAP / mid
+        return factor * longable, factor * shortable
+
     async def state(self):
         orders = await self.hl.info.open_orders(self.address, dex=self.dex)
         orders.sort(key=lambda x: float(x["limitPx"]))
@@ -127,10 +140,8 @@ class EnveloppeHIP3: # place orders grid each separed with delta
         position = self.account.positions.get(self.instrument.coin)
         mid = self.market.mid
         self.grid.update()
-        longable = self.CAP_VALUE * (position.longable + bids_value) / mid
-        shortable = self.CAP_VALUE * (position.shortable + asks_value) / mid
-        if longable <= 0 and shortable <= 0:
-            return await self._log.warning("no collateral")
+        longable = self.CAP * (position.longable + bids_value) / mid
+        shortable = self.CAP * (position.shortable + asks_value) / mid
         modifies: list[Modify] = []
         if bids and longable > 0:
             sz = longable / len(bids)
@@ -167,10 +178,8 @@ class EnveloppeHIP3: # place orders grid each separed with delta
         position = self.account.positions.get(self.instrument.coin)
         mid = self.market.mid
         self.grid.update()
-        longable = self.CAP_VALUE * position.longable / mid
-        shortable = self.CAP_VALUE * position.shortable / mid
-        if longable <= 0 and shortable <= 0:
-            return await self._log.warning("no collateral")
+        longable = self.CAP * position.longable / mid
+        shortable = self.CAP * position.shortable / mid
         new_bids_px = closests(bids_px, self.grid.bids)
         new_asks_px = closests(asks_px, self.grid.asks)
         sz_bid = longable / len(new_bids_px) if new_bids_px else 0
