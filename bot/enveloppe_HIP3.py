@@ -92,7 +92,10 @@ class EnveloppeHIP3: # place orders grid each separed with delta
         await cancel(self.task)
         await self.market.stop()
         await self.account.stop()
-        await self._log.info(f"{self.placed + self.modified + self.passed} actions: {self.placed - self.placed_error}/{self.placed} place, {self.modified - self.modified_error}/{self.modified} modify and {self.passed} pass")
+        await self._log.info(
+            f"{self.cycles} cycles: {self.passed} pass "
+            f"{self.placed}/{self.placed + self.placed_error} place, and "
+            f"{self.modified}/{self.modified + self.modified_error} modify")
         await self._log.success("Stopped")
 
     def sizes(self, mid: float, bids_value: float = 0.0, asks_value: float = 0.0):
@@ -153,10 +156,12 @@ class EnveloppeHIP3: # place orders grid each separed with delta
         if modifies:
             executed, error = await self.executor.batch_modify(modifies)
             if error:
-                self.modified_error += 1
-                await self._log.warning(f"{sum(executed)}/{len(executed)} modifies executed, longable={longable}, shortable={shortable}: {executed}")
-            self.last_sma = self.market.sma_close()
-            self.modified += 1
+                err_count = sum(executed)
+                self.modified_error += err_count
+                self.modified += len(executed) - err_count
+                await self._log.warning(f"{err_count}/{len(executed)} modifies executed, longable={longable}, shortable={shortable}: {executed}")
+            self.last_sma = self.market.sma_close() # TODO if no modified that's not great but...
+            self.modified += len(executed)
         else:
             self.passed += 1
 
@@ -186,9 +191,12 @@ class EnveloppeHIP3: # place orders grid each separed with delta
         if orders:
             executed, error = await self.executor.batch_order(orders)
             if error:
-                self.placed_error += 1
-                await self._log.warning(f"{sum(executed)}/{len(executed)} orders executed, longable={longable}, shortable={shortable}: {executed}")
-            self.placed += 1
+                err_count = sum(executed)
+                self.placed_error += err_count
+                self.placed += len(executed) - err_count
+                await self._log.warning(f"{err_count}/{len(executed)} orders executed, longable={longable}, shortable={shortable}: {executed}")
+            self.placed += len(executed)
+            # TODO perhaps should update last_sma
         else:
             self.passed += 1
 
@@ -205,6 +213,7 @@ class EnveloppeHIP3: # place orders grid each separed with delta
                         self.passed += 1
                     else:
                         await self.modify(bids, asks)
+                    self.cycles += 1
                     await asyncio.sleep(self.POLL_DELAY)
                 except Exception as e:
                     await self._log.error(f"{e}")
