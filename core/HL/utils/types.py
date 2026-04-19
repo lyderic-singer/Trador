@@ -98,9 +98,9 @@ TIF = Literal["Alo", "Ioc", "Gtc"]
 TPSL = Literal["tp", "sl"]
 InstrumentType = Literal["perp", "spot", "hip3", ""]
 LimitOrder = TypedDict("LimitOrder", {"tif": TIF})
-LimitOrderType = TypedDict("LimitOrderType", {"limit": LimitOrder}, total=False)
+LimitOrderType = TypedDict("LimitOrderType", {"limit": LimitOrder})
 TriggerType = TypedDict("TriggerType", {"isMarket": bool, "triggerPx": str, "tpsl": TPSL})
-TriggerOrderType = TypedDict("TriggerOrderType", {"trigger": TriggerType}, total=False)
+TriggerOrderType = TypedDict("TriggerOrderType", {"trigger": TriggerType})
 ExecutionType = Union[LimitOrderType, TriggerOrderType]
 BuilderInfo = TypedDict("BuilderInfo", {"b": str, "f": int})
 SpotAssetInfo = TypedDict("SpotAssetInfo", {"name": str, "tokens": List[int], "index": int, "isCanonical": bool})
@@ -108,8 +108,8 @@ SpotMeta = TypedDict("SpotMeta", {"universe": List[SpotAssetInfo], "tokens": Lis
 Sub = dict[str, Any]
 OidOrCloid = Union[int, Cloid, None]
 Order = TypedDict("Order", {"a": int, "b": bool, "p": str, "s": str, "r": bool, "t": ExecutionType, "c": NotRequired[Optional[Cloid]]})
-Modify = TypedDict("Modify", {"oid": OidOrCloid,"order": Order}, total=False)
-CancelOid = TypedDict("CancelOid", {"a": str, "o": OidOrCloid}, total=False)
-CancelCloid = TypedDict("CancelCloid", {"asset": str, "cloid": OidOrCloid}, total=False)
+Modify = TypedDict("Modify", {"oid": OidOrCloid,"order": Order})
+CancelOid = TypedDict("CancelOid", {"a": str, "o": OidOrCloid})
+CancelCloid = TypedDict("CancelCloid", {"asset": str, "cloid": OidOrCloid})
 Cancel = CancelOid | CancelCloid
 SpotMetaAndAssetCtxs = Tuple[SpotMeta, List[SpotAssetCtx]]
