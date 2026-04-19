@@ -3,7 +3,6 @@ import asyncio
 from core.HL.hl import HL
 from core.HL.utils.types import Instrument
 from log.logger import Logger
-from collections import defaultdict, deque
 
 class MarginSummary:
     def __init__(self):
@@ -21,7 +20,7 @@ class MarginSummary:
         self.notional = float(margin_summary["totalNtlPos"])
         self.raw = float(margin_summary["totalRawUsd"])
         self.used = float(margin_summary["totalMarginUsed"])
-    
+
     def __str__(self):
         return f"value={self.value}, notional={self.notional}, raw={self.raw}, used={self.used}"
 
@@ -29,31 +28,41 @@ class Position:
     def __init__(self, instrument):
         self.instrument = instrument
         self.received_asset = asyncio.Event() # received one activeAssetData
+        self.active = False
         # ==== clearingHouseState ====
-        self.size = None
+        self.size = 0
         self.entry = None
-        self.value = None
+        self.value = 0
         self.liquidation = None
-        self.margin = None
-        self.funding = None # dict {"allTime": "0.0", "sinceOpen": "0.0", "sinceChange": "0.0"}
-        self.pnl = None
+        self.margin = 0
+        self.funding = {"allTime": "0.0", "sinceOpen": "0.0", "sinceChange": "0.0"}
+        self.pnl = 0
         # ==== activeAssetData ====
         self.mode =  None # margin mode: "cross" or "isolated"
         self.leverage = None
         self.raw = None # rawUsd on hl | margin - positionValue
-        self.longable = 0 # maxTradeSzs[0] on hl | sz available to long
-        self.shortable = 0 # maxTradeSzs[1] on hl | sz available to short
+        self.longable = 0 # maxTradeSzs[0] on hl | $ available to long (poorly calculated from hl data: doesn't take into account current orders while their value is under positionValue)
+        self.shortable = 0 # maxTradeSzs[1] on hl | $ available to short (poorly calculated from hl data: doesn't take into account current orders while their value is under positionValue)
 
     def update_clearingHouseState(self, position):
-        if self.instrument.coin != position["coin"]:
-            raise ValueError(f"cannot update {self.instrument.coin} with {position["coin"]} data")
-        self.size = float(position["szi"])
-        self.entry = float(position["entryPx"])
-        self.value = float(position["positionValue"])
-        self.liquidation  = float(position["liquidationPx"] or 0)
-        self.margin = float(position["marginUsed"])
-        self.funding = position["cumFunding"]
-        self.pnl = float(position["unrealizedPnl"])
+        if position is None:
+            self.size = 0
+            self.entry = None
+            self.value = 0
+            self.liquidation = None
+            self.margin = 0
+            self.funding = {"allTime": "0.0", "sinceOpen": "0.0", "sinceChange": "0.0"}
+            self.pnl = 0
+        else:
+            if self.instrument.coin != position["coin"]:
+                raise ValueError(f"cannot update {self.instrument.coin} with {position["coin"]} data")
+            self.size = float(position["szi"])
+            self.entry = float(position["entryPx"])
+            self.value = float(position["positionValue"])
+            self.liquidation = None if position["liquidationPx"] is None else float(position["liquidationPx"])
+            self.margin = float(position["marginUsed"])
+            self.funding = position["cumFunding"]
+            self.pnl = float(position["unrealizedPnl"])
         
     def update_activeAssetData(self, data):
         if self.instrument.coin != data["coin"]:
