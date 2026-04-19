@@ -1,4 +1,5 @@
 import asyncio
+from typing import Iterable, Iterator
 from core.HL.utils.functions import cancel, get_order, get_modify, closests
 from bot.market import MarketHL
 from bot.account import AccountPerpDexHL
@@ -126,7 +127,7 @@ class EnveloppeHIP3: # place orders grid each separed with delta
                 asks_value += px * sz
         return bids, bids_px, bids_value, asks, asks_px, asks_value
 
-    def validate(self, order: dict):
+    def valid(self, order: Order):
         is_buy = order.get("b")
         px = float(order.get("p", 0))
         sz = float(order.get("s", 0))
@@ -144,27 +145,15 @@ class EnveloppeHIP3: # place orders grid each separed with delta
         longable, shortable = self.sizes(mid, 0, 0) # disregard bids and asks value because they gonna be modified
         modifies: list[Modify] = []
         min_sz = self.MIN_VALUE / mid
-        if bids and longable > len(bids) * min_sz:
-            sz = longable / len(bids)
-            for i, b in enumerate(bids):
-                px = min(self.grid.bids[i], (1 - self.MAKER_FEES) * mid)
-                modified = get_modify(b, self.instrument, sz, px or 0, "Alo")
-                order = modified.get("order", {})
-                p, s = float(order.get("p", 0)), float(order.get("s", 0))
-                value = p * s
-                if self.market.best_ask and (value > self.MIN_VALUE) and (p < self.market.best_ask):
-                    modifies.append(modified)
-        if asks and shortable > len(asks) * min_sz:
-            sz = shortable / len(asks)
-            for i, a in enumerate(reversed(asks)):
-                max(self.grid.asks[self.LEVELS - i - 1], (1 + self.MAKER_FEES) * mid)
-                px = max(self.grid.asks[self.LEVELS - i - 1], (1 + self.MAKER_FEES) * mid)
-                modified = get_modify(a, self.instrument, sz, px or 0, "Alo")
-                order = modified.get("order", {})
-                p, s = float(order.get("p", 0)), float(order.get("s", 0))
-                value = p * s
-                if self.market.best_bid and (value > self.MIN_VALUE) and (p > self.market.best_bid):
-                    modifies.append(modified)
+        def price_bid(i: int): return min(self.grid.bids[i], (1 - self.MAKER_FEES) * mid)
+        def price_ask(i: int): return max(self.grid.asks[-(i + 1)], (1 + self.MAKER_FEES) * mid)
+        def process(orders: Iterable, n: int, available: float, price_fn):
+            sz = available / n if orders and available > n * min_sz else 0
+            for i, o in enumerate(orders):
+                modify = get_modify(o, self.instrument, sz, price_fn(i), "Alo")
+                if self.valid(modify["order"]): modifies.append(modify)
+        process(bids, len(bids), longable, price_bid)
+        process(reversed(asks), len(asks), shortable, price_ask)
         if modifies:
             executed, error = await self.executor.batch_modify(modifies)
             if error:
@@ -185,21 +174,15 @@ class EnveloppeHIP3: # place orders grid each separed with delta
         new_asks_px = closests(asks_px, self.grid.asks)
         sz_bid = longable / len(new_bids_px) if new_bids_px else 0
         sz_ask = shortable / len(new_asks_px) if new_asks_px else 0
-        new_bids: list[Order] = []
-        new_asks: list[Order] = []
+        orders: list[Order] = []
         for px in new_bids_px:
             order = get_order(self.instrument, True, sz_bid, px, {"limit": {"tif": "Alo"}})
-            p, s = float(order.get("p", 0)), float(order.get("s", 0))
-            value = p * s
-            if self.market.best_ask and (value > self.MIN_VALUE) and (p < self.market.best_ask):
-                new_bids.append(order)
+            if self.valid(order):
+                orders.append(order)
         for px in new_asks_px:
             order = get_order(self.instrument, False, sz_ask, px, {"limit": {"tif": "Alo"}})
-            p, s = float(order.get("p", 0)), float(order.get("s", 0))
-            value = p * s
-            if self.market.best_bid and (value > self.MIN_VALUE) and (p > self.market.best_bid):
-                new_asks.append(order)
-        orders: list[Order] = new_bids + new_asks
+            if self.valid(order):
+                orders.append(order)
         if orders:
             executed, error = await self.executor.batch_order(orders)
             if error:
