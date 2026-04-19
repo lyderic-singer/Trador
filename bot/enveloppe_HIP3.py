@@ -126,6 +126,18 @@ class EnveloppeHIP3: # place orders grid each separed with delta
                 asks_value += px * sz
         return bids, bids_px, bids_value, asks, asks_px, asks_value
 
+    def validate(self, order: dict):
+        is_buy = order.get("b")
+        px = float(order.get("p", 0))
+        sz = float(order.get("s", 0))
+        value = px * sz
+        if is_buy and self.market.best_ask:
+            return (value > self.MIN_VALUE) and (px < self.market.best_ask)
+        elif not is_buy and self.market.best_bid:
+            return (value > self.MIN_VALUE) and (px > self.market.best_bid)
+        else:
+            return False
+
     async def modify(self, bids: list, asks: list): # both bids and asks in ascending order
         mid = self.market.mid
         if mid is None: raise ValueError("market nor inited")
