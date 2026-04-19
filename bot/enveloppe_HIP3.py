@@ -7,13 +7,13 @@ from core.HL.utils.types import Modify, Order
 from log.logger import Logger
 
 class Grid:
-    def __init__(self, market: MarketHL, levels: int, width_min: float, width_max: float, spread_max: float):
+    def __init__(self, market: MarketHL, levels: int, width_min: float, width_max: float, min_span: float):
         self.running = False
         self.market = market
         self.levels = levels
         self.width_min = width_min
         self.width_max = width_max
-        self.spread_max = spread_max
+        self.min_span = min_span
         self.width_range = width_max - width_min
         self.bids = []
         self.asks = []
@@ -25,18 +25,18 @@ class Grid:
         close = self.market.ema_close()
         high = self.market.ema_high()
         low = self.market.ema_low()
-        raw_bid = 2 * high - low - close
-        raw_ask =  high + close - 2 * low
+        raw_bid = 2 * high - low - close # TODO try another formula to avoid losing during dumps
+        raw_ask =  high + close - 2 * low # TODO try another formula to avoid losing during dumps
         offset_bid = self.width_min * raw_bid
         offset_ask = self.width_min * raw_ask
-        if self.width_max * raw_bid / sma > self.spread_max:
+        if self.width_max * raw_bid / sma > self.min_span:
             delta_bid = self.width_range * raw_bid / self.levels
         else:
-            delta_bid = (self.spread_max * sma - offset_bid) / self.levels
-        if self.width_max * raw_ask / sma > self.spread_max:
+            delta_bid = (self.min_span * sma - offset_bid) / self.levels
+        if self.width_max * raw_ask / sma > self.min_span:
             delta_ask = self.width_range * raw_ask / self.levels
         else:
-            delta_ask = (self.spread_max * sma - offset_ask) / self.levels
+            delta_ask = (self.min_span * sma - offset_ask) / self.levels
         self.bids = [sma - offset_bid - (delta_bid * i) for i in range(self.levels -1, -1, -1)] # ascending
         self.asks = [sma + offset_ask + (delta_ask * i) for i in range(self.levels)] # ascending
 
@@ -45,26 +45,27 @@ class EnveloppeHIP3: # place orders grid each separed with delta
         # ==== CONSTANTS ====
         self.MAKER_FEES = 0.00003 # 0.003%
         self.TAKER_FEES = 0.00009 # 0.009%
-        self.WIDTH_MIN = 0.05     # x0.05
-        self.WIDTH_MAX = 8        # x8
-        self.SPREAD_MAX = 0.002   # 0.2%
-        self.LEVELS = 8
-        self.CAP = 0.90
-        self.MIN_VALUE = 10.5
-        self.LEVERAGE = 10
-        self.POLL_DELAY = 10.1
-        self.THRESHOLD = 0.0001   # 0.01%
-        self.TIMEFRAME = "1m"
-        self.WINDOW = 9
+        self.WIDTH_MIN = 0.05     # minimum multiplier for grid spread: controls tightness of orders around mid
+        self.WIDTH_MAX = 8        # maximum multiplier for grid spread: controls maximum dispersion in volatile regimes
+        self.MIN_SPAN = 0.002     # 0.2% | minimum distance between the first and the last placed orders
+        self.LEVELS = 8           # orders count of each side
+        self.CAP = 0.90           # 90% | max capacity of portfolio used
+        self.MIN_VALUE = 10.5     # minimum order notional value in $ to avoid overfragmentation / fees inefficiency
+        self.POLL_DELAY = 10.1    # delay in seconds between each grid evaluation cycle
+        self.THRESHOLD = 0.0001   # 0.01% | relative SMA change threshold to trigger rebalancing
+        self.TIMEFRAME = "1m"     # market data candle timeframe used for indicators (SMA/EMA)
+        self.WINDOW = 9           # rolling window size for indicator (SMA/EMA period)
+        # ==== STATS ====
+        self.cycles = 0           # nb of cycles for stats
+        self.placed = 0           # nb of place for stats
+        self.modified = 0         # nb of modify for stats
+        self.passed = 0           # nb of pass for stats
+        self.placed_error = 0     # nb of errors while place for stats
+        self.modified_error = 0   # nb of errors while modify for stats
         # ==== UTILS ====
         self.task = None
         self.running = False
         self.last_sma = None
-        self.placed = 0   # nb of place for stat
-        self.modified = 0 # nb of modify for stat
-        self.passed = 0   # nb of pass for stat
-        self.placed_error = 0 # nb of errors while place for stat
-        self.modified_error = 0 # nb of errors while modify for stat
         self.hl = hl
         self.address = hl.address
         self._log = Logger(self, hl.messenger)
@@ -73,7 +74,7 @@ class EnveloppeHIP3: # place orders grid each separed with delta
         self.executor = Executor(hl)
         self.market = MarketHL(self.instrument, hl, self.WINDOW, self.TIMEFRAME)
         self.account = AccountPerpDexHL(self.dex, [self.instrument], hl)
-        self.grid = Grid(self.market, self.LEVELS, self.WIDTH_MIN, self.WIDTH_MAX, self.SPREAD_MAX)
+        self.grid = Grid(self.market, self.LEVELS, self.WIDTH_MIN, self.WIDTH_MAX, self.MIN_SPAN)
 
     async def start(self):
         if self.running:
@@ -125,7 +126,7 @@ class EnveloppeHIP3: # place orders grid each separed with delta
     async def modify(self, bids: list, asks: list): # both bids and asks in ascending order
         mid = self.market.mid
         if mid is None: raise ValueError("market nor inited")
-        longable, shortable = self.sizes(mid, 0, 0) # disregard bids and asks value because they gonna modified
+        longable, shortable = self.sizes(mid, 0, 0) # disregard bids and asks value because they gonna be modified
         modifies: list[Modify] = []
         min_sz = self.MIN_VALUE / mid
         if bids and longable > len(bids) * min_sz:
@@ -157,7 +158,6 @@ class EnveloppeHIP3: # place orders grid each separed with delta
             self.last_sma = self.market.sma_close()
             self.modified += 1
         else:
-            await self._log.debug("passing", styles="YELLOW")
             self.passed += 1
 
     async def place(self, bids_px: list[float], asks_px: list[float], bids_value: float, asks_value: float): # both bids and asks in ascending order
@@ -190,7 +190,6 @@ class EnveloppeHIP3: # place orders grid each separed with delta
                 await self._log.warning(f"{sum(executed)}/{len(executed)} orders executed, longable={longable}, shortable={shortable}: {executed}")
             self.placed += 1
         else:
-            await self._log.debug("passing", styles="ORANGE")
             self.passed += 1
 
     async def run(self):
@@ -203,7 +202,6 @@ class EnveloppeHIP3: # place orders grid each separed with delta
                     if mid and ((mid > sma and len(bids) < self.LEVELS) or (mid < sma and len(asks) < self.LEVELS)):
                         await self.place(bids_px, asks_px, bids_value, asks_value)
                     elif self.last_sma and (abs(self.last_sma - sma) / sma) < self.THRESHOLD:
-                        await self._log.debug("passing")
                         self.passed += 1
                     else:
                         await self.modify(bids, asks)
