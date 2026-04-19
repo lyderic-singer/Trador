@@ -170,19 +170,16 @@ class EnveloppeHIP3: # place orders grid each separed with delta
         mid = self.market.mid
         if mid is None: raise ValueError("market nor inited")
         longable, shortable = self.sizes(mid, bids_value, asks_value)
+        orders: list[Order] = []
         new_bids_px = closests(bids_px, self.grid.bids)
         new_asks_px = closests(asks_px, self.grid.asks)
-        sz_bid = longable / len(new_bids_px) if new_bids_px else 0
-        sz_ask = shortable / len(new_asks_px) if new_asks_px else 0
-        orders: list[Order] = []
-        for px in new_bids_px:
-            order = get_order(self.instrument, True, sz_bid, px, {"limit": {"tif": "Alo"}})
-            if self.valid(order):
-                orders.append(order)
-        for px in new_asks_px:
-            order = get_order(self.instrument, False, sz_ask, px, {"limit": {"tif": "Alo"}})
-            if self.valid(order):
-                orders.append(order)
+        def process(prices: list[float], available: float, is_buy: bool):
+            sz = available / len(prices) if prices else 0
+            for px in prices:
+                order = get_order(self.instrument, is_buy, sz, px, {"limit": {"tif": "Alo"}})
+                if self.valid(order): orders.append(order)
+        process(new_bids_px, longable, True)
+        process(new_asks_px, shortable, False)
         if orders:
             executed, error = await self.executor.batch_order(orders)
             if error:
