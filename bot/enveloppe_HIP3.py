@@ -140,6 +140,7 @@ class EnveloppeHIP3: # place orders grid each separed with delta
             return False
 
     async def modify(self, bids: list, asks: list): # both bids and asks in ascending order
+        self.grid.update()
         mid = self.market.mid
         if mid is None: raise ValueError("market nor inited")
         longable, shortable = self.sizes(mid, 0, 0) # disregard bids and asks value because they gonna be modified
@@ -167,6 +168,7 @@ class EnveloppeHIP3: # place orders grid each separed with delta
             self.passed += 1
 
     async def place(self, bids_px: list[float], asks_px: list[float], bids_value: float, asks_value: float): # both bids and asks in ascending order
+        self.grid.update()
         mid = self.market.mid
         if mid is None: raise ValueError("market nor inited")
         longable, shortable = self.sizes(mid, bids_value, asks_value)

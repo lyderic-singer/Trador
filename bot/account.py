@@ -171,5 +171,5 @@ class AccountPerpDexHL:
             f"accountMargin = {self.account} | "
             f"crossMargin = {self.cross} | "
             f"withdrawable={self.withdrawable} | "
-            f"positions={[f"{p}" for p in self.positions]}>"
+            f"positions={dict({p: f"{self.positions[p]}" for p in self.positions})}>"
         )
