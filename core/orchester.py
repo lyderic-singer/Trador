@@ -1,4 +1,3 @@
-import asyncio
 import time
 from core.HL.utils.functions import call
 from core.session import Session
