@@ -201,13 +201,10 @@ class EnveloppeHIP3: # place orders grid each separed with delta
                     sma = self.market.sma_close()
                     if mid and ((mid > sma and len(bids) < self.LEVELS) or (mid < sma and len(asks) < self.LEVELS)):
                         await self.place(bids_px, asks_px, bids_value, asks_value)
-                        print("place")
                     elif self.last_sma and (abs(self.last_sma - sma) / sma) < self.THRESHOLD:
                         self.passed += 1
-                        print("passi")
                     else:
                         await self.modify(bids, asks)
-                        print("modif")
                     self.cycles += 1
                     await asyncio.sleep(self.POLL_DELAY)
                 except Exception as e:

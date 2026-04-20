@@ -38,7 +38,7 @@ class Position:
         self.funding = {"allTime": "0.0", "sinceOpen": "0.0", "sinceChange": "0.0"}
         self.pnl = 0
         # ==== activeAssetData ====
-        self.mode =  None # margin mode: "cross" or "isolated"
+        self.mode = None # margin mode: "cross" or "isolated"
         self.leverage = 1
         self.raw = None # rawUsd on hl | margin - positionValue
         self.longable = 0 # maxTradeSzs[0] on hl | $ available to long (poorly calculated from hl data: doesn't take into account current orders while their value is under positionValue)
@@ -117,7 +117,7 @@ class AccountPerpDexHL:
         await asyncio.gather(*[p.received_asset.wait() for p in self.positions.values()])
         await self._log.success("Started")
         self.running = True
-    
+
     async def stop(self):
         self.running = False
         self.received_state.clear()
@@ -169,7 +169,7 @@ class AccountPerpDexHL:
         return (
             f"<AccountPerpDexHL dex={self.dex} | "
             f"accountMargin = {self.account} | "
-            f"crossMargin = {self.cross} | " if self.dex == "" else ""
+            f"crossMargin = {self.cross} | "
             f"withdrawable={self.withdrawable} | "
-            f"positions=[{self.positions}]>"
+            f"positions={[f"{p}" for p in self.positions]}>"
         )
