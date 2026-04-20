@@ -26,8 +26,8 @@ class Grid:
         close = self.market.ema_close()
         high = self.market.ema_high()
         low = self.market.ema_low()
-        raw_bid = 2 * high - low - close # TODO try another formula to avoid losing during dumps
-        raw_ask =  high + close - 2 * low # TODO try another formula to avoid losing during dumps
+        raw_bid = high + close - 2 * low # TODO try another formula to avoid losing during dumps
+        raw_ask =  2 * high - close - low # TODO try another formula to avoid losing during dumps
         offset_bid = self.width_min * raw_bid
         offset_ask = self.width_min * raw_ask
         if self.width_max * raw_bid / sma > self.min_span:
