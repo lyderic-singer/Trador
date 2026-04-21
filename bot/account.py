@@ -134,7 +134,7 @@ class AccountPerpDexHL:
             self.account.update(clearing_house_state["marginSummary"])
             self.cross.update(clearing_house_state["crossMarginSummary"])
             self.withdrawable = float(clearing_house_state["withdrawable"])
-            assetPositions = msg.get("assetPositions", [])
+            assetPositions = clearing_house_state.get("assetPositions", [])
             to_update = set(self.positions)
             for assetPosition in assetPositions:
                 position_update = assetPosition["position"]

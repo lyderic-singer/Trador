@@ -162,12 +162,13 @@ class EnveloppeHIP3: # place orders grid each separed with delta
                 self.modified_error += errors
                 self.modified += len(executed) - errors
                 position = self.account.positions[self.instrument.name]
+                detail = [('success' if executed[i] else 'fail', 'Bid' if o['order']['b'] else 'Ask', f"value {float(o['order']['s']) * float(o['order']['p'])}") for i, o in enumerate(modifies)]
                 await self._log.warning(
                     f"{errors}/{len(executed)} modifies not executed\n"
                     f"longable: {longable * mid / self.CAP} vs {position.longable}, shortable: {shortable * mid / self.CAP} vs {position.shortable}\n"
                     f"bids: value={bids_value} count={len(bids)}, asks value={asks_value} count={len(asks)}\n"
                     f"position: size={position.size} value={position.value} pnl={position.pnl}\n"
-                    f"detail: {[(executed[i], o) for i, o in enumerate(modifies)]}")
+                    f"detail: {detail}")
             self.last_sma = self.market.sma_close() # TODO if no modified that's not great but...
             self.modified += len(executed)
         else:
@@ -195,12 +196,13 @@ class EnveloppeHIP3: # place orders grid each separed with delta
                 self.placed_error += errors
                 self.placed += len(executed) - errors
                 position = self.account.positions[self.instrument.name]
+                detail = [('success' if executed[i] else 'fail', 'Bid' if o['b'] else 'Ask', f"value {float(o['s']) * float(o['p'])}") for i, o in enumerate(orders)]
                 await self._log.warning(
                     f"{errors}/{len(executed)} orders not executed\n"
                     f"longable: {longable * mid / self.CAP} vs {position.longable}, shortable: {shortable * mid / self.CAP} vs {position.shortable}\n"
                     f"bids: value={bids_value} count={len(bids_px)}, asks value={asks_value} count={len(asks_px)}\n"
                     f"position: size={position.size} value={position.value} pnl={position.pnl}\n"
-                    f"detail: {[(executed[i], o) for i, o in enumerate(orders)]}")
+                    f"detail: {detail}")
             self.placed += len(executed)
             # TODO perhaps should update last_sma
         else:
