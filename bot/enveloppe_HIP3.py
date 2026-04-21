@@ -139,7 +139,7 @@ class EnveloppeHIP3: # place orders grid each separed with delta
         else:
             return False
 
-    async def modify(self, bids: list, asks: list): # both bids and asks in ascending order
+    async def modify(self, bids: list, asks: list, bids_value: float, asks_value: float): # both bids and asks in ascending order
         self.grid.update()
         mid = self.market.mid
         if mid is None: raise ValueError("market nor inited")
@@ -158,10 +158,16 @@ class EnveloppeHIP3: # place orders grid each separed with delta
         if modifies:
             executed, error = await self.executor.batch_modify(modifies)
             if error:
-                err_count = sum(executed)
-                self.modified_error += err_count
-                self.modified += len(executed) - err_count
-                await self._log.warning(f"{err_count}/{len(executed)} modifies executed, longable={longable}, shortable={shortable}: {executed}")
+                errors = len(executed) - sum(executed)
+                self.modified_error += errors
+                self.modified += len(executed) - errors
+                position = self.account.positions[self.instrument.name]
+                await self._log.warning(
+                    f"{errors}/{len(executed)} modifies not executed\n"
+                    f"longable: {longable * mid / self.CAP} vs {position.longable}, shortable: {shortable * mid / self.CAP} vs {position.shortable}\n"
+                    f"bids: value={bids_value} count={len(bids)}, asks value={asks_value} count={len(asks)}\n"
+                    f"position: size={position.size} value={position.value} pnl={position.pnl}\n"
+                    f"detail: {[(executed[i], o) for i, o in enumerate(modifies)]}")
             self.last_sma = self.market.sma_close() # TODO if no modified that's not great but...
             self.modified += len(executed)
         else:
@@ -185,10 +191,16 @@ class EnveloppeHIP3: # place orders grid each separed with delta
         if orders:
             executed, error = await self.executor.batch_order(orders)
             if error:
-                err_count = sum(executed)
-                self.placed_error += err_count
-                self.placed += len(executed) - err_count
-                await self._log.warning(f"{err_count}/{len(executed)} orders executed, longable={longable}, shortable={shortable}: {executed}")
+                errors = len(executed) - sum(executed)
+                self.placed_error += errors
+                self.placed += len(executed) - errors
+                position = self.account.positions[self.instrument.name]
+                await self._log.warning(
+                    f"{errors}/{len(executed)} orders not executed\n"
+                    f"longable: {longable * mid / self.CAP} vs {position.longable}, shortable: {shortable * mid / self.CAP} vs {position.shortable}\n"
+                    f"bids: value={bids_value} count={len(bids_px)}, asks value={asks_value} count={len(asks_px)}\n"
+                    f"position: size={position.size} value={position.value} pnl={position.pnl}\n"
+                    f"detail: {[(executed[i], o) for i, o in enumerate(orders)]}")
             self.placed += len(executed)
             # TODO perhaps should update last_sma
         else:
@@ -206,7 +218,7 @@ class EnveloppeHIP3: # place orders grid each separed with delta
                     elif self.last_sma and (abs(self.last_sma - sma) / sma) < self.THRESHOLD:
                         self.passed += 1
                     else:
-                        await self.modify(bids, asks)
+                        await self.modify(bids, asks, bids_value, asks_value)
                     self.cycles += 1
                     await asyncio.sleep(self.POLL_DELAY)
                 except Exception as e:
