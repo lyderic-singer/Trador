@@ -1,3 +1,4 @@
+import math
 from core.HL.utils.constants import MAX_DECIMALS_PERP, MAX_DECIMALS_SPOT
 from typing import List, Literal, Optional, Tuple, TypedDict, Union, Any, NotRequired
 
@@ -12,22 +13,11 @@ class Cloid:
         if not len(self._raw_cloid[2:]) == 32:
             raise TypeError("cloid is not 16 bytes")
 
-def format_price(px: float, max_decimals: int, sz_decimals: int) -> str:
-    if (px.is_integer()) or (len(str(int(px))) > 4):
-        return str(int(px))
-    else:
-        decimals = max_decimals - sz_decimals
-        px = float(f"{px:.5g}")
-        px = round(px, decimals)
-        px_str = f"{px:.{decimals}f}"
-        return px_str.rstrip("0").rstrip(".")
-
 class Instrument:
-    def __init__(self, name: str, coin: str, asset: int, szDecimals: int):
+    def __init__(self, name: str, coin: str, asset: int, sz_decimals: int):
         self.name = name # appear in front, ex 'UBTC/USDC'
         self.coin = coin # real internal symbol ex: '@152'
         self.asset = asset # asset id ex: 10152
-        self.szDecimals = szDecimals
         self.type: InstrumentType = ""
         if ('@' in name) or ('/' in name):
             self.type = "spot"
@@ -36,18 +26,28 @@ class Instrument:
         else:
             self.type = "perp"
         self.dex = name[:name.index(":")] if self.type == "hip3" else ""
+        self.max_decimals = MAX_DECIMALS_SPOT if self.type == "spot" else MAX_DECIMALS_PERP
+        self.sz_decimals = sz_decimals
+        self.sz_factor = 10 ** self.sz_decimals
+        self.px_decimals = self.max_decimals - sz_decimals
+        self.px_factor = 10 ** self.px_decimals
 
     def format_price(self, price: float):
-        max_decimals = MAX_DECIMALS_SPOT if self.type == "spot" else MAX_DECIMALS_PERP
-        return format_price(price, max_decimals, self.szDecimals)
+        if (price.is_integer()) or (len(str(int(price))) > 4):
+            return str(int(price))
+        else:
+            px = float(f"{price:.5g}")
+            px = math.floor(px * self.px_factor) / self.px_factor
+            px_str = f"{px:.{self.px_decimals}f}"
+            return px_str.rstrip("0").rstrip(".")
 
-    def format_size(self, sz):
-        return str(round(sz, self.szDecimals))
+    def format_size(self, size):
+        return str(math.floor(size * self.sz_factor) / self.sz_factor)
     
     def __str__(self):
         return (
-            f"Instrument(name={self.name}, coin={self.coin}, asset={self.asset},\ntype={self.type}, "
-            f"dex={self.dex if self.dex else '""'}, decimals={self.szDecimals})")
+            f"Instrument(name={self.name}, coin={self.coin}, asset={self.asset}, type={self.type}, "
+            f"dex={self.dex if self.dex else '""'}, sz_decimals={self.sz_decimals}), px_decimals={self.px_decimals}")
 
 SpotTokenInfo = TypedDict(
     "SpotTokenInfo",
