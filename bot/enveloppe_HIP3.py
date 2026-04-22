@@ -162,10 +162,11 @@ class EnveloppeHIP3: # place orders grid each separed with delta
                 self.modified_error += errors
                 self.modified += len(executed) - errors
                 position = self.account.positions[self.instrument.name]
-                detail = [('success' if executed[i] else 'fail', 'Bid' if o['order']['b'] else 'Ask', f"value {float(o['order']['s']) * float(o['order']['p'])}") for i, o in enumerate(modifies)]
+                result = [f"{'Bid' if o['order']['b'] else 'Ask'} {'success' if executed[i] else 'fail'} size={o['order']['s']} value={float(o['order']['s']) * float(o['order']['p'])}" for i, o in enumerate(modifies)]
+                detail = ";\n".join(result)
                 await self._log.warning(
                     f"{errors}/{len(executed)} modifies not executed\n"
-                    f"longable: {longable * mid / self.CAP} vs {position.longable}, shortable: {shortable * mid / self.CAP} vs {position.shortable}\n"
+                    f"longable: {longable * mid / self.CAP} vs {position.longable + bids_value}, shortable: {shortable * mid / self.CAP} vs {position.shortable + asks_value}\n"
                     f"bids: value={bids_value} count={len(bids)}, asks value={asks_value} count={len(asks)}\n"
                     f"position: size={position.size} value={position.value} pnl={position.pnl}\n"
                     f"detail: {detail}")
