@@ -22,7 +22,7 @@ class Grid:
     def update(self):
         if not self.running:
             raise ValueError("Must start before request deltas")
-        sma = self.market.sma_close()
+        ema = self.market.ema_close()
         close = self.market.ema_close()
         high = self.market.ema_high()
         low = self.market.ema_low()
@@ -30,16 +30,16 @@ class Grid:
         raw_ask =  2 * high - close - low # TODO try another formula to avoid losing during dumps
         offset_bid = self.width_min * raw_bid
         offset_ask = self.width_min * raw_ask
-        if self.width_max * raw_bid / sma > self.min_span:
+        if self.width_max * raw_bid / ema > self.min_span:
             delta_bid = self.width_range * raw_bid / self.levels
         else:
-            delta_bid = (self.min_span * sma - offset_bid) / self.levels
-        if self.width_max * raw_ask / sma > self.min_span:
+            delta_bid = (self.min_span * ema - offset_bid) / self.levels
+        if self.width_max * raw_ask / ema > self.min_span:
             delta_ask = self.width_range * raw_ask / self.levels
         else:
-            delta_ask = (self.min_span * sma - offset_ask) / self.levels
-        self.bids = [sma - offset_bid - (delta_bid * i) for i in range(self.levels -1, -1, -1)] # ascending
-        self.asks = [sma + offset_ask + (delta_ask * i) for i in range(self.levels)] # ascending
+            delta_ask = (self.min_span * ema - offset_ask) / self.levels
+        self.bids = [ema - offset_bid - (delta_bid * i) for i in range(self.levels -1, -1, -1)] # ascending
+        self.asks = [ema + offset_ask + (delta_ask * i) for i in range(self.levels)] # ascending
 
 class EnveloppeHIP3: # place orders grid each separed with delta
     def __init__(self, x: str | int, hl):
@@ -47,15 +47,15 @@ class EnveloppeHIP3: # place orders grid each separed with delta
         self.MAKER_FEES = 0.00003 # 0.003%
         self.TAKER_FEES = 0.00009 # 0.009%
         self.WIDTH_MIN = 0.05     # minimum multiplier for grid spread: controls tightness of orders around mid
-        self.WIDTH_MAX = 8        # maximum multiplier for grid spread: controls maximum dispersion in volatile regimes
-        self.MIN_SPAN = 0.002     # 0.2% | minimum distance between the first and the last placed orders
+        self.WIDTH_MAX = 15       # maximum multiplier for grid spread: controls maximum dispersion in volatile regimes
+        self.MIN_SPAN = 0.005     # 0.5% | minimum distance between the first and the last placed orders
         self.LEVELS = 8           # orders count of each side
         self.CAP = 0.90           # 90% | max capacity of portfolio used
         self.MIN_VALUE = 10.5     # minimum order notional value in $ to avoid overfragmentation / fees inefficiency
         self.POLL_DELAY = 10.1    # delay in seconds between each grid evaluation cycle
-        self.THRESHOLD = 0.0001   # 0.01% | relative SMA change threshold to trigger rebalancing
+        self.THRESHOLD = 0.0002   # 0.01% | relative SMA change threshold to trigger rebalancing
         self.TIMEFRAME = "1m"     # market data candle timeframe used for indicators (SMA/EMA)
-        self.WINDOW = 9           # rolling window size for indicator (SMA/EMA period)
+        self.WINDOW = 99          # rolling window size for indicator (SMA/EMA period)
         # ==== STATS ====
         self.cycles = 0           # nb of cycles for stats
         self.placed = 0           # nb of place for stats
@@ -197,7 +197,8 @@ class EnveloppeHIP3: # place orders grid each separed with delta
                 self.placed_error += errors
                 self.placed += len(executed) - errors
                 position = self.account.positions[self.instrument.name]
-                detail = [('success' if executed[i] else 'fail', 'Bid' if o['b'] else 'Ask', f"value {float(o['s']) * float(o['p'])}") for i, o in enumerate(orders)]
+                result = [f"{'Bid' if o['b'] else 'Ask'} {'success' if executed[i] else 'fail'} size={o['s']} value={float(o['s']) * float(o['p'])}" for i, o in enumerate(orders)]
+                detail = ";\n".join(result)
                 await self._log.warning(
                     f"{errors}/{len(executed)} orders not executed\n"
                     f"longable: {longable * mid / self.CAP} vs {position.longable}, shortable: {shortable * mid / self.CAP} vs {position.shortable}\n"

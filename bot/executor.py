@@ -121,7 +121,6 @@ class Executor:
                             await self._log.error(f"{request.res}")
                         self.last = time.time()
                         request.completed.set()
-                        await self._log.debug(f"executed, qsize={self.requests.qsize()}")
                         await asyncio.sleep(self.COOLDOWN)
                 except Exception as e:
                     tb = traceback.format_exc()
@@ -138,7 +137,6 @@ class Executor:
     async def execute(self, task, actions, expected_type, timeout=20) -> tuple[list[bool], bool]:
         request = Request(task, actions, expected_type)
         await self.requests.put(request)
-        await self._log.debug(f"added, qsize={self.requests.qsize()}")
         try:
             await asyncio.wait_for(request.completed.wait(), timeout=timeout)
         except asyncio.TimeoutError:
