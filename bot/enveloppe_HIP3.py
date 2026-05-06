@@ -1,4 +1,5 @@
 import asyncio
+import traceback
 from typing import Iterable, Iterator
 from core.HL.utils.functions import cancel, get_order, get_modify, closests
 from bot.market import MarketHL
@@ -226,7 +227,7 @@ class EnveloppeHIP3: # place orders grid each separed with delta
                     self.cycles += 1
                     await asyncio.sleep(self.POLL_DELAY)
                 except Exception as e:
-                    await self._log.error(f"{e}")
+                    await self._log.error(f"{traceback.format_exc()}")
         except asyncio.CancelledError:
             pass
         except Exception as e:
