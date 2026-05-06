@@ -150,7 +150,7 @@ class EnveloppeHIP3: # place orders grid each separed with delta
         def price_bid(i: int): return min(self.grid.bids[i], (1 - self.MAKER_FEES) * mid)
         def price_ask(i: int): return max(self.grid.asks[-(i + 1)], (1 + self.MAKER_FEES) * mid)
         def process(orders: Iterable, n: int, available: float, price_fn):
-            sz = available / n if orders and available > n * min_sz else 0
+            sz = available / n if (n > 0) and (available > n * min_sz) else 0
             for i, o in enumerate(orders):
                 modify = get_modify(o, self.instrument, sz, price_fn(i), "Alo")
                 if self.valid(modify["order"]): modifies.append(modify)
@@ -220,14 +220,15 @@ class EnveloppeHIP3: # place orders grid each separed with delta
                     sma = self.market.sma_close()
                     if mid and ((mid > sma and len(bids) < self.LEVELS) or (mid < sma and len(asks) < self.LEVELS)):
                         await self.place(bids_px, asks_px, bids_value, asks_value)
-                    elif self.last_sma and (abs(self.last_sma - sma) / sma) < self.THRESHOLD:
+                    elif self.last_sma and sma and (abs(self.last_sma - sma) / sma) < self.THRESHOLD:
                         self.passed += 1
                     else:
                         await self.modify(bids, asks, bids_value, asks_value)
                     self.cycles += 1
-                    await asyncio.sleep(self.POLL_DELAY)
                 except Exception as e:
                     await self._log.error(f"{traceback.format_exc()}")
+                finally:
+                    await asyncio.sleep(self.POLL_DELAY)
         except asyncio.CancelledError:
             pass
         except Exception as e:
