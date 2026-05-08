@@ -48,15 +48,15 @@ class EnveloppeHIP3: # place orders grid each separed with delta
         self.MAKER_FEES = 0.00003 # 0.003%
         self.TAKER_FEES = 0.00009 # 0.009%
         self.WIDTH_MIN = 0.05     # minimum multiplier for grid spread: controls tightness of orders around mid
-        self.WIDTH_MAX = 15       # maximum multiplier for grid spread: controls maximum dispersion in volatile regimes
-        self.MIN_SPAN = 0.005     # 0.5% | minimum distance between the first and the last placed orders
+        self.WIDTH_MAX = 3        # maximum multiplier for grid spread: controls maximum dispersion in volatile regimes
+        self.MIN_SPAN = 0.001     # 0.1% | minimum distance between the first and the last placed orders
         self.LEVELS = 8           # orders count of each side
         self.CAP = 0.90           # 90% | max capacity of portfolio used
         self.MIN_VALUE = 10.5     # minimum order notional value in $ to avoid overfragmentation / fees inefficiency
         self.POLL_DELAY = 10.1    # delay in seconds between each grid evaluation cycle
-        self.THRESHOLD = 0.0002   # 0.01% | relative SMA change threshold to trigger rebalancing
+        self.THRESHOLD = 0.00005  # 0.005% | relative SMA change threshold to trigger rebalancing
         self.TIMEFRAME = "1m"     # market data candle timeframe used for indicators (SMA/EMA)
-        self.WINDOW = 99          # rolling window size for indicator (SMA/EMA period)
+        self.WINDOW = 3           # rolling window size for indicator (SMA/EMA period)
         # ==== STATS ====
         self.cycles = 0           # nb of cycles for stats
         self.placed = 0           # nb of place for stats
