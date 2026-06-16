@@ -49,7 +49,7 @@ class Grid:
             px += raw_ask * (self.alpha ** i)
         self.asks = asks  # ascending
 
-class EnveloppeHIP3: # place orders grid each separed with delta
+class EnveloppexpHIP3: # place orders grid each separed with delta
     def __init__(self, x: str | int, hl):
         # ==== CONSTANTS ====
         self.MAKER_FEES = 0.00003 # 0.003%
