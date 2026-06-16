@@ -77,6 +77,7 @@ class EnveloppeHIP3: # place orders grid each separed with delta
         self.task = None
         self.running = False
         self.last_sma = None
+        self.geo = (1 - self.BETA ** self.LEVELS) / (1 - self.BETA)
         self.hl = hl
         self.address = hl.address
         self._log = Logger(self, hl.messenger)
@@ -109,7 +110,7 @@ class EnveloppeHIP3: # place orders grid each separed with delta
             f"{self.modified}/{self.modified + self.modified_error} modify")
         await self._log.success("Stopped")
 
-    def sizes(self, mid: float, bids_value: float = 0.0, asks_value: float = 0.0):
+    def available(self, mid: float, bids_value: float = 0.0, asks_value: float = 0.0):
         account = self.account
         position = account.positions.get(self.instrument.coin)
         if position is None: raise ValueError("position not found")
@@ -119,6 +120,14 @@ class EnveloppeHIP3: # place orders grid each separed with delta
         shortable = max(leveraged_account_value + position_value - asks_value, 0) # TODO adapt for multiple coins
         factor = self.CAP / mid # normalize $ to get [COIN]
         return factor * longable, factor * shortable # max_sz_bid, max_sz_ask
+
+    def sizes(self, available: float) -> list[float]:
+        if self.LEVELS == 0: return []
+        if self.BETA == 1.0 or self.LEVELS == 1:
+            unit = available / self.LEVELS
+            return [unit] * self.LEVELS
+        s0 = available / self.geo
+        return [s0 * (self.BETA ** i) for i in range(self.LEVELS)] # TODO must use constants
 
     async def state(self):
         orders = await self.hl.info.open_orders(self.address, dex=self.dex)
@@ -153,15 +162,15 @@ class EnveloppeHIP3: # place orders grid each separed with delta
         self.grid.update()
         mid = self.market.mid
         if mid is None: raise ValueError("market nor inited")
-        longable, shortable = self.sizes(mid, 0, 0) # disregard bids and asks value because they gonna be modified
+        longable, shortable = self.available(mid, 0, 0) # disregard bids and asks value because they gonna be modified
         modifies: list[Modify] = []
         min_sz = self.MIN_VALUE / mid
         def price_bid(i: int): return min(self.grid.bids[i], (1 - self.MAKER_FEES) * mid)
         def price_ask(i: int): return max(self.grid.asks[-(i + 1)], (1 + self.MAKER_FEES) * mid)
         def process(orders: Iterable, n: int, available: float, price_fn):
-            sz = available / n if (n > 0) and (available > n * min_sz) else 0
+            sizes = self.sizes(available)
             for i, o in enumerate(orders):
-                modify = get_modify(o, self.instrument, sz, price_fn(i), "Alo")
+                modify = get_modify(o, self.instrument, sizes[i] if sizes else 0, price_fn(i), "Alo")
                 if self.valid(modify["order"]): modifies.append(modify)
         process(bids, len(bids), longable, price_bid)
         process(reversed(asks), len(asks), shortable, price_ask)
@@ -189,14 +198,14 @@ class EnveloppeHIP3: # place orders grid each separed with delta
         self.grid.update()
         mid = self.market.mid
         if mid is None: raise ValueError("market nor inited")
-        longable, shortable = self.sizes(mid, bids_value, asks_value)
+        longable, shortable = self.available(mid, bids_value, asks_value)
         orders: list[Order] = []
         new_bids_px = closests(bids_px, self.grid.bids)
         new_asks_px = closests(asks_px, self.grid.asks)
         def process(prices: list[float], available: float, is_buy: bool):
-            sz = available / len(prices) if prices else 0
-            for px in prices:
-                order = get_order(self.instrument, is_buy, sz, px, {"limit": {"tif": "Alo"}})
+            sizes = self.sizes(available)
+            for i, px in enumerate(prices):
+                order = get_order(self.instrument, is_buy, sizes[i] if sizes else 0, px, {"limit": {"tif": "Alo"}})
                 if self.valid(order): orders.append(order)
         process(new_bids_px, longable, True)
         process(new_asks_px, shortable, False)
