@@ -58,14 +58,14 @@ class EnveloppexpHIP3: # place orders grid each separed with delta
         self.WIDTH_MAX = 3        # maximum multiplier for grid spread: controls maximum dispersion in volatile regimes
         self.MIN_SPAN = 0.001     # 0.1% | minimum distance between the first and the last placed orders
         self.ALPHA = 1.5          # exponential price factore between levels (>1 -> more and more spaced)
-        self.BETA  = 1.5          # exponential size factor between levels (>1 -> sizes raises)
+        self.BETA = 1.5          # exponential size factor between levels (>1 -> sizes raises)
         self.LEVELS = 5           # orders count of each side
         self.CAP = 0.90           # 90% | max capacity of portfolio used
         self.MIN_VALUE = 10.5     # minimum order notional value in $ to avoid overfragmentation / fees inefficiency
         self.POLL_DELAY = 10.1    # delay in seconds between each grid evaluation cycle
         self.THRESHOLD = 0.00005  # 0.005% | relative SMA change threshold to trigger rebalancing
         self.TIMEFRAME = "1m"     # market data candle timeframe used for indicators (SMA/EMA)
-        self.WINDOW = 3           # rolling window size for indicator (SMA/EMA period)
+        self.WINDOW = 7           # rolling window size for indicator (SMA/EMA period)
         # ==== STATS ====
         self.cycles = 0           # nb of cycles for stats
         self.placed = 0           # nb of place for stats
