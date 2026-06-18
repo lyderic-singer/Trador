@@ -36,10 +36,11 @@ class Instrument:
         if (price.is_integer()) or (len(str(int(price))) > 4):
             return str(int(price))
         else:
-            px = float(f"{price:.5g}")
-            px = math.floor(px * self.px_factor) / self.px_factor
-            px_str = f"{px:.{self.px_decimals}f}"
-            return px_str.rstrip("0").rstrip(".")
+            pxint, pxdec = str(float(price))[:6].split('.')
+            print(pxint, pxdec)
+            pxstr = pxint + '.' + (pxdec[:self.px_decimals])
+            print(pxstr)
+            return pxstr.rstrip("0").rstrip(".")
 
     def format_size(self, size):
         return str(math.floor(size * self.sz_factor) / self.sz_factor)
@@ -47,7 +48,7 @@ class Instrument:
     def __str__(self):
         return (
             f"Instrument(name={self.name}, coin={self.coin}, asset={self.asset}, type={self.type}, "
-            f"dex={self.dex if self.dex else '""'}, sz_decimals={self.sz_decimals}), px_decimals={self.px_decimals}")
+            f"dex={self.dex if self.dex else '""'}, sz_decimals={self.sz_decimals}, px_decimals={self.px_decimals})")
 
 SpotTokenInfo = TypedDict(
     "SpotTokenInfo",

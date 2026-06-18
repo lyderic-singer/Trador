@@ -78,8 +78,7 @@ async def cancel(task: asyncio.Task | None):
     except asyncio.CancelledError:
         pass
 
-def get_order(instrument, is_buy: bool, size: float, price: float, execution_type: ExecutionType,
-              reduce_only: bool = False, cloid = None) -> Order:
+def get_order(instrument, is_buy: bool, size: float, price: float, execution_type: ExecutionType, reduce_only: bool = False, cloid = None) -> Order:
     order: Order = {
         "a": instrument.asset,
         "b": is_buy,
@@ -112,8 +111,7 @@ def get_modify(order, instrument: Instrument | None = None, new_size: float | No
     }
     return modify
 
-def get_transfer(token: str, amount: float, source_dex: str, destination_dex: str, destination_address: str, nonce: int,
-                 mainnet: bool = True, from_subaccount: str = "", signature_chain_id: str = "0xa4b1") -> Transfer:
+def get_transfer(token: str, amount: float, source_dex: str, destination_dex: str, destination_address: str, nonce: int, mainnet: bool = True, from_subaccount: str = "", signature_chain_id: str = "0xa4b1") -> Transfer:
     chain = "Mainnet" if mainnet else "Testnet"
     action: Transfer = {
         "type": "sendAsset",
