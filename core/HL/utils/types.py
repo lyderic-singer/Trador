@@ -37,9 +37,7 @@ class Instrument:
             return str(int(price))
         else:
             pxint, pxdec = str(float(price))[:6].split('.')
-            print(pxint, pxdec)
             pxstr = pxint + '.' + (pxdec[:self.px_decimals])
-            print(pxstr)
             return pxstr.rstrip("0").rstrip(".")
 
     def format_size(self, size):
