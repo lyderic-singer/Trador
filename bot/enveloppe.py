@@ -42,7 +42,7 @@ class Grid:
         self.bids = [ema - offset_bid - (delta_bid * i) for i in range(self.levels -1, -1, -1)] # ascending
         self.asks = [ema + offset_ask + (delta_ask * i) for i in range(self.levels)] # ascending
 
-class EnveloppeHIP3: # place orders grid each separed with delta
+class Enveloppe: # place orders grid each separed with delta
     def __init__(self, x: str | int, hl):
         # ==== CONSTANTS ====
         self.MAKER_FEES = 0.00003 # 0.003%
