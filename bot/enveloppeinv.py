@@ -49,8 +49,8 @@ class EnveloppeInv: # place orders grid each separed with delta
         self.TAKER_FEES = 0.00009 # 0.009%
         self.WIDTH_MIN = 0.05     # minimum multiplier for grid spread: controls tightness of orders around mid
         self.WIDTH_MAX = 8        # maximum multiplier for grid spread: controls maximum dispersion in volatile regimes
-        self.MIN_SPAN = 0.008     # 0.8% | minimum distance between the first and the last placed orders
-        self.LEVELS = 8           # orders count of each side
+        self.MIN_SPAN = 0.012     # 0.8% | minimum distance between the first and the last placed orders
+        self.LEVELS = 24          # orders count of each side
         self.CAP = 0.85           # 85% | max capacity of portfolio used
         self.MIN_VALUE = 10.5     # minimum order notional value in $ to avoid overfragmentation / fees inefficiency
         self.POLL_DELAY = 10.1    # delay in seconds between each grid evaluation cycle
