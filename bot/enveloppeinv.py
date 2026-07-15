@@ -67,7 +67,7 @@ class EnveloppeInv: # place orders grid each separed with delta
         # ==== UTILS ====
         self.task = None
         self.running = False
-        self.last_sma = None
+        self.last_ema = None
         self.hl = hl
         self.address = hl.address
         self._log = Logger(self, hl.messenger)
@@ -143,6 +143,7 @@ class EnveloppeInv: # place orders grid each separed with delta
     async def modify(self, bids: list, asks: list, bids_value: float, asks_value: float): # both bids and asks in ascending order
         self.grid.update()
         mid = self.market.mid
+        ema = self.market.ema_close()
         if mid is None: raise ValueError("market nor inited")
         longable, shortable = self.sizes(mid, 0, 0) # disregard bids and asks value because they gonna be modified
         modifies: list[Modify] = []
@@ -154,7 +155,7 @@ class EnveloppeInv: # place orders grid each separed with delta
             for i, o in enumerate(orders):
                 modify = get_modify(o, self.instrument, sz, price_fn(i), "Alo")
                 if self.valid(modify["order"]): modifies.append(modify)
-        if self.last_sma and self.last_sma > mid: process(bids, len(bids), longable, price_bid)
+        if ema and ema > mid: process(bids, len(bids), longable, price_bid)
         else: process(reversed(asks), len(asks), shortable, price_ask)
         if modifies:
             executed, error = await self.executor.batch_modify(modifies)
@@ -171,7 +172,7 @@ class EnveloppeInv: # place orders grid each separed with delta
                     f"bids: value={bids_value} count={len(bids)}, asks value={asks_value} count={len(asks)}\n"
                     f"position: size={position.size} value={position.value} pnl={position.pnl}\n"
                     f"detail: {detail}")
-            self.last_sma = self.market.sma_close() # TODO if no modified that's not great but...
+            self.last_ema = self.market.ema_close() # TODO if no modified that's not great but...
             self.modified += len(executed)
         else:
             self.passed += 1
@@ -179,6 +180,7 @@ class EnveloppeInv: # place orders grid each separed with delta
     async def place(self, bids_px: list[float], asks_px: list[float], bids_value: float, asks_value: float): # both bids and asks in ascending order
         self.grid.update()
         mid = self.market.mid
+        ema = self.market.ema_close()
         if mid is None: raise ValueError("market nor inited")
         longable, shortable = self.sizes(mid, bids_value, asks_value)
         orders: list[Order] = []
@@ -189,7 +191,7 @@ class EnveloppeInv: # place orders grid each separed with delta
             for px in prices:
                 order = get_order(self.instrument, is_buy, sz, px, {"limit": {"tif": "Alo"}})
                 if self.valid(order): orders.append(order)
-        if self.last_sma and self.last_sma > mid: process(new_bids_px, longable, True)
+        if ema and ema > mid: process(new_bids_px, longable, True)
         else: process(new_asks_px, shortable, False)
         if orders:
             executed, error = await self.executor.batch_order(orders)
@@ -207,7 +209,7 @@ class EnveloppeInv: # place orders grid each separed with delta
                     f"position: size={position.size} value={position.value} pnl={position.pnl}\n"
                     f"detail: {detail}")
             self.placed += len(executed)
-            # TODO perhaps should update last_sma
+            # TODO perhaps should update last_ema
         else:
             self.passed += 1
 
@@ -217,10 +219,11 @@ class EnveloppeInv: # place orders grid each separed with delta
                 try:
                     bids, bids_px, bids_value, asks, asks_px, asks_value = await self.state()
                     mid = self.market.mid
-                    sma = self.market.sma_close()
-                    if mid and ((mid > sma and len(bids) < self.LEVELS) or (mid < sma and len(asks) < self.LEVELS)):
+                    ema = self.market.ema_close()
+                    print(mid, ema)
+                    if mid and ((mid > ema and len(bids) < self.LEVELS) or (mid < ema and len(asks) < self.LEVELS)):
                         await self.place(bids_px, asks_px, bids_value, asks_value)
-                    elif self.last_sma and sma and (abs(self.last_sma - sma) / sma) < self.THRESHOLD:
+                    elif self.last_ema and ema and (abs(self.last_ema - ema) / ema) < self.THRESHOLD:
                         self.passed += 1
                     else:
                         await self.modify(bids, asks, bids_value, asks_value)
