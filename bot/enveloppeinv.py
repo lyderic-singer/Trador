@@ -155,7 +155,7 @@ class EnveloppeInv: # place orders grid each separed with delta
             for i, o in enumerate(orders):
                 modify = get_modify(o, self.instrument, sz, price_fn(i), "Alo")
                 if self.valid(modify["order"]): modifies.append(modify)
-        if ema and ema > mid: process(bids, len(bids), longable, price_bid)
+        if ema and ema < mid: process(bids, len(bids), longable, price_bid)
         else: process(reversed(asks), len(asks), shortable, price_ask)
         if modifies:
             executed, error = await self.executor.batch_modify(modifies)
@@ -191,7 +191,7 @@ class EnveloppeInv: # place orders grid each separed with delta
             for px in prices:
                 order = get_order(self.instrument, is_buy, sz, px, {"limit": {"tif": "Alo"}})
                 if self.valid(order): orders.append(order)
-        if ema and ema > mid: process(new_bids_px, longable, True)
+        if ema and ema < mid: process(new_bids_px, longable, True)
         else: process(new_asks_px, shortable, False)
         if orders:
             executed, error = await self.executor.batch_order(orders)
@@ -220,7 +220,6 @@ class EnveloppeInv: # place orders grid each separed with delta
                     bids, bids_px, bids_value, asks, asks_px, asks_value = await self.state()
                     mid = self.market.mid
                     ema = self.market.ema_close()
-                    print(mid, ema)
                     if mid and ((mid > ema and len(bids) < self.LEVELS) or (mid < ema and len(asks) < self.LEVELS)):
                         await self.place(bids_px, asks_px, bids_value, asks_value)
                     elif self.last_ema and ema and (abs(self.last_ema - ema) / ema) < self.THRESHOLD:
