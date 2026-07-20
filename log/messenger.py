@@ -94,11 +94,10 @@ class Messenger:
     async def stop(self):
         try:
             self.running = False
-            await self.messages.join()
             await cancel(self.task)
             if self.file:
                 self.file.close()
                 self.file = None
         except Exception as e:
             await self._log.error(f"{e}")
-            raise
+            raise e

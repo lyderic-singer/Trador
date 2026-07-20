@@ -7,10 +7,10 @@ from log.telegram import Telegram
 from core.HL.hl import HL
 
 class Orchester:
-    def __init__(self, mainnet):
+    def __init__(self, mainnet: bool = False, notify: bool = False):
         self.messenger = Messenger("log/logs.txt")
         self.strategy = None
-        self.telegram = Telegram(self.messenger)
+        self.telegram = Telegram(self.messenger) if notify else None
         self.session = Session(self.messenger)
         self._log = Logger(self, self.messenger)
         self.hl = HL(mainnet, self.messenger, self.session)
@@ -26,7 +26,7 @@ class Orchester:
             await self._log.info("Starting")
             await self.session.start()
             await self.hl.start()
-            await self.telegram.start(self)
+            if self.telegram: await self.telegram.start(self)
             self.running = True
             await self._log.success(f"Started in {(time.time()-t):.2f} s", send_tg= True)
         except Exception:
@@ -41,7 +41,7 @@ class Orchester:
             await self.hl.stop()
             await self.session.stop()
             await self._log.success("Stopped", send_tg=True)
-            await self.telegram.stop()
+            if self.telegram: await self.telegram.stop()
             await self.messenger.stop()
         except Exception:
             await self._log.error("Stop failed")
