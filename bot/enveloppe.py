@@ -80,6 +80,45 @@ class Enveloppe:
         self.market = MarketHL(self.instrument, hl, self.WINDOW, self.TIMEFRAME)
         self.account = AccountPerpDexHL(self.dex, [self.instrument], hl)
 
+    async def start(self):
+        if self.running:
+            return await self._log.info("already started")
+        await self.market.start()
+        self.grid.running = True
+        await self.account.start()
+        await self.executor.start()
+        self.running = True
+        self.task = asyncio.create_task(self.run())
+        await self._log.success("Started")
+
+    async def stop(self):
+        self.running = False
+        await cancel(self.task)
+        await self.market.stop()
+        await self.account.stop()
+        await self._log.info(
+            f"{self.cycles} cycles: {self.passed} pass; "
+            f"{self.placed}/{self.placed + self.placed_error} place and "
+            f"{self.modified}/{self.modified + self.modified_error} modify")
+        await self._log.success("Stopped")
+    
+    async def state(self):
+        orders = await self.hl.info.open_orders(self.address, dex=self.dex)
+        orders.sort(key=lambda x: float(x["limitPx"]))
+        bids, bids_px, bids_value, asks, asks_px, asks_value = [], [], 0, [], [], 0
+        for o in orders:
+            px = float(o["limitPx"])
+            sz = float(o["sz"])
+            if o["side"] == 'B':
+                bids.append(o)
+                bids_px.append(px)
+                bids_value += px * sz
+            else:
+                asks.append(o)
+                asks_px.append(float(o["limitPx"]))
+                asks_value += px * sz
+        return bids, bids_px, bids_value, asks, asks_px, asks_value
+
     def available(self, leveraged_account_value, mid: float, pos_value, pos_size, bids_value: float = 0.0, asks_value: float = 0.0):
         position_value = pos_value if pos_size >= 0 else -pos_value
         longable = max(leveraged_account_value - position_value - bids_value, 0) # TODO adapt for multiple coins
