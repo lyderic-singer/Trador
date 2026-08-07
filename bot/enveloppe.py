@@ -1,4 +1,5 @@
 import asyncio
+import traceback
 from typing import Iterable
 from core.HL.utils.functions import cancel, get_order, get_modify, remaining
 from bot.market import MarketHL
@@ -197,3 +198,27 @@ class Enveloppe:
             process(bids, len(bids), longable, lambda i: min(self.grid.bids[i], (1 - self.MAKER_FEES) * mid), True)
             process(reversed(asks), len(asks), shortable, lambda i: max(self.grid.asks[-(i + 1)], (1 + self.MAKER_FEES) * mid), False)
         return modifies
+
+    async def run(self):
+        try:
+            while self.running:
+                try:
+                    bids, bids_px, bids_value, asks, asks_px, asks_value = await self.state()
+                    mid = self.market.mid
+                    ema = self.market.ema_close()
+                    if mid and ((mid > ema and len(bids) < self.LEVELS) or (mid < ema and len(asks) < self.LEVELS)):
+                        await self.place(bids_px, asks_px, bids_value, asks_value)
+                    elif self.last_ema and ema and (abs(self.last_ema - ema) / ema) < self.THRESHOLD:
+                        self.passed += 1
+                    else:
+                        await self.modify(bids, asks, bids_value, asks_value)
+                    self.cycles += 1
+                except Exception as e:
+                    await self._log.error(f"{traceback.format_exc()}")
+                finally:
+                    await asyncio.sleep(self.POLL_DELAY)
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            await self._log.error(f"{e}")
+            self.running = False
