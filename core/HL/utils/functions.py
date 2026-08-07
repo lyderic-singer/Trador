@@ -144,3 +144,16 @@ def closests(l1: list[float], l2: list[float]): # both l1 and l2 in ascending or
             else:
                 j += 1
         return l + l2[j:]
+
+def remaining(l1: list[float], l2: list[float]) -> list[float]: # both l1 and l2 in ascending order
+    res = []
+    j = 0
+    for x in l1:
+        while j < len(l2) and l2[j] < x:
+            res.append(l2[j])
+            j += 1
+        if j < len(l2) and (not res or abs(l2[j] - x) <= abs(x - res[-1])):
+            j += 1
+        elif res:
+            res.pop()
+    return res + l2[j:]
