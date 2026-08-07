@@ -39,8 +39,8 @@ class Grid:
             px += raw * (self.alpha ** i)
         self.asks = asks
 
-class Enveloppe: # one-sided (inv) grid with exponential spacing (ALPHA) and exponential sizes derived from SKEW
-    def __init__(self):
+class Enveloppe:
+    def __init__(self, x: str | int, hl):
         # ==== CONSTANTS ====
         self.MAKER_FEES = 0.00003 # 0.003%
         self.TAKER_FEES = 0.00009 # 0.009%
@@ -55,9 +55,7 @@ class Enveloppe: # one-sided (inv) grid with exponential spacing (ALPHA) and exp
         self.THRESHOLD = 0.0001   # 0.01% | relative EMA change threshold to trigger rebalancing
         self.TIMEFRAME = "5m"     # market data candle timeframe used for indicators (SMA/EMA)
         self.WINDOW = 40          # rolling window size for indicator (SMA/EMA period)
-        self.INV = False          # stop place / modify in the part against mean if activated
-        self.ACCOUNT = 100
-        self.LEVERAGE = 10
+        self.INV = True           # stop place / modify in the part against mean if activated
         # ==== STATS ====
         self.cycles = 0           # nb of cycles for stats
         self.placed = 0           # nb of place for stats
@@ -72,10 +70,18 @@ class Enveloppe: # one-sided (inv) grid with exponential spacing (ALPHA) and exp
         self.beta = self.SKEW ** (1 / (self.LEVELS - 1)) if self.LEVELS > 1 else 1.0
         self.geo = (1 - self.beta ** self.LEVELS) / (1 - self.beta) if self.beta != 1.0 else float(self.LEVELS)
         self.grid = Grid(self.LEVELS, self.SPREAD, self.OFFSET, self.ALPHA)
+        # ==== CORE ====
+        self.hl = hl
+        self.address = hl.address
+        self._log = Logger(self, hl.messenger)
+        self.instrument = hl.info.instrument(x)
+        self.dex = self.instrument.dex
+        self.executor = Executor(hl)
+        self.market = MarketHL(self.instrument, hl, self.WINDOW, self.TIMEFRAME)
+        self.account = AccountPerpDexHL(self.dex, [self.instrument], hl)
 
-    def available(self, mid: float, pos_value, pos_size, bids_value: float = 0.0, asks_value: float = 0.0):
+    def available(self, leveraged_account_value, mid: float, pos_value, pos_size, bids_value: float = 0.0, asks_value: float = 0.0):
         position_value = pos_value if pos_size >= 0 else -pos_value
-        leveraged_account_value = self.ACCOUNT * self.LEVERAGE
         longable = max(leveraged_account_value - position_value - bids_value, 0) # TODO adapt for multiple coins
         shortable = max(leveraged_account_value + position_value - asks_value, 0) # TODO adapt for multiple coins
         factor = self.CAP / mid # normalize $ to get [COIN]
@@ -98,11 +104,11 @@ class Enveloppe: # one-sided (inv) grid with exponential spacing (ALPHA) and exp
         s0 = available / self.geo
         return [s0 * (self.beta ** i) for i in range(self.LEVELS)]
 
-    def compute_place(self, bids: list, asks: list, best_bid, best_ask, ema, pos_value, pos_size):
+    def compute_place(self, leveraged_account_value: float, bids: list, asks: list, best_bid, best_ask, ema, pos_value, pos_size):
         mid = (best_bid + best_ask) / 2
         bids_px, asks_px = [b["limitPx"] for b in bids], [a["limitPx"] for a in asks]
         self.grid.update(ema)
-        longable, shortable = self.available(mid, pos_value, pos_size, sum([sz * px for sz, px in bids]), sum([sz * px for sz, px in asks]))
+        longable, shortable = self.available(leveraged_account_value, mid, pos_value, pos_size, sum([sz * px for sz, px in bids]), sum([sz * px for sz, px in asks]))
         orders = []
         def process(existing, existing_px, grid_px, available, is_buy):
             sizes = self.sizes(available)
@@ -131,11 +137,11 @@ class Enveloppe: # one-sided (inv) grid with exponential spacing (ALPHA) and exp
             process(asks, asks_px, self.grid.asks, shortable, False)
         return orders
 
-    def compute_modify(self, bids: list, asks: list, best_bid, best_ask, ema, pos_value, pos_size): # both bids and asks in ascending order
+    def compute_modify(self, leveraged_account_value: float, bids: list, asks: list, best_bid, best_ask, ema, pos_value, pos_size): # both bids and asks in ascending order
         mid = (best_bid + best_ask) / 2
         self.grid.update(ema)
         modifies = []
-        longable, shortable = self.available(mid, pos_value, pos_size, 0, 0) # disregard bids and asks value because they gonna be modified
+        longable, shortable = self.available(leveraged_account_value, mid, pos_value, pos_size, 0, 0) # disregard bids and asks value because they gonna be modified
         def process(orders: Iterable, n: int, available: float, price_fn, is_buy):
             sizes = self.sizes(available)
             size = 0
