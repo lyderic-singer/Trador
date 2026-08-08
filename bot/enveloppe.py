@@ -179,12 +179,11 @@ class Enveloppe:
             process(asks, asks_px, self.grid.asks, shortable, False)
         return orders
 
-    def compute_modify(self, leveraged_account_value: float, bids: list, asks: list, best_bid, best_ask, ema, pos_value, pos_size): # both bids and asks in ascending order
+    def compute_modify(self,bids: list, asks: list, best_bid, best_ask, ema, longable, shortable): # both bids and asks in ascending order
         mid = (best_bid + best_ask) / 2
         self.grid.update(ema)
         modifies: list[Modify] = []
-        longable, shortable = self.available(leveraged_account_value, mid, pos_value, pos_size, 0, 0) # disregard bids and asks value because they gonna be modified
-        def process(orders: Iterable, n: int, available: float, price_fn, is_buy):
+        def process(orders: Iterable, n: int, available: float, price_fn):
             sizes = self.sizes(available)
             scale = max(available / sum(sizes[-n:]), 1)
             for i, o in enumerate(orders):
@@ -193,12 +192,56 @@ class Enveloppe:
                 if self.valid(modify["order"]):
                     modifies.append(modify)
         if self.INV:
-            if ema and ema < mid: process(bids, len(bids), longable, lambda i: min(self.grid.bids[i], (1 - self.MAKER_FEES) * mid), True)
-            else: process(reversed(asks), len(asks), shortable, lambda i: max(self.grid.asks[-(i + 1)], (1 + self.MAKER_FEES) * mid), False)
+            if ema and ema < mid: process(bids, len(bids), longable, lambda i: min(self.grid.bids[i], (1 - self.MAKER_FEES) * mid))
+            else: process(reversed(asks), len(asks), shortable, lambda i: max(self.grid.asks[-(i + 1)], (1 + self.MAKER_FEES) * mid))
         else:
-            process(bids, len(bids), longable, lambda i: min(self.grid.bids[i], (1 - self.MAKER_FEES) * mid), True)
-            process(reversed(asks), len(asks), shortable, lambda i: max(self.grid.asks[-(i + 1)], (1 + self.MAKER_FEES) * mid), False)
+            process(bids, len(bids), longable, lambda i: min(self.grid.bids[i], (1 - self.MAKER_FEES) * mid))
+            process(reversed(asks), len(asks), shortable, lambda i: max(self.grid.asks[-(i + 1)], (1 + self.MAKER_FEES) * mid))
         return modifies
+
+    async def place(self, ):
+        orders = self.compute_place()
+        if orders:
+            executed, error = await self.executor.batch_order(orders)
+            if error:
+                errors = len(executed) - sum(executed)
+                self.placed_error += errors
+                self.placed += len(executed) - errors
+                position = self.account.positions[self.instrument.name]
+                result = [f"{'Bid' if o['b'] else 'Ask'} {'success' if executed[i] else 'fail'} size={o['s']} value={float(o['s']) * float(o['p'])}" for i, o in enumerate(orders)]
+                detail = ";\n".join(result)
+                await self._log.warning(
+                    f"{errors}/{len(executed)} orders not executed\n"
+                    f"longable: {longable * mid / self.CAP} vs {position.longable}, shortable: {shortable * mid / self.CAP} vs {position.shortable}\n"
+                    f"bids: value={bids_value} count={len(bids_px)}, asks value={asks_value} count={len(asks_px)}\n"
+                    f"position: size={position.size} value={position.value} pnl={position.pnl}\n"
+                    f"detail: {detail}")
+            self.placed += len(executed)
+            # TODO perhaps should update last_ema
+        else:
+            self.passed += 1
+        
+        async def modify(self, ):
+            modifies = self.compute_modify()
+            if modifies:
+            executed, error = await self.executor.batch_modify(modifies)
+            if error:
+                errors = len(executed) - sum(executed)
+                self.modified_error += errors
+                self.modified += len(executed) - errors
+                position = self.account.positions[self.instrument.name]
+                result = [f"{'Bid' if o['order']['b'] else 'Ask'} {'success' if executed[i] else 'fail'} size={o['order']['s']} value={float(o['order']['s']) * float(o['order']['p'])}" for i, o in enumerate(modifies)]
+                detail = ";\n".join(result)
+                await self._log.warning(
+                    f"{errors}/{len(executed)} modifies not executed\n"
+                    f"longable: {longable * mid / self.CAP} vs {position.longable + bids_value}, shortable: {shortable * mid / self.CAP} vs {position.shortable + asks_value}\n"
+                    f"bids: value={bids_value} count={len(bids)}, asks value={asks_value} count={len(asks)}\n"
+                    f"position: size={position.size} value={position.value} pnl={position.pnl}\n"
+                    f"detail: {detail}")
+            self.last_ema = self.market.ema_close() # TODO if no modified that's not great but...
+            self.modified += len(executed)
+        else:
+            self.passed += 1
 
     async def run(self):
         try:
