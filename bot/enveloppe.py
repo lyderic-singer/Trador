@@ -127,12 +127,15 @@ class Enveloppe:
         factor = self.CAP / mid # normalize $ to get [COIN]
         return factor * longable, factor * shortable # max_sz_bid, max_sz_ask
 
-    def valid(self, is_buy, px, sz, best_bid, best_ask):
+    def valid(self, order: Order):
+        is_buy = order.get("b")
+        px = float(order.get("p", 0))
+        sz = float(order.get("s", 0))
         value = px * sz
-        if is_buy:
-            return (value > self.MIN_VALUE) and (px <= best_ask)
-        elif not is_buy:
-            return (value > self.MIN_VALUE) and (px >= best_bid)
+        if is_buy and self.market.best_ask:
+            return (value > self.MIN_VALUE) and (px < self.market.best_ask)
+        elif not is_buy and self.market.best_bid:
+            return (value > self.MIN_VALUE) and (px > self.market.best_bid)
         else:
             return False
 
@@ -149,10 +152,9 @@ class Enveloppe:
         bids_px, asks_px = [b["limitPx"] for b in bids], [a["limitPx"] for a in asks]
         self.grid.update(ema)
         longable, shortable = self.available(leveraged_account_value, mid, pos_value, pos_size, sum([sz * px for sz, px in bids]), sum([sz * px for sz, px in asks]))
-        orders = []
+        orders: list[Order] = []
         def process(existing, existing_px, grid_px, available, is_buy):
             sizes = self.sizes(available)
-            size = 0
             nominal = list(reversed(sizes)) if is_buy else sizes
             missing_px = remaining(existing_px, grid_px)
             missing, ref, m = [], 0.0, 0
@@ -166,9 +168,9 @@ class Enveloppe:
             scale = min(used / ref, 1.0) if ref > 0 else 1.0
             for k in missing:
                 sz = scale * nominal[k]
-                if self.valid(is_buy, grid_px[k], sz, best_bid, best_ask):
-                    size += sz
-                    orders.append((sz, grid_px[k]))
+                order = get_order(self.instrument, is_buy, sz, grid_px[k], {"limit": {"tif": "Alo"}})
+                if self.valid(order):
+                    orders.append(order)
         if self.INV:
             if ema and ema < mid: process(bids, bids_px, self.grid.bids, longable, True)
             else: process(asks, asks_px, self.grid.asks, shortable, False)
@@ -180,17 +182,16 @@ class Enveloppe:
     def compute_modify(self, leveraged_account_value: float, bids: list, asks: list, best_bid, best_ask, ema, pos_value, pos_size): # both bids and asks in ascending order
         mid = (best_bid + best_ask) / 2
         self.grid.update(ema)
-        modifies = []
+        modifies: list[Modify] = []
         longable, shortable = self.available(leveraged_account_value, mid, pos_value, pos_size, 0, 0) # disregard bids and asks value because they gonna be modified
         def process(orders: Iterable, n: int, available: float, price_fn, is_buy):
             sizes = self.sizes(available)
-            size = 0
             scale = max(available / sum(sizes[-n:]), 1)
             for i, o in enumerate(orders):
                 sz = scale * sizes[-(i+1)]
-                size += sz
-                if self.valid(is_buy, price_fn(i), sz, best_bid, best_ask): modifies.append((o, (sz, price_fn(i))))
-            print(available, size, sum(sizes[-n:]))
+                modify = get_modify(o, self.instrument, sz, price_fn(i), "Alo")
+                if self.valid(modify["order"]):
+                    modifies.append(modify)
         if self.INV:
             if ema and ema < mid: process(bids, len(bids), longable, lambda i: min(self.grid.bids[i], (1 - self.MAKER_FEES) * mid), True)
             else: process(reversed(asks), len(asks), shortable, lambda i: max(self.grid.asks[-(i + 1)], (1 + self.MAKER_FEES) * mid), False)
