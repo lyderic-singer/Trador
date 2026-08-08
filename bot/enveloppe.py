@@ -203,8 +203,9 @@ class Enveloppe:
             process(reversed(asks), len(asks), shortable, lambda i: max(self.grid.asks[-(i + 1)], (1 + self.MAKER_FEES) * mid))
         return modifies
 
-    async def place(self, bids, asks, power, position_size, position_value, mid, ema, best_bid, best_ask):
-        longable, shortable = self.available(sum([sz * px for sz, px in bids]), sum([sz * px for sz, px in asks]), power, position_size, position_value, mid)
+    async def place(self, bids: list, asks: list, power: float, position_size: float, position_value: float, mid: float, ema: float, best_bid: float, best_ask: float):
+        bids_value, asks_value = sum([sz * px for sz, px in bids]), sum([sz * px for sz, px in asks])
+        longable, shortable = self.available(bids_value, asks_value, power, position_size, position_value, mid)
         orders = self.compute_place(bids, asks, longable, shortable, mid, ema, best_bid, best_ask)
         if orders:
             executed, error = await self.executor.batch_order(orders)
@@ -218,15 +219,15 @@ class Enveloppe:
                 await self._log.warning(
                     f"{errors}/{len(executed)} orders not executed\n"
                     f"longable: {longable * mid / self.CAP} vs {position.longable}, shortable: {shortable * mid / self.CAP} vs {position.shortable}\n"
-                    f"bids: value={bids_value} count={len(bids_px)}, asks value={asks_value} count={len(asks_px)}\n"
+                    f"bids: value={bids_value} count={len(bids)}, asks value={asks_value} count={len(asks)}\n"
                     f"position: size={position.size} value={position.value} pnl={position.pnl}\n"
                     f"detail: {detail}")
             self.placed += len(executed)
-            # TODO perhaps should update last_ema
         else:
             self.passed += 1
         
-    async def modify(self, bids, asks, power, position_size, position_value, mid, ema, best_bid, best_ask):
+    async def modify(self,  bids: list, asks: list, power: float, position_size: float, position_value: float, mid: float, ema: float, best_bid: float, best_ask: float):
+        bids_value, asks_value = sum([sz * px for sz, px in bids]), sum([sz * px for sz, px in asks])
         longable, shortable = self.available(0.0, 0.0, power, position_size, position_value, mid) # ignoring open orders
         modifies = self.compute_modify(bids, asks, longable, shortable, mid, ema, best_bid, best_ask)
         if modifies:
@@ -253,15 +254,13 @@ class Enveloppe:
         try:
             while self.running:
                 try:
-                    bids, bids_px, bids_value, asks, asks_px, asks_value = await self.state()
-                    mid = self.market.mid
-                    ema = self.market.ema_close()
+                    (bids, asks), power, (position_size, position_value), (mid, ema, best_bid, best_ask) = await self.state()
                     if mid and ((mid > ema and len(bids) < self.LEVELS) or (mid < ema and len(asks) < self.LEVELS)):
-                        await self.place(bids_px, asks_px, bids_value, asks_value)
+                        await self.place(bids, asks, power, position_size, position_value, mid, ema, best_bid, best_ask)
                     elif self.last_ema and ema and (abs(self.last_ema - ema) / ema) < self.THRESHOLD:
                         self.passed += 1
                     else:
-                        await self.modify(bids, asks, bids_value, asks_value)
+                        await self.modify(bids, asks, power, position_size, position_value, mid, ema, best_bid, best_ask)
                     self.cycles += 1
                 except Exception as e:
                     await self._log.error(f"{traceback.format_exc()}")
