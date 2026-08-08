@@ -48,6 +48,14 @@ class Instrument:
             f"Instrument(name={self.name}, coin={self.coin}, asset={self.asset}, type={self.type}, "
             f"dex={self.dex if self.dex else '""'}, sz_decimals={self.sz_decimals}, px_decimals={self.px_decimals})")
 
+class Resting:
+    def __init__(self, order: dict):
+        self.sz = float(order["sz"])
+        self.px = float(order["limitPx"])
+        self.is_buy = order["side"] == "B"
+        self.value = self.sz * self.px
+        self.original = order
+
 SpotTokenInfo = TypedDict(
     "SpotTokenInfo",
     {
