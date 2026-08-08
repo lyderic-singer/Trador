@@ -106,36 +106,42 @@ class Enveloppe:
     async def state(self):
         orders = await self.hl.info.open_orders(self.address, dex=self.dex)
         orders.sort(key=lambda x: float(x["limitPx"]))
-        bids, bids_px, bids_value, asks, asks_px, asks_value = [], [], 0, [], [], 0
+        bids, asks = [], []
         for o in orders:
-            px = float(o["limitPx"])
-            sz = float(o["sz"])
             if o["side"] == 'B':
                 bids.append(o)
-                bids_px.append(px)
-                bids_value += px * sz
             else:
                 asks.append(o)
-                asks_px.append(float(o["limitPx"]))
-                asks_value += px * sz
-        return bids, bids_px, bids_value, asks, asks_px, asks_value
 
-    def available(self, leveraged_account_value, mid: float, pos_value, pos_size, bids_value: float = 0.0, asks_value: float = 0.0):
-        position_value = pos_value if pos_size >= 0 else -pos_value
-        longable = max(leveraged_account_value - position_value - bids_value, 0) # TODO adapt for multiple coins
-        shortable = max(leveraged_account_value + position_value - asks_value, 0) # TODO adapt for multiple coins
+        position = self.account.positions.get(self.instrument.coin)
+        if position is None: raise ValueError("position not found")
+        position_value = position.value if position.size >= 0 else -position.value
+        power = self.account.account.value * position.leverage
+
+        mid = self.market.mid
+        ema = self.market.ema_close()
+        best_bid = self.market.best_bid
+        best_ask = self.market.best_ask
+        if not (mid and ema and best_bid and best_ask): raise ValueError("market nor inited")
+
+        return (bids, asks), power, (position.size, position_value), (mid, ema, best_bid, best_ask)
+
+    def available(self, bids_value: float, asks_value: float, power: float, position_size: float, position_value: float, mid: float):
+        position_value = position_value if position_size >= 0 else -position_value
+        longable = max(power - position_value - bids_value, 0) # TODO adapt for multiple coins
+        shortable = max(power + position_value - asks_value, 0) # TODO adapt for multiple coins
         factor = self.CAP / mid # normalize $ to get [COIN]
         return factor * longable, factor * shortable # max_sz_bid, max_sz_ask
 
-    def valid(self, order: Order):
+    def valid(self, order: Order, best_bid, best_ask):
         is_buy = order.get("b")
         px = float(order.get("p", 0))
         sz = float(order.get("s", 0))
         value = px * sz
-        if is_buy and self.market.best_ask:
-            return (value > self.MIN_VALUE) and (px < self.market.best_ask)
-        elif not is_buy and self.market.best_bid:
-            return (value > self.MIN_VALUE) and (px > self.market.best_bid)
+        if is_buy and best_ask:
+            return (value > self.MIN_VALUE) and (px < best_ask)
+        elif not is_buy and best_bid:
+            return (value > self.MIN_VALUE) and (px > best_bid)
         else:
             return False
 
@@ -147,11 +153,10 @@ class Enveloppe:
         s0 = available / self.geo
         return [s0 * (self.beta ** i) for i in range(self.LEVELS)]
 
-    def compute_place(self, leveraged_account_value: float, bids: list, asks: list, best_bid, best_ask, ema, pos_value, pos_size):
+    def compute_place(self, bids: list, asks: list, longable: float, shortable: float, mid: float, ema: float, best_bid: float, best_ask: float):
         mid = (best_bid + best_ask) / 2
         bids_px, asks_px = [b["limitPx"] for b in bids], [a["limitPx"] for a in asks]
         self.grid.update(ema)
-        longable, shortable = self.available(leveraged_account_value, mid, pos_value, pos_size, sum([sz * px for sz, px in bids]), sum([sz * px for sz, px in asks]))
         orders: list[Order] = []
         def process(existing, existing_px, grid_px, available, is_buy):
             sizes = self.sizes(available)
@@ -169,7 +174,7 @@ class Enveloppe:
             for k in missing:
                 sz = scale * nominal[k]
                 order = get_order(self.instrument, is_buy, sz, grid_px[k], {"limit": {"tif": "Alo"}})
-                if self.valid(order):
+                if self.valid(order, best_bid, best_ask):
                     orders.append(order)
         if self.INV:
             if ema and ema < mid: process(bids, bids_px, self.grid.bids, longable, True)
@@ -179,8 +184,7 @@ class Enveloppe:
             process(asks, asks_px, self.grid.asks, shortable, False)
         return orders
 
-    def compute_modify(self,bids: list, asks: list, best_bid, best_ask, ema, longable, shortable): # both bids and asks in ascending order
-        mid = (best_bid + best_ask) / 2
+    def compute_modify(self, bids: list, asks: list, longable: float, shortable: float, mid: float, ema: float, best_bid: float, best_ask: float): # both bids and asks in ascending order
         self.grid.update(ema)
         modifies: list[Modify] = []
         def process(orders: Iterable, n: int, available: float, price_fn):
@@ -189,7 +193,7 @@ class Enveloppe:
             for i, o in enumerate(orders):
                 sz = scale * sizes[-(i+1)]
                 modify = get_modify(o, self.instrument, sz, price_fn(i), "Alo")
-                if self.valid(modify["order"]):
+                if self.valid(modify["order"], best_bid, best_ask):
                     modifies.append(modify)
         if self.INV:
             if ema and ema < mid: process(bids, len(bids), longable, lambda i: min(self.grid.bids[i], (1 - self.MAKER_FEES) * mid))
@@ -199,8 +203,9 @@ class Enveloppe:
             process(reversed(asks), len(asks), shortable, lambda i: max(self.grid.asks[-(i + 1)], (1 + self.MAKER_FEES) * mid))
         return modifies
 
-    async def place(self, ):
-        orders = self.compute_place()
+    async def place(self, bids, asks, power, position_size, position_value, mid, ema, best_bid, best_ask):
+        longable, shortable = self.available(sum([sz * px for sz, px in bids]), sum([sz * px for sz, px in asks]), power, position_size, position_value, mid)
+        orders = self.compute_place(bids, asks, longable, shortable, mid, ema, best_bid, best_ask)
         if orders:
             executed, error = await self.executor.batch_order(orders)
             if error:
@@ -221,9 +226,10 @@ class Enveloppe:
         else:
             self.passed += 1
         
-        async def modify(self, ):
-            modifies = self.compute_modify()
-            if modifies:
+    async def modify(self, bids, asks, power, position_size, position_value, mid, ema, best_bid, best_ask):
+        longable, shortable = self.available(0.0, 0.0, power, position_size, position_value, mid) # ignoring open orders
+        modifies = self.compute_modify(bids, asks, longable, shortable, mid, ema, best_bid, best_ask)
+        if modifies:
             executed, error = await self.executor.batch_modify(modifies)
             if error:
                 errors = len(executed) - sum(executed)
