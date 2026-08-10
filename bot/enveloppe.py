@@ -68,6 +68,7 @@ class Enveloppe:
         self.task = None
         self.running = False
         self.last_ema = None
+        self.to_modify = False
         self.beta = self.SKEW ** (1 / (self.LEVELS - 1)) if self.LEVELS > 1 else 1.0
         self.geo = (1 - self.beta ** self.LEVELS) / (1 - self.beta) if self.beta != 1.0 else float(self.LEVELS)
         self.grid = Grid(self.LEVELS, self.SPREAD, self.OFFSET, self.ALPHA)
@@ -218,6 +219,8 @@ class Enveloppe:
                     f"position: size={position.size} value={position.value} pnl={position.pnl}\n"
                     f"detail: {detail}")
             self.placed += len(executed)
+            if len(executed) > 0:
+                self.to_modify = True
         else:
             self.passed += 1
         
@@ -242,6 +245,8 @@ class Enveloppe:
                     f"detail: {detail}")
             self.last_ema = self.market.ema_close() # TODO if no modified that's not great but...
             self.modified += len(executed)
+            if len(executed) > 0:
+                self.to_modify = False
         else:
             self.passed += 1
 
@@ -250,7 +255,9 @@ class Enveloppe:
             while self.running:
                 try:
                     (bids, asks), power, (position_size, position_value), (mid, ema, best_bid, best_ask) = await self.state()
-                    if mid and ((mid > ema and len(bids) < self.LEVELS) or (mid < ema and len(asks) < self.LEVELS)):
+                    if self.to_modify:
+                        await self.modify(bids, asks, power, position_size, position_value, mid, ema, best_bid, best_ask)
+                    elif mid and ((mid > ema and len(bids) < self.LEVELS) or (mid < ema and len(asks) < self.LEVELS)):
                         await self.place(bids, asks, power, position_size, position_value, mid, ema, best_bid, best_ask)
                     elif self.last_ema and ema and (abs(self.last_ema - ema) / ema) < self.THRESHOLD:
                         self.passed += 1
