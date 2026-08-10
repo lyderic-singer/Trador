@@ -90,7 +90,7 @@ class Enveloppe:
         await self.account.start()
         await self.executor.start()
         self.running = True
-        self.task = asyncio.create_task(self.run())
+        # self.task = asyncio.create_task(self.run())
         await self._log.success("Started")
 
     async def stop(self):
@@ -149,12 +149,14 @@ class Enveloppe:
         s0 = available / self.geo
         return [s0 * (self.beta ** i) for i in range(self.LEVELS)]
 
-    def compute_place(self, bids: list[Resting], asks: list[Resting], longable: float, shortable: float, mid: float, ema: float, best_bid: float, best_ask: float):
+    def compute_place(self, bids: list[Resting], asks: list[Resting], longable: float, shortable: float, longcap: float, shortcap: float, mid: float, ema: float, best_bid: float, best_ask: float):
         bids_px, asks_px = [b.px for b in bids], [a.px for a in asks]
         self.grid.update(ema)
         orders: list[Order] = []
-        def process(existing: list[Resting], existing_px: list, grid_px: list, available: float, is_buy: bool):
-            sizes = self.sizes(available)
+        def process(existing: list[Resting], existing_px: list, grid_px: list, capacity: float, budget: float, is_buy: bool):
+            if capacity <= 0 or budget <= 0:
+                return
+            sizes = self.sizes(capacity)
             nominal = list(reversed(sizes)) if is_buy else sizes
             missing_px = remaining(existing_px, grid_px)
             missing, ref, m = [], 0.0, 0
@@ -164,19 +166,22 @@ class Enveloppe:
                     m += 1
                 else:
                     ref += nominal[k]
+            if not missing:
+                return
             used = sum(order.sz for order in existing)
+            want = sum(nominal[k] for k in missing)
             scale = min(used / ref, 1.0) if ref > 0 else 1.0
+            scale = min(scale, budget / want) if want > 0 else 0.0
             for k in missing:
-                sz = scale * nominal[k]
-                order = get_order(self.instrument, is_buy, sz, grid_px[k], {"limit": {"tif": "Alo"}})
+                order = get_order(self.instrument, is_buy, scale * nominal[k], grid_px[k], {"limit": {"tif": "Alo"}})
                 if self.valid(order, best_bid, best_ask):
                     orders.append(order)
         if self.INV:
-            if ema and ema < mid: process(bids, bids_px, self.grid.bids, longable, True)
-            else: process(asks, asks_px, self.grid.asks, shortable, False)
+            if ema and ema < mid: process(bids, bids_px, self.grid.bids, longcap, longable, True)
+            else: process(asks, asks_px, self.grid.asks, shortcap, shortable, False)
         else:
-            process(bids, bids_px, self.grid.bids, longable, True)
-            process(asks, asks_px, self.grid.asks, shortable, False)
+            process(bids, bids_px, self.grid.bids, longcap, longable, True)
+            process(asks, asks_px, self.grid.asks, shortcap, shortable, False)
         return orders
 
     def compute_modify(self, bids: list[Resting], asks: list[Resting], longable: float, shortable: float, mid: float, ema: float, best_bid: float, best_ask: float): # both bids and asks in ascending order
@@ -201,8 +206,9 @@ class Enveloppe:
 
     async def place(self, bids: list[Resting], asks: list[Resting], power: float, position_size: float, position_value: float, mid: float, ema: float, best_bid: float, best_ask: float):
         bids_value, asks_value = sum([b.value for b in bids]), sum([a.value for a in asks])
-        longable, shortable = self.available(bids_value, asks_value, power, position_size, position_value, mid)
-        orders = self.compute_place(bids, asks, longable, shortable, mid, ema, best_bid, best_ask)
+        longcap, shortcap = self.available(0.0, 0.0, power, position_size, position_value, mid)                   # profil de la grille
+        longable, shortable = self.available(bids_value, asks_value, power, position_size, position_value, mid)   # plafond réel
+        orders = self.compute_place(bids, asks, longable, shortable, longcap, shortcap, mid, ema, best_bid, best_ask)
         if orders:
             executed, error = await self.executor.batch_order(orders)
             if error:
