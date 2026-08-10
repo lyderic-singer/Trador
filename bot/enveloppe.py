@@ -90,7 +90,7 @@ class Enveloppe:
         await self.account.start()
         await self.executor.start()
         self.running = True
-        # self.task = asyncio.create_task(self.run())
+        self.task = asyncio.create_task(self.run())
         await self._log.success("Started")
 
     async def stop(self):
