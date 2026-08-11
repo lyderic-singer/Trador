@@ -56,7 +56,7 @@ class Enveloppe:
         self.THRESHOLD = 0.0001   # 0.01% | relative EMA change threshold to trigger rebalancing
         self.TIMEFRAME = "5m"     # market data candle timeframe used for indicators (SMA/EMA)
         self.WINDOW = 20          # rolling window size for indicator (SMA/EMA period)
-        self.INV = False          # stop place / modify in the part against mean if activated
+        self.INV = True           # stop place / modify in the part against mean if activated
         # ==== STATS ====
         self.cycles = 0           # nb of cycles for stats
         self.placed = 0           # nb of place for stats
