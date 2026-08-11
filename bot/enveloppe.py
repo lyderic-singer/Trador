@@ -45,18 +45,18 @@ class Enveloppe:
         # ==== CONSTANTS ====
         self.MAKER_FEES = 0.00003 # 0.003%
         self.TAKER_FEES = 0.00009 # 0.009%
-        self.SPREAD = 0.045       # 4.5% | minimum distance between the first and the last placed orders
+        self.SPREAD = 0.023       # 4.5% | minimum distance between the first and the last placed orders
         self.OFFSET = 0.0001      # 0.01% spread from ema for first
-        self.ALPHA = 1.03         # exponential price factor between levels (>1 -> more and more spaced)
-        self.SKEW = 30            # size ratio between last and first order (SKEW=10 -> last order is 10x bigger than first)
-        self.LEVELS = 30          # orders count of each side
+        self.ALPHA = 1.02         # exponential price factor between levels (>1 -> more and more spaced)
+        self.SKEW = 3             # size ratio between last and first order (SKEW=10 -> last order is 10x bigger than first)
+        self.LEVELS = 45          # orders count of each side
         self.CAP = 0.85           # 85% | max capacity of portfolio used
         self.MIN_VALUE = 10.5     # minimum order notional value in $ to avoid overfragmentation / fees inefficiency
         self.POLL_DELAY = 10.1    # delay in seconds between each grid evaluation cycle
         self.THRESHOLD = 0.0001   # 0.01% | relative EMA change threshold to trigger rebalancing
         self.TIMEFRAME = "5m"     # market data candle timeframe used for indicators (SMA/EMA)
         self.WINDOW = 20          # rolling window size for indicator (SMA/EMA period)
-        self.INV = True           # stop place / modify in the part against mean if activated
+        self.INV = False          # stop place / modify in the part against mean if activated
         # ==== STATS ====
         self.cycles = 0           # nb of cycles for stats
         self.placed = 0           # nb of place for stats
