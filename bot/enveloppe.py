@@ -5,7 +5,7 @@ from core.HL.utils.functions import cancel, get_order, get_modify, remaining
 from bot.market import MarketHL
 from bot.account import AccountPerpDexHL
 from bot.executor import Executor
-from core.HL.utils.types import Modify, Order, Resting
+from core.HL.utils.types import BuilderInfo, Modify, Order, Resting
 from log.logger import Logger
 
 class Grid:
@@ -45,17 +45,19 @@ class Enveloppe:
         # ==== CONSTANTS ====
         self.MAKER_FEES = 0.00003 # 0.003%
         self.TAKER_FEES = 0.00009 # 0.009%
-        self.SPREAD = 0.012       # 4.5% | minimum distance between the first and the last placed orders
+        self.BUILDER = "0x42f3226007290b02c5a0b15bccbb1ba6df04f992"
+        self.FEE = 50
+        self.SPREAD = 0.005       # 4.5% | minimum distance between the first and the last placed orders
         self.OFFSET = 0.0001      # 0.01% spread from ema for first
         self.ALPHA = 1            # exponential price factor between levels (>1 -> more and more spaced)
-        self.SKEW = 20            # size ratio between last and first order (SKEW=10 -> last order is 10x bigger than first)
+        self.SKEW = 2             # size ratio between last and first order (SKEW=10 -> last order is 10x bigger than first)
         self.LEVELS = 24          # orders count of each side
         self.CAP = 0.85           # 85% | max capacity of portfolio used
         self.MIN_VALUE = 10.5     # minimum order notional value in $ to avoid overfragmentation / fees inefficiency
         self.POLL_DELAY = 10.1    # delay in seconds between each grid evaluation cycle
         self.THRESHOLD = 0.0001   # 0.01% | relative EMA change threshold to trigger rebalancing
         self.TIMEFRAME = "5m"     # market data candle timeframe used for indicators (SMA/EMA)
-        self.WINDOW = 10          # rolling window size for indicator (SMA/EMA period)
+        self.WINDOW = 5           # rolling window size for indicator (SMA/EMA period)
         self.INV = True           # stop place / modify in the part against mean if activated
         # ==== STATS ====
         self.cycles = 0           # nb of cycles for stats
@@ -72,13 +74,14 @@ class Enveloppe:
         self.beta = self.SKEW ** (1 / (self.LEVELS - 1)) if self.LEVELS > 1 else 1.0
         self.geo = (1 - self.beta ** self.LEVELS) / (1 - self.beta) if self.beta != 1.0 else float(self.LEVELS)
         self.grid = Grid(self.LEVELS, self.SPREAD, self.OFFSET, self.ALPHA)
+        self.builder: BuilderInfo | None = BuilderInfo(b=self.BUILDER, f=self.FEE) if self.BUILDER else None
         # ==== CORE ====
         self.hl = hl
         self.address = hl.address
         self._log = Logger(self, hl.messenger)
         self.instrument = hl.info.instrument(x)
         self.dex = self.instrument.dex
-        self.executor = Executor(hl)
+        self.executor = Executor(hl, self.builder)
         self.market = MarketHL(self.instrument, hl, self.WINDOW, self.TIMEFRAME)
         self.account = AccountPerpDexHL(self.dex, [self.instrument], hl)
 
