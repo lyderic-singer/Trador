@@ -4,7 +4,7 @@ import traceback
 from typing import Any
 from core.HL.utils.functions import cancel
 from log.logger import Logger
-from core.HL.utils.types import Cancel, Modify, Order
+from core.HL.utils.types import BuilderInfo, Cancel, Modify, Order
 from core.HL.exchange import Exchange
 from core.HL.hl import HL
 
@@ -20,8 +20,9 @@ class Request:
         self.cancelled = False
 
 class Executor:
-    def __init__(self, hl: HL):
+    def __init__(self, hl: HL, builder: BuilderInfo | None = None):
         self.COOLDOWN = 10 # wait 10s minimum between each requests
+        self.builder = builder
         self.exchange: Exchange = hl.exchange
         self._log = Logger(self, hl.messenger)
         self.requests: asyncio.Queue[Request] = asyncio.Queue()
@@ -146,7 +147,7 @@ class Executor:
         return request.executed, request.error
 
     async def batch_order(self, orders: list[Order]) -> tuple[list[bool], bool]:
-        task = self.exchange.batch_order(orders)
+        task = self.exchange.batch_order(orders, self.builder)
         return await self.execute(task, orders, "order")
 
     async def batch_modify(self, modifies: list[Modify]) -> tuple[list[bool], bool]:
