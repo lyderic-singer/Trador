@@ -3,16 +3,11 @@ import asyncio
 import json
 from typing import Any
 
+from core.utils import call, cancel, closests, remaining
 from core.HL.utils.types import TIF, Cancel, ExecutionType, Instrument, Modify, Order, Transfer
 
 def timestamp_ms() -> int:
     return int(time.time() * 1000)
-
-async def call(fn, *args, **kwargs):
-    result = fn(*args, **kwargs)
-    if asyncio.iscoroutine(result):
-        return await result
-    return result
 
 def extract_subscription_error(s: str) -> dict:
     try:
@@ -69,15 +64,6 @@ def key(dict: dict[str, Any]) -> str:
         if t == "bbo": return f'bbo:{dict["coin"].lower()}'
         raise ValueError(f"Unknown subscription type: {t}")
     
-async def cancel(task: asyncio.Task | None):
-    if task is None or task.done():
-        return
-    task.cancel()
-    try:
-        await task
-    except asyncio.CancelledError:
-        pass
-
 def get_order(instrument, is_buy: bool, size: float, price: float, execution_type: ExecutionType, reduce_only: bool = False, cloid = None) -> Order:
     order: Order = {
         "a": instrument.asset,
@@ -126,34 +112,3 @@ def get_transfer(token: str, amount: float, source_dex: str, destination_dex: st
         "nonce": nonce
     }
     return action
-
-def closests(l1: list[float], l2: list[float]): # both l1 and l2 in ascending order
-    if not l1:
-        return l2
-    elif len(l2) <= len(l1):
-        return []
-    else:
-        l = []
-        j = 0
-        for x in l1:
-            while (j < len(l2)) and (l2[j] < x):
-                l.append(l2[j])
-                j += 1
-            if l and ((j >= len(l2) - 1) or (abs(x - l2[j]) < abs(x - l2[j + 1]))):
-                l.pop()
-            else:
-                j += 1
-        return l + l2[j:]
-
-def remaining(l1: list[float], l2: list[float]) -> list[float]: # both l1 and l2 in ascending order
-    res = []
-    j = 0
-    for x in l1:
-        while j < len(l2) and l2[j] < x:
-            res.append(l2[j])
-            j += 1
-        if j < len(l2) and (not res or abs(l2[j] - x) <= abs(x - res[-1])):
-            j += 1
-        elif res:
-            res.pop()
-    return res + l2[j:]

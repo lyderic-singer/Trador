@@ -2,20 +2,21 @@ import asyncio
 import traceback
 from typing import Iterable, Iterator
 from core.HL.utils.functions import cancel, get_order, get_modify, closests
-from bot.market import MarketHL
-from bot.account import AccountPerpDexHL
-from bot.executor import Executor
+from legacy.hl.market import MarketHL
+from legacy.hl.account import AccountPerpDexHL
+from legacy.hl.executor import Executor
 from core.HL.utils.types import Modify, Order
 from log.logger import Logger
 
 class Grid:
-    def __init__(self, market: MarketHL, levels: int, width_min: float, width_max: float, min_span: float):
+    def __init__(self, market: MarketHL, levels: int, width_min: float, width_max: float, min_span: float, alpha: float):
         self.running = False
         self.market = market
         self.levels = levels
         self.width_min = width_min
         self.width_max = width_max
         self.min_span = min_span
+        self.alpha = alpha
         self.width_range = width_max - width_min
         self.bids = []
         self.asks = []
@@ -23,40 +24,48 @@ class Grid:
     def update(self):
         if not self.running:
             raise ValueError("Must start before request deltas")
-        ema = self.market.ema_close()
+        ema   = self.market.ema_close()
         close = self.market.ema_close()
-        high = self.market.ema_high()
-        low = self.market.ema_low()
-        raw_bid = high + close - 2 * low # TODO try another formula to avoid losing during dumps
-        raw_ask =  2 * high - close - low # TODO try another formula to avoid losing during dumps
+        high  = self.market.ema_high()
+        low   = self.market.ema_low()
+        raw_bid = high + close - 2 * low
+        raw_ask = 2 * high - close - low
         offset_bid = self.width_min * raw_bid
         offset_ask = self.width_min * raw_ask
-        if self.width_max * raw_bid / ema > self.min_span:
-            delta_bid = self.width_range * raw_bid / self.levels
-        else:
-            delta_bid = (self.min_span * ema - offset_bid) / self.levels
-        if self.width_max * raw_ask / ema > self.min_span:
-            delta_ask = self.width_range * raw_ask / self.levels
-        else:
-            delta_ask = (self.min_span * ema - offset_ask) / self.levels
-        self.bids = [ema - offset_bid - (delta_bid * i) for i in range(self.levels -1, -1, -1)] # ascending
-        self.asks = [ema + offset_ask + (delta_ask * i) for i in range(self.levels)] # ascending
+        if self.width_max * raw_bid / ema <= self.min_span:
+            raw_bid = self.min_span * ema / self.width_max
+        if self.width_max * raw_ask / ema <= self.min_span:
+            raw_ask = self.min_span * ema / self.width_max
+        bids = []
+        px = ema - offset_bid
+        for i in range(self.levels):
+            bids.append(px)
+            px -= raw_bid * (self.alpha ** i)
+        self.bids = list(reversed(bids)) # ascending
+        asks = []
+        px = ema + offset_ask
+        for i in range(self.levels):
+            asks.append(px)
+            px += raw_ask * (self.alpha ** i)
+        self.asks = asks  # ascending
 
-class EnveloppeBase: # place orders grid each separed with delta
+class Enveloppexp: # place orders grid each separed with delta
     def __init__(self, x: str | int, hl):
         # ==== CONSTANTS ====
         self.MAKER_FEES = 0.00003 # 0.003%
         self.TAKER_FEES = 0.00009 # 0.009%
-        self.WIDTH_MIN = 0.05     # minimum multiplier for grid spread: controls tightness of orders around mid
+        self.WIDTH_MIN = 0.1      # minimum multiplier for grid spread: controls tightness of orders around mid
         self.WIDTH_MAX = 3        # maximum multiplier for grid spread: controls maximum dispersion in volatile regimes
         self.MIN_SPAN = 0.001     # 0.1% | minimum distance between the first and the last placed orders
-        self.LEVELS = 8           # orders count of each side
+        self.ALPHA = 1.5          # exponential price factore between levels (>1 -> more and more spaced)
+        self.BETA = 1.5          # exponential size factor between levels (>1 -> sizes raises)
+        self.LEVELS = 5           # orders count of each side
         self.CAP = 0.90           # 90% | max capacity of portfolio used
         self.MIN_VALUE = 10.5     # minimum order notional value in $ to avoid overfragmentation / fees inefficiency
         self.POLL_DELAY = 10.1    # delay in seconds between each grid evaluation cycle
         self.THRESHOLD = 0.00005  # 0.005% | relative SMA change threshold to trigger rebalancing
         self.TIMEFRAME = "1m"     # market data candle timeframe used for indicators (SMA/EMA)
-        self.WINDOW = 3           # rolling window size for indicator (SMA/EMA period)
+        self.WINDOW = 7           # rolling window size for indicator (SMA/EMA period)
         # ==== STATS ====
         self.cycles = 0           # nb of cycles for stats
         self.placed = 0           # nb of place for stats
@@ -68,6 +77,7 @@ class EnveloppeBase: # place orders grid each separed with delta
         self.task = None
         self.running = False
         self.last_sma = None
+        self.geo = (1 - self.BETA ** self.LEVELS) / (1 - self.BETA)
         self.hl = hl
         self.address = hl.address
         self._log = Logger(self, hl.messenger)
@@ -76,7 +86,7 @@ class EnveloppeBase: # place orders grid each separed with delta
         self.executor = Executor(hl)
         self.market = MarketHL(self.instrument, hl, self.WINDOW, self.TIMEFRAME)
         self.account = AccountPerpDexHL(self.dex, [self.instrument], hl)
-        self.grid = Grid(self.market, self.LEVELS, self.WIDTH_MIN, self.WIDTH_MAX, self.MIN_SPAN)
+        self.grid = Grid(self.market, self.LEVELS, self.WIDTH_MIN, self.WIDTH_MAX, self.MIN_SPAN, self.ALPHA)
 
     async def start(self):
         if self.running:
@@ -100,7 +110,7 @@ class EnveloppeBase: # place orders grid each separed with delta
             f"{self.modified}/{self.modified + self.modified_error} modify")
         await self._log.success("Stopped")
 
-    def sizes(self, mid: float, bids_value: float = 0.0, asks_value: float = 0.0):
+    def available(self, mid: float, bids_value: float = 0.0, asks_value: float = 0.0):
         account = self.account
         position = account.positions.get(self.instrument.coin)
         if position is None: raise ValueError("position not found")
@@ -110,6 +120,14 @@ class EnveloppeBase: # place orders grid each separed with delta
         shortable = max(leveraged_account_value + position_value - asks_value, 0) # TODO adapt for multiple coins
         factor = self.CAP / mid # normalize $ to get [COIN]
         return factor * longable, factor * shortable # max_sz_bid, max_sz_ask
+
+    def sizes(self, available: float) -> list[float]:
+        if self.LEVELS == 0: return []
+        if self.BETA == 1.0 or self.LEVELS == 1:
+            unit = available / self.LEVELS
+            return [unit] * self.LEVELS
+        s0 = available / self.geo
+        return [s0 * (self.BETA ** i) for i in range(self.LEVELS)] # TODO must use constants
 
     async def state(self):
         orders = await self.hl.info.open_orders(self.address, dex=self.dex)
@@ -144,15 +162,15 @@ class EnveloppeBase: # place orders grid each separed with delta
         self.grid.update()
         mid = self.market.mid
         if mid is None: raise ValueError("market nor inited")
-        longable, shortable = self.sizes(mid, 0, 0) # disregard bids and asks value because they gonna be modified
+        longable, shortable = self.available(mid, 0, 0) # disregard bids and asks value because they gonna be modified
         modifies: list[Modify] = []
         min_sz = self.MIN_VALUE / mid
         def price_bid(i: int): return min(self.grid.bids[i], (1 - self.MAKER_FEES) * mid)
         def price_ask(i: int): return max(self.grid.asks[-(i + 1)], (1 + self.MAKER_FEES) * mid)
         def process(orders: Iterable, n: int, available: float, price_fn):
-            sz = available / n if (n > 0) and (available > n * min_sz) else 0
+            sizes = self.sizes(available)
             for i, o in enumerate(orders):
-                modify = get_modify(o, self.instrument, sz, price_fn(i), "Alo")
+                modify = get_modify(o, self.instrument, sizes[i] if sizes else 0, price_fn(i), "Alo")
                 if self.valid(modify["order"]): modifies.append(modify)
         process(bids, len(bids), longable, price_bid)
         process(reversed(asks), len(asks), shortable, price_ask)
@@ -180,14 +198,14 @@ class EnveloppeBase: # place orders grid each separed with delta
         self.grid.update()
         mid = self.market.mid
         if mid is None: raise ValueError("market nor inited")
-        longable, shortable = self.sizes(mid, bids_value, asks_value)
+        longable, shortable = self.available(mid, bids_value, asks_value)
         orders: list[Order] = []
         new_bids_px = closests(bids_px, self.grid.bids)
         new_asks_px = closests(asks_px, self.grid.asks)
         def process(prices: list[float], available: float, is_buy: bool):
-            sz = available / len(prices) if prices else 0
-            for px in prices:
-                order = get_order(self.instrument, is_buy, sz, px, {"limit": {"tif": "Alo"}})
+            sizes = self.sizes(available)
+            for i, px in enumerate(prices):
+                order = get_order(self.instrument, is_buy, sizes[i] if sizes else 0, px, {"limit": {"tif": "Alo"}})
                 if self.valid(order): orders.append(order)
         process(new_bids_px, longable, True)
         process(new_asks_px, shortable, False)

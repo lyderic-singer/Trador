@@ -5,8 +5,8 @@ from typing import Any
 from core.HL.utils.functions import cancel
 from log.logger import Logger
 from core.HL.utils.types import BuilderInfo, Cancel, Modify, Order
-from core.HL.exchange import Exchange
-from core.HL.hl import HL
+from core.HL.exchange import HLExchange
+from core.HL.client import HLClient
 
 class Request:
     def __init__(self, task, actions: list[Any], expected_type: str):
@@ -20,10 +20,10 @@ class Request:
         self.cancelled = False
 
 class Executor:
-    def __init__(self, hl: HL, builder: BuilderInfo | None = None):
+    def __init__(self, hl: HLClient, builder: BuilderInfo | None = None):
         self.COOLDOWN = 10 # wait 10s minimum between each requests
         self.builder = builder
-        self.exchange: Exchange = hl.exchange
+        self.exchange: HLExchange = hl.exchange
         self._log = Logger(self, hl.messenger)
         self.requests: asyncio.Queue[Request] = asyncio.Queue()
         self.running = False

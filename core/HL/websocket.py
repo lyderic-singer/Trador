@@ -4,7 +4,7 @@ from time import time
 import websockets
 from log.logger import Logger
 from log.messenger import Messenger
-from core.HL.info import Info
+from core.HL.info import HLInfo
 from typing import Callable, Dict, Optional
 from core.HL.utils.types import Sub
 from core.HL.utils.functions import key, call, extract_subscription_error, cancel
@@ -41,8 +41,8 @@ class Subscription:
         if self.error.is_set():
             raise ValueError(f"wrong subscription: {self.sub}")
 
-class WebSocket:
-    def __init__(self, url: str, messenger: Messenger, info: Info):
+class HLWebSocket:
+    def __init__(self, url: str, messenger: Messenger, info: HLInfo):
         self.url = url
         self._log = Logger("HL WebSocket", messenger)
         self.info = info

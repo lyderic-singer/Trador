@@ -1,11 +1,11 @@
 import traceback as tb
-from core.HL.api import API
+from core.HL.api import HLApi
 from core.HL.utils.types import (Any, Meta, Optional, SpotMeta, SpotMetaAndAssetCtxs, Instrument)
 from log.logger import Logger
 from log.messenger import Messenger
 
-class Info:
-    def __init__(self, url, messenger: Messenger, api: API):
+class HLInfo:
+    def __init__(self, url, messenger: Messenger, api: HLApi):
         self.api = api
         self.messenger = messenger
         self.url = url

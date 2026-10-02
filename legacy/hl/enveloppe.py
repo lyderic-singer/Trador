@@ -2,9 +2,9 @@ import asyncio
 import traceback
 from typing import Iterable
 from core.HL.utils.functions import cancel, get_order, get_modify, remaining
-from bot.market import MarketHL
-from bot.account import AccountPerpDexHL
-from bot.executor import Executor
+from legacy.hl.market import MarketHL
+from legacy.hl.account import AccountPerpDexHL
+from legacy.hl.executor import Executor
 from core.HL.utils.types import BuilderInfo, Modify, Order, Resting
 from log.logger import Logger
 
@@ -46,7 +46,7 @@ class Enveloppe:
         self.MAKER_FEES = 0.00003 # 0.003%
         self.TAKER_FEES = 0.00009 # 0.009%
         self.BUILDER = "0x42f3226007290b02c5a0b15bccbb1ba6df04f992"
-        self.FEE = 50
+        self.FEE = 50             # Builder fee
         self.SPREAD = 0.005       # 4.5% | minimum distance between the first and the last placed orders
         self.OFFSET = 0.0001      # 0.01% spread from ema for first
         self.ALPHA = 1            # exponential price factor between levels (>1 -> more and more spaced)

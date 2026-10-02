@@ -1,5 +1,5 @@
 from eth_account.signers.local import LocalAccount
-from core.HL.info import Info
+from core.HL.info import HLInfo
 from core.HL.utils.constants import MAINNET_API_URL
 from core.HL.utils.signing import sign, sign_send_asset_action
 from core.HL.utils.functions import get_cancel, timestamp_ms, get_order, get_modify, get_transfer
@@ -7,8 +7,8 @@ from core.HL.utils.types import TPSL, Any, BuilderInfo, Cancel, Cloid, List, Opt
 from log.logger import Logger
 from log.messenger import Messenger
 
-class Exchange:
-    def __init__(self, url , messenger: Messenger, wallet: LocalAccount, info: Info, vault_address: str | None = None):
+class HLExchange:
+    def __init__(self, url , messenger: Messenger, wallet: LocalAccount, info: HLInfo, vault_address: str | None = None):
         self.wallet = wallet
         self._log = Logger("HL Exchange", messenger)
         self.url = url
@@ -87,4 +87,3 @@ class Exchange:
         action = get_transfer(token, amount, source_dex, destination_dex, destination_address, nonce=timestamp, from_subaccount=from_subaccount, mainnet= self.url == MAINNET_API_URL)
         signature = sign_send_asset_action(self.wallet, action, self.url == MAINNET_API_URL,)
         return await self.post(action, signature, timestamp)
-

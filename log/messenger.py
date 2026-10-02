@@ -1,6 +1,6 @@
 import asyncio
 import sys
-from core.HL.utils.functions import cancel
+from core.utils import cancel
 from log.logger import Logger, Message
 
 COLORS = {

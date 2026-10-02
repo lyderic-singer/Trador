@@ -1,6 +1,6 @@
 from time import time
 import asyncio
-from core.HL.hl import HL
+from core.HL.client import HLClient
 from core.HL.utils.types import Instrument
 from log.logger import Logger
 
@@ -87,7 +87,7 @@ class Position:
         )
 
 class AccountPerpDexHL:
-    def __init__(self, dex: str, instruments: list[Instrument], hl: HL):
+    def __init__(self, dex: str, instruments: list[Instrument], hl: HLClient):
         if [dex] != list({i.dex for i in instruments}):
             raise ValueError(f"several provided instrument in {[i.name for i in instruments]} doesn't belong to {dex if dex else '""'}")
         self.dex = dex

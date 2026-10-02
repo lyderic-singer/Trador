@@ -1,9 +1,9 @@
-websockets
 aiohttp
-typing_extensions
-eth_account
-ta
-python-telegram-bot
+websockets
+eth-account
 msgpack
-matplotlib
+cryptography
 python-dotenv
+python-telegram-bot
+matplotlib
+numpy

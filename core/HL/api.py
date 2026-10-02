@@ -6,7 +6,7 @@ from core.HL.utils.types import Any
 from core.session import Session
 from log.logger import Logger
 
-class API:
+class HLApi:
     def __init__(self, url: str, messenger: Messenger, session : Session):
         self.url = url
         self.session = session

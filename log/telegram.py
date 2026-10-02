@@ -1,7 +1,7 @@
 import asyncio
 from dotenv import load_dotenv
 import os
-from core.HL.utils.functions import cancel
+from core.utils import cancel
 from telegram import Update
 from telegram.ext import Application, ApplicationBuilder, CommandHandler, ContextTypes
 from log.logger import Logger
@@ -108,8 +108,8 @@ class Telegram:
         await self._log.info("stop strategy requested")
         try:
             if self.orchester:
-                await self.orchester.bot.stop()
-            await self.send("strategy stopped")
+                await self.orchester.stop_strategies()
+            await self.send("strategies stopped")
         except Exception as e:
             await self._log.error(f"{e}")
             await self.send("error stopping strategy")
@@ -117,8 +117,9 @@ class Telegram:
     async def on_perp_inventory(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         await self._log.info(f"perp inventory requested")
         try:
-            if self.orchester:
-                data = await self.orchester.hl.info.user_state(self.orchester.address)
+            hl = self.orchester.clients.get("hyperliquid") if self.orchester else None
+            if hl:
+                data = await hl.info.clearing_house_state(hl.address)
                 value = round(float(data['marginSummary']['accountValue']), 2)
                 positions = round(float(data['marginSummary']['totalNtlPos']), 2)
                 await self.send(f"(perp inventory) total value : {value}, positions value : {positions}")
@@ -130,8 +131,9 @@ class Telegram:
     async def on_spot_inventory(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         await self._log.info(f"spot inventory requested")
         try:
-            if self.orchester:
-                data = await self.orchester.hl.info.spot_user_state(self.orchester.address)
+            hl = self.orchester.clients.get("hyperliquid") if self.orchester else None
+            if hl:
+                data = await hl.info.spot_clearing_house_state(hl.address)
                 await self.send(f"spot inventory: {data}")
             else:
                 raise
@@ -148,4 +150,4 @@ class Telegram:
     async def on_adress(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         await self._log.info("address requested")
         if self.orchester:
-            await self.send(self.orchester.address)
+            await self.send("\n".join(f"{name}: {client.address}" for name, client in self.orchester.clients.items()))

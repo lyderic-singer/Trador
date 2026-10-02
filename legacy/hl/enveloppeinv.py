@@ -2,9 +2,9 @@ import asyncio
 import traceback
 from typing import Iterable, Iterator
 from core.HL.utils.functions import cancel, get_order, get_modify, closests
-from bot.market import MarketHL
-from bot.account import AccountPerpDexHL
-from bot.executor import Executor
+from legacy.hl.market import MarketHL
+from legacy.hl.account import AccountPerpDexHL
+from legacy.hl.executor import Executor
 from core.HL.utils.types import Modify, Order
 from log.logger import Logger
 
