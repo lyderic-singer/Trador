@@ -2,17 +2,32 @@ import asyncio
 import time
 from decimal import Decimal
 from typing import Any
-from adapters.exchange import AccountListener, BBOListener, Exchange
-from adapters.models import (AccountState, BBO, Cancel, Candle, Instrument, MarginMode, Modify, OpenOrder, Order,
-                         Position, Result, Side, TIF)
+from adapters.exchange import AccountListener, BBOListener, Exchange, FillListener, OrderListener, PriceListener
+from adapters.models import (AccountState, BBO, Cancel, Candle, Fill, Instrument, MarginMode, Modify, OpenOrder, Order,
+                             OrderUpdate, Position, Result, Side, TIF)
 from core.utils import call, cancel
+from core.arcus.api import ArcusError
 from core.arcus.client import ArcusClient
+from core.arcus.exchange import ArcusExchange
 from core.arcus.utils.constants import ACCEPTED, TIMEFRAMES
 from core.arcus.utils.types import ArcusCancel, ArcusModify, ArcusOrder, Market
 from log.logger import Logger
 
 TIFS = {TIF.GTC: "GTT", TIF.ALO: "ALO", TIF.IOC: "IOC"}
 FROM_TIFS = {"GTT": TIF.GTC, "GTC": TIF.GTC, "ALO": TIF.ALO, "IOC": TIF.IOC, "FOK": TIF.IOC}
+STATUSES = {"FILLED": "filled", "CANCELED": "canceled", "MARGIN_CANCELED": "canceled", "REJECTED": "rejected",
+            "LIQUIDATED": "canceled", "ADL": "canceled"}
+
+
+def rows(contents) -> list[dict]:
+    if isinstance(contents, list):
+        return [r for r in contents if isinstance(r, dict)]
+    if not isinstance(contents, dict):
+        return []
+    for k in ("fills", "orders"):
+        if isinstance(contents.get(k), list):
+            return contents[k]
+    return [contents] if ("orderId" in contents or "tradeId" in contents) else []
 
 
 def rounding(side: Side | None, passive: bool) -> str:
@@ -25,7 +40,7 @@ class Arcus(Exchange):
     name = "arcus"
 
     def __init__(self, client: ArcusClient, maker_fee: float = 0.0001, taker_fee: float = 0.0004,
-                 poll: float = 5.0, refresh: float = 60.0):
+                 poll: float = 5.0, refresh: float = 60.0, fills_poll: float = 1.5):
         self.client = client
         self.messenger = client.messenger
         self.maker_fee = maker_fee
@@ -43,6 +58,15 @@ class Arcus(Exchange):
         self.leverages_ts = 0.0
         self.tasks: list[asyncio.Task] = []
         self.running = False
+        self.fills_poll = fills_poll
+        self.fill_listeners: list[FillListener] = []
+        self.order_listeners: list[OrderListener] = []
+        self.oracle_listeners: dict[str, list[PriceListener]] = {}
+        self.streamed: bool | None = None
+        self.seen: dict[str, float] = {}
+        self.listening = False
+        self.latest = 0.0
+        self.remaining: dict[str, int] = {}
 
     async def start(self):
         if self.running:
@@ -51,6 +75,7 @@ class Arcus(Exchange):
             await self.client.start()
         self.running = True
         self.tasks.append(asyncio.create_task(self.watch_markets()))
+        self.tasks.append(asyncio.create_task(self.watch_budget()))
 
     async def stop(self):
         self.running = False
@@ -68,10 +93,31 @@ class Arcus(Exchange):
             min_notional=float(m.min_notional), min_size=float(m.min_size),
             pricer=lambda px, side, passive: float(m.round_price(px, rounding(side, passive))),
             sizer=lambda sz: float(m.round_size(sz)),
+            stepper=lambda px: float(m.tick_at(Decimal(str(px)))),
+            closed=m.closed, lower=m.lower, upper=m.upper,
             raw=m)
 
     def tradable(self, symbol: str) -> bool:
         return self.market(symbol).online
+
+    @property
+    def connected(self) -> bool:
+        return self.client.websocket.connected.is_set()
+
+    def budget(self) -> dict[str, int] | None:
+        return dict(self.remaining) if self.remaining else None
+
+    async def watch_budget(self):
+        while self.running:
+            try:
+                res = await self.client.info.rate_limit(self.address, self.index)
+                for name in ("order", "cancel"):
+                    pool = res.get(name) or {}
+                    if "cap" in pool:
+                        self.remaining[name] = int(pool["cap"]) - int(pool.get("used") or 0)
+            except Exception as e:
+                await self._log.debug(f"rate limit read failed: {e}")
+            await asyncio.sleep(5 if self.remaining and min(self.remaining.values()) < 20_000 else 30)
 
     async def watch_markets(self):
         while self.running:
@@ -169,14 +215,160 @@ class Arcus(Exchange):
             await call(listener, await self.account(self.symbols))
             return
         ws = self.client.websocket
-        await ws.positions(self.touch, self.address, self.index)
-        await ws.orders(self.touch, self.address, self.index)
-        await ws.account(self.touch, self.address, self.index)
+        refused = []
+        for channel in (ws.positions, ws.account):
+            try:
+                await channel(self.touch, self.address, self.index, timeout=5)
+            except ValueError as e:
+                refused.append(str(e))
+        if not await self.stream():
+            refused.append("orders channel refused")
+        if refused:
+            self.poll = min(self.poll, 2.0)
+            await self._log.warning(f"account websocket unavailable ({refused[0]}): REST polling every {self.poll}s")
         await call(listener, await self.account(self.symbols))
         self.tasks.append(asyncio.create_task(self.watch_account()))
 
     def touch(self, msg):
         self.dirty.set()
+
+    async def stream(self) -> bool:
+        if self.streamed is None:
+            try:
+                await self.client.websocket.orders(self.on_orders, self.address, self.index, timeout=5)
+                self.streamed = True
+            except ValueError as e:
+                await self._log.warning(f"orders websocket unavailable: {e}")
+                self.streamed = False
+        return self.streamed
+
+    def name_of(self, row: dict) -> str:
+        return row.get("marketDisplayName") or self.market(int(row["marketId"])).name
+
+    def parse_update(self, row: dict) -> OrderUpdate | None:
+        if not row.get("orderId") or not row.get("side"):
+            return None
+        status = str(row.get("status") or row.get("state") or "OPEN").upper()
+        state = STATUSES.get(status, "open")
+        if state == "canceled" and row.get("cancelReason") == "MODIFY_CANCELED":
+            state = "replaced"
+        size = float(row.get("originalSize") or row.get("size") or 0)
+        remaining = float(row["remainingSize"]) if row.get("remainingSize") not in (None, "") else size
+        return OrderUpdate(self.name_of(row), str(row["orderId"]), Side.BUY if row["side"] == "BUY" else Side.SELL,
+                           float(row.get("price") or 0), size, remaining, state, row.get("clientId") or None,
+                           float(row.get("updatedAt") or time.time() * 1e6) / 1e6, row)
+
+    async def on_orders(self, msg):
+        self.dirty.set()
+        contents = msg.get("contents")
+        if msg.get("type") == "subscribed" or (isinstance(contents, dict) and contents.get("isSnapshot")):
+            return
+        for row in rows(contents):
+            update = self.parse_update(row)
+            if update:
+                for listener in self.order_listeners:
+                    await call(listener, update)
+
+    async def subscribe_orders(self, symbols: list[str], listener: OrderListener) -> bool:
+        if not self.running:
+            await self.start()
+        self.order_listeners.append(listener)
+        return await self.stream()
+
+    def parse_fill(self, row: dict) -> Fill | None:
+        if not row.get("side") or not row.get("size"):
+            return None
+        uid = f"{row.get('tradeId')}:{row.get('orderId')}"
+        return Fill(self.name_of(row), Side.BUY if row["side"] == "BUY" else Side.SELL, float(row["size"]),
+                    float(row["price"]), str(row.get("orderId")) if row.get("orderId") else None,
+                    row.get("clientId") or None, uid, (row.get("role") or "").upper() == "MAKER" if row.get("role") else None,
+                    float(row["remainingSize"]) if row.get("remainingSize") not in (None, "") else None,
+                    float(row.get("createdAt") or time.time() * 1e6) / 1e6)
+
+    async def dispatch(self, items: list[dict]):
+        now = time.time()
+        for row in sorted(items, key=lambda r: r.get("createdAt") or 0):
+            fill = self.parse_fill(row)
+            if fill is None or fill.id in self.seen:
+                continue
+            self.seen[fill.id] = now
+            self.latest = max(self.latest, fill.ts)
+            for listener in self.fill_listeners:
+                await call(listener, fill)
+        if len(self.seen) > 20000:
+            self.seen = {k: t for k, t in self.seen.items() if now - t < 3600}
+
+    async def on_fills(self, msg):
+        self.dirty.set()
+        contents = msg.get("contents")
+        if msg.get("type") == "subscribed" or (isinstance(contents, dict) and contents.get("isSnapshot")):
+            if self.listening:
+                await self.dispatch([r for r in rows(contents) if float(r.get("createdAt") or 0) / 1e6 >= self.latest - 5])
+                return
+            self.listening = True
+            for row in rows(contents):
+                fill = self.parse_fill(row)
+                if fill:
+                    self.seen[fill.id] = time.time()
+                    self.latest = max(self.latest, fill.ts)
+            self.latest = max(self.latest, time.time())
+            return
+        await self.dispatch(rows(contents))
+
+    async def subscribe_fills(self, symbols: list[str], listener: FillListener) -> None:
+        if not self.running:
+            await self.start()
+        self.fill_listeners.append(listener)
+        if len(self.fill_listeners) > 1:
+            return
+        try:
+            await self.client.websocket.fills(self.on_fills, self.address, self.index, timeout=5)
+        except ValueError as e:
+            await self._log.warning(f"fills websocket unavailable ({e}): REST polling every {self.fills_poll}s")
+            self.tasks.append(asyncio.create_task(self.watch_fills()))
+
+    async def watch_fills(self):
+        cursor = int(time.time() * 1_000_000)
+        while self.running:
+            await asyncio.sleep(self.fills_poll)
+            try:
+                items = await self.client.info.fills_since(self.address, self.index, cursor)
+                if items:
+                    cursor = max(cursor, max(int(r.get("createdAt") or 0) for r in items))
+                    self.dirty.set()
+                    await self.dispatch(items)
+            except ArcusError as e:
+                await asyncio.sleep((e.retry or 2000) / 1000 if e.status == 429 else 1)
+            except Exception as e:
+                await self._log.warning(f"fills poll failed: {e}")
+
+    async def on_oracle(self, msg):
+        contents = msg.get("contents") or {}
+        for p in contents.get("prices", []) if isinstance(contents, dict) else []:
+            name = p.get("marketDisplayName")
+            if name in self.oracle_listeners and p.get("price"):
+                for listener in self.oracle_listeners[name]:
+                    await call(listener, name, float(p["price"]))
+
+    async def subscribe_oracle(self, symbol: str, listener: PriceListener) -> bool:
+        m = self.market(symbol)
+        self.oracle_listeners.setdefault(m.name, []).append(listener)
+        if len(self.oracle_listeners[m.name]) > 1:
+            return True
+        try:
+            await self.client.websocket.oracle(self.on_oracle, m.name, timeout=5)
+            return True
+        except ValueError as e:
+            await self._log.warning(f"oracle websocket unavailable for {m.name}: {e}")
+            return False
+
+    async def schedule_cancel(self, seconds: float | None) -> bool:
+        try:
+            res = await self.client.exchange.schedule_cancel(seconds)
+            return res.get("status") in ("scheduled", "disarmed")
+        except Exception as e:
+            await self._log.warning(f"dead man's switch failed: {e}")
+            return False
 
     async def watch_account(self):
         while self.running and self.listeners:
@@ -245,15 +437,19 @@ class Arcus(Exchange):
                 indexes.append(i)
         if requests:
             res = await post(requests)
+            limit = res.get("rateLimit") if isinstance(res, dict) else None
+            if isinstance(limit, dict) and limit.get("pool") in ("order", "cancel") and limit.get("remaining") is not None:
+                self.remaining[limit["pool"]] = int(limit["remaining"])
             for i, r in zip(indexes, self.parse_responses(res, len(requests))):
                 results[i] = r
         return [r for r in results if r is not None]
 
-    def convert_order(self, o: Order) -> ArcusOrder | str:
+    def convert_order(self, o: Order, expiry: int | None = None) -> ArcusOrder | str:
         m = self.market(o.symbol)
         price = m.round_price(o.price, rounding(o.side, o.tif != TIF.IOC))
         size = m.round_size(o.size)
-        return self.validate(m, size, price, o.reduce) or ArcusOrder(m, o.side.is_buy, size, price, TIFS[o.tif], o.reduce, o.client)
+        return self.validate(m, size, price, o.reduce) or ArcusOrder(m, o.side.is_buy, size, price, TIFS[o.tif], o.reduce,
+                                                                     o.client, expiry=expiry)
 
     def convert_modify(self, mo: Modify) -> ArcusModify | str:
         raw: dict[str, Any] = mo.order.raw or {}
@@ -272,17 +468,29 @@ class Arcus(Exchange):
                            raw.get("clientId") or None)
 
     async def place(self, orders: list[Order]) -> list[Result]:
-        return await self.send(orders, self.convert_order, self.client.exchange.batch_place)
+        expiry = ArcusExchange.expiry()
+        results = await self.send(orders, lambda o: self.convert_order(o, expiry), self.client.exchange.batch_place)
+        for o, r in zip(orders, results):
+            if r.ok:
+                r.raw = {"goodTilTime": expiry, "timeInForce": TIFS[o.tif], "reduceOnly": o.reduce, "clientId": o.client,
+                         **{k: v for k, v in (r.raw or {}).items() if v is not None}}
+        return results
 
     async def modify(self, modifies: list[Modify]) -> list[Result]:
         return await self.send(modifies, self.convert_modify, self.client.exchange.batch_modify)
 
     async def cancel(self, cancels: list[Cancel]) -> list[Result]:
-        return await self.send(cancels, lambda c: ArcusCancel(self.market(c.symbol), oid=c.oid),
+        return await self.send(cancels, lambda c: ArcusCancel(self.market(c.symbol), oid=c.oid) if c.oid
+                               else ArcusCancel(self.market(c.symbol), client=c.client),
                                self.client.exchange.batch_cancel)
 
     async def cancel_all(self, symbol: str | None = None) -> None:
-        await self.client.exchange.cancel_all(self.market(symbol).id if symbol else None)
+        orders = await self.open_orders(symbol)
+        if orders:
+            await self.cancel([Cancel(o.symbol, o.oid, o.client) for o in orders])
+
+    async def purge(self) -> None:
+        await self.client.exchange.cancel_all(None)
 
     async def set_leverage(self, symbol: str, leverage: int, cross: bool = True) -> bool:
         res = await self.client.exchange.set_leverage(self.market(symbol).id, leverage, isolated=not cross)

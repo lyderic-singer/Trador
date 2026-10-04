@@ -96,6 +96,17 @@ class ArcusInfo:
     async def fills(self, address: str, index: int = 0, market: str | None = None) -> Any:
         return await self.api.get("/v1/fills", {"address": address, "accountIndex": index, "market": market})
 
+    async def fills_since(self, address: str, index: int = 0, start: int | None = None, limit: int = 1000) -> list[dict]:
+        res = await self.api.get("/v1/fills", {"address": address, "accountIndex": index, "from": start, "limit": limit})
+        return res.get("fills", []) if isinstance(res, dict) else res
+
+    async def rate_limit(self, address: str, index: int = 0) -> Any:
+        return await self.api.get("/v1/rateLimit", {"address": address, "accountIndex": index})
+
+    async def api_keys(self, address: str) -> list[dict]:
+        res = await self.api.get("/v1/apiKeys", {"address": address})
+        return res.get("apiKeys", []) if isinstance(res, dict) else res
+
     async def leverages(self, address: str, index: int = 0, market: str | int | None = None) -> list[dict]:
         res = await self.api.get("/v1/leverages", {"address": address, "accountIndex": index, "market": market})
         return res.get("leverages", [])

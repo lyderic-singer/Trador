@@ -47,6 +47,10 @@ class Instrument:
     min_size: float = 0.0
     pricer: Callable[[float, Side | None, bool], float] | None = None
     sizer: Callable[[float], float] | None = None
+    stepper: Callable[[float], float] | None = None
+    closed: bool = False
+    lower: float | None = None
+    upper: float | None = None
     raw: Any = None
 
     def round_price(self, px: float, side: Side | None = None, passive: bool = True) -> float:
@@ -54,6 +58,12 @@ class Instrument:
 
     def round_size(self, sz: float) -> float:
         return self.sizer(sz) if self.sizer else sz
+
+    def tick(self, px: float) -> float:
+        return self.stepper(px) if self.stepper else 0.0
+
+    def bounded(self, px: float) -> bool:
+        return (self.lower is None or px >= self.lower) and (self.upper is None or px <= self.upper)
 
 
 @dataclass
@@ -112,6 +122,7 @@ class Modify:
 class Cancel:
     symbol: str
     oid: str
+    client: str | None = None
 
 
 @dataclass
@@ -123,6 +134,42 @@ class Result:
     price: float | None = None
     error: str | None = None
     raw: Any = None
+
+
+@dataclass
+class Fill:
+    symbol: str
+    side: Side
+    size: float
+    price: float
+    oid: str | None = None
+    client: str | None = None
+    id: str | None = None
+    maker: bool | None = None
+    remaining: float | None = None
+    ts: float = field(default_factory=time.time)
+
+    @property
+    def value(self) -> float:
+        return self.size * self.price
+
+
+@dataclass
+class OrderUpdate:
+    symbol: str
+    oid: str
+    side: Side
+    price: float
+    size: float
+    remaining: float
+    status: str
+    client: str | None = None
+    ts: float = field(default_factory=time.time)
+    raw: Any = None
+
+    @property
+    def closed(self) -> bool:
+        return self.status in ("filled", "canceled", "rejected", "replaced")
 
 
 @dataclass

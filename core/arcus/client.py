@@ -1,3 +1,4 @@
+import time
 from core.config import env
 from core.session import Session
 from core.arcus.api import ArcusApi
@@ -11,8 +12,8 @@ from log.messenger import Messenger
 
 
 def credentials(mainnet: bool) -> tuple[Signer, str, int]:
-    signer = Signer(env("ARCUS", mainnet, "PRIVATE_KEY"))
-    return signer, env("ARCUS", mainnet, "ADDRESS"), int(env("ARCUS", mainnet, "ACCOUNT", "0"))
+    signer = Signer(env("ARCUS", mainnet, "PRIVATE_KEY").strip())
+    return signer, env("ARCUS", mainnet, "ADDRESS").strip().lower(), int(env("ARCUS", mainnet, "ACCOUNT", "0"))
 
 
 class ArcusClient:
@@ -36,9 +37,33 @@ class ArcusClient:
             return await self._log.info("already started")
         await self._log.info("Starting")
         await self.info.start()
+        await self.check()
         await self.websocket.start()
         self.running = True
         await self._log.success(f"Started ({len(self.info.by_id)} markets, api key {self.signer.public[:8]})")
+
+    async def check(self):
+        try:
+            keys = await self.info.api_keys(self.address)
+        except Exception as e:
+            return await self._log.warning(f"cannot list api keys of {self.address}: {e}")
+        row = next((k for k in keys if str(k.get("apiKey", "")).lower() == self.signer.public), None)
+        if row is None:
+            known = ", ".join(str(k.get("apiKey", ""))[:8] for k in keys) or "none"
+            raise ValueError(f"api key {self.signer.public[:8]} derived from ARCUS_{'MAINNET' if self.mainnet else 'TESTNET'}_PRIVATE_KEY "
+                             f"is not registered for {self.address} (registered: {known})")
+        status = row.get("status", "ACTIVE")
+        if status != "ACTIVE":
+            raise ValueError(f"api key {self.signer.public[:8]} is {status}")
+        expiry = int(row.get("validUntil") or 0)
+        if expiry and expiry < time.time() * 1000:
+            raise ValueError(f"api key {self.signer.public[:8]} expired on {time.strftime('%Y-%m-%d', time.localtime(expiry / 1000))}")
+        index = row.get("accountIndex")
+        if index is not None and int(index) != self.index:
+            await self._log.warning(f"api key {self.signer.public[:8]} is bound to account {index}, .env says {self.index}: using {index}")
+            self.index = int(index)
+            self.exchange.index = self.index
+        await self._log.info(f"api key {self.signer.public[:8]} registered for {self.address}, account {self.index}")
 
     async def stop(self):
         if self.running:

@@ -27,6 +27,7 @@ class ArcusExchange:
 
     def build_place(self, o: ArcusOrder, ts: int, expiry: int) -> dict:
         m = o.market
+        expiry = o.expiry or expiry
         side = "BUY" if o.is_buy else "SELL"
         payload = place_payload(self.address, self.index, ts, expiry * 1000, m.id, m.to_ticks(o.price),
                                 m.to_quantums(o.size), o.reduce, SIDE[side], TIF[o.tif], o.client)
@@ -44,7 +45,7 @@ class ArcusExchange:
         m = mo.market
         side = "BUY" if mo.is_buy else "SELL"
         payload = modify_payload(self.address, self.index, ts, mo.expiry * 1000, mo.oid, m.id, m.to_ticks(mo.price),
-                                 m.to_quantums(mo.size), mo.reduce, SIDE[side], TIF[mo.tif], mo.client)
+                                 m.to_quantums(mo.size), mo.reduce, SIDE[side], TIF[mo.tif])
         return {
             "address": self.address, "accountIndex": self.index, "marketId": m.id,
             "orderId": mo.oid, "side": side, "quantity": fmt(mo.size), "price": fmt(mo.price),
@@ -103,6 +104,14 @@ class ArcusExchange:
         if market is not None:
             body["marketId"] = market
         return await self.signed("cancelAllOrders", body)
+
+    async def schedule_cancel(self, seconds: float | None, market: int | None = None) -> Any:
+        body: dict = {"address": self.address, "accountIndex": self.index}
+        if seconds is not None:
+            body["time"] = int((time.time() + seconds) * 1_000_000)
+        if market is not None:
+            body["marketId"] = market
+        return await self.signed("scheduleCancel", body)
 
     async def set_leverage(self, market: int, leverage: int, isolated: bool | None = None) -> Any:
         body: dict = {"address": self.address, "accountIndex": self.index, "marketId": market, "leverage": int(leverage)}

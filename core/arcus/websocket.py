@@ -20,6 +20,8 @@ class ArcusSubscription:
         self.callback = callback
         self.key = key(channel, id, self.params.get("accountIndex"))
         self.active = asyncio.Event()
+        self.failed = asyncio.Event()
+        self.reason = ""
 
     def message(self, kind: str = "subscribe") -> dict:
         return {"type": kind, "channel": self.channel, "id": self.id, **self.params}
@@ -35,7 +37,7 @@ class ArcusWebSocket:
         self.ids = itertools.count(1)
         self.running = False
         self.connected = asyncio.Event()
-        self.reconnect = 5
+        self.reconnect = 1
         self.task = None
 
     async def start(self):
@@ -94,21 +96,40 @@ class ArcusWebSocket:
                 future.set_result(msg)
             return
         if kind in ("subscribed", "channel_data", "unsubscribed"):
-            k = key(msg.get("channel", ""), msg.get("id", ""), msg.get("accountIndex"))
-            s = self.subscriptions.get(k)
-            if s is None:
+            targets = self.route(msg)
+            for s in targets:
+                if kind == "subscribed":
+                    s.active.set()
+                elif kind == "unsubscribed":
+                    s.active.clear()
+            if kind == "unsubscribed":
                 return
-            if kind == "subscribed":
-                s.active.set()
-            elif kind == "unsubscribed":
-                s.active.clear()
-                return
-            try:
-                await call(s.callback, msg)
-            except Exception as e:
-                await self._log.error(f"callback {k} failed: {e}")
+            callbacks = []
+            for s in targets:
+                if s.callback not in callbacks:
+                    callbacks.append(s.callback)
+            for callback in callbacks:
+                try:
+                    await call(callback, msg)
+                except Exception as e:
+                    await self._log.error(f"callback {msg.get('channel')} failed: {e}")
         elif kind == "error":
-            await self._log.error(f"{msg}")
+            waiting = [s for s in self.subscriptions.values() if not s.active.is_set() and not s.failed.is_set()]
+            for s in waiting:
+                s.reason = msg.get("message", str(msg))
+                s.failed.set()
+            if not waiting:
+                await self._log.error(f"{msg}")
+
+    def route(self, msg: dict) -> list[ArcusSubscription]:
+        channel, id = msg.get("channel", ""), msg.get("id")
+        exact = self.subscriptions.get(key(channel, id or "", msg.get("accountIndex")))
+        if exact:
+            return [exact]
+        same = [s for s in self.subscriptions.values() if s.channel == channel]
+        if id:
+            same = [s for s in same if s.id.lower() == str(id).lower()]
+        return same
 
     async def subscribe(self, channel: str, id: str, callback: Callable, timeout: float = 15, **params) -> ArcusSubscription:
         s = ArcusSubscription(channel, id, callback, {k: v for k, v in params.items() if v is not None})
@@ -119,11 +140,14 @@ class ArcusWebSocket:
         await self.connected.wait()
         assert self.ws is not None
         await self.ws.send(json.dumps(s.message()))
-        try:
-            await asyncio.wait_for(s.active.wait(), timeout=timeout)
-        except asyncio.TimeoutError:
+        active = asyncio.create_task(s.active.wait())
+        failed = asyncio.create_task(s.failed.wait())
+        done, pending = await asyncio.wait([active, failed], timeout=timeout, return_when=asyncio.FIRST_COMPLETED)
+        for task in pending:
+            await cancel(task)
+        if not s.active.is_set():
             self.subscriptions.pop(s.key, None)
-            raise ValueError(f"subscription {s.key} not acknowledged")
+            raise ValueError(f"subscription {s.key} refused: {s.reason}" if s.failed.is_set() else f"subscription {s.key} not acknowledged")
         await self._log.success(f"Subscribed: {s.key}")
         return s
 
@@ -147,6 +171,9 @@ class ArcusWebSocket:
     async def bbo(self, callback: Callable, market: str):
         return await self.subscribe("bbo", market, callback)
 
+    async def oracle(self, callback: Callable, market: str, timeout: float = 15):
+        return await self.subscribe("oraclePrices", market, callback, timeout)
+
     async def l2_book(self, callback: Callable, market: str, levels: int = 20):
         return await self.subscribe("l2Orderbook", market, callback, nLevels=levels)
 
@@ -156,14 +183,14 @@ class ArcusWebSocket:
     async def candles(self, callback: Callable, market: str, timeframe: str):
         return await self.subscribe("candles", market, callback, timeframe=timeframe)
 
-    async def account(self, callback: Callable, address: str, index: int = 0):
-        return await self.subscribe("account", address, callback, accountIndex=index)
+    async def account(self, callback: Callable, address: str, index: int = 0, timeout: float = 15):
+        return await self.subscribe("account", address, callback, timeout, accountIndex=index)
 
-    async def positions(self, callback: Callable, address: str, index: int = 0, market: str | None = None):
-        return await self.subscribe("positions", address, callback, accountIndex=index, market=market)
+    async def positions(self, callback: Callable, address: str, index: int = 0, market: str | None = None, timeout: float = 15):
+        return await self.subscribe("positions", address, callback, timeout, accountIndex=index, market=market)
 
-    async def orders(self, callback: Callable, address: str, index: int = 0, market: str | None = None):
-        return await self.subscribe("orders", address, callback, accountIndex=index, market=market)
+    async def orders(self, callback: Callable, address: str, index: int = 0, market: str | None = None, timeout: float = 15):
+        return await self.subscribe("orders", address, callback, timeout, accountIndex=index, market=market)
 
-    async def fills(self, callback: Callable, address: str, index: int = 0, market: str | None = None):
-        return await self.subscribe("userFills", address, callback, accountIndex=index, market=market)
+    async def fills(self, callback: Callable, address: str, index: int = 0, market: str | None = None, timeout: float = 15):
+        return await self.subscribe("userFills", address, callback, timeout, accountIndex=index, market=market)

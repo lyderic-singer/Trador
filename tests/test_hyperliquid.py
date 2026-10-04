@@ -58,3 +58,21 @@ def test_account():
     hl.ready = True
     asyncio.run(hl.push())
     assert got and got[0].positions["SOL"].entry == 116.9012
+
+
+def test_streams():
+    hl = Hyperliquid.__new__(Hyperliquid)
+    hl.fill_listeners, hl.order_listeners, hl.seen = [], [], set()
+    hl.asset = lambda s: Asset("rrrrr:PTEST", "rrrrr:PTEST", 110000, 3)
+    fills, updates = [], []
+    hl.fill_listeners.append(fills.append)
+    hl.order_listeners.append(updates.append)
+    data = json.loads((DATA / "userFills.json").read_text())
+    asyncio.run(hl.on_fills({**data, "isSnapshot": True}))
+    asyncio.run(hl.on_fills(data))
+    assert not fills
+    data["fills"][0]["tid"] = 1
+    asyncio.run(hl.on_fills(data))
+    assert len(fills) == 1 and fills[0].side == Side.SELL and fills[0].maker and fills[0].size == 6.784
+    asyncio.run(hl.on_orders(json.loads((DATA / "orderUpdates.json").read_text())))
+    assert [u.status for u in updates][:3] == ["rejected", "open", "canceled"]

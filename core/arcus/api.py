@@ -7,7 +7,8 @@ from log.messenger import Messenger
 
 
 class ArcusError(Exception):
-    def __init__(self, status: int, body: Any, path: str):
+    def __init__(self, status: int, body: Any, path: str, after: str | None = None):
+        self.after = after
         self.status = status
         self.body = body
         self.path = path
@@ -15,7 +16,11 @@ class ArcusError(Exception):
 
     @property
     def retry(self) -> int | None:
-        return self.body.get("retryAfterMs") if isinstance(self.body, dict) else None
+        if isinstance(self.body, dict) and self.body.get("retryAfterMs") is not None:
+            return int(self.body["retryAfterMs"])
+        if self.after is not None:
+            return int(float(self.after) * 1000)
+        return None
 
 
 class ArcusApi:
@@ -45,5 +50,5 @@ class ArcusApi:
             body = text
         if response.status >= 400:
             await self._log.warning(f"HTTP {response.status} {path} | {text[:500]}")
-            raise ArcusError(response.status, body, path)
+            raise ArcusError(response.status, body, path, response.headers.get("Retry-After"))
         return body

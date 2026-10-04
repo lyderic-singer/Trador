@@ -84,6 +84,10 @@ def test_elements():
     modify = exchange.build_modify(ArcusModify(m, "oid1", False, Decimal("0.01"), Decimal("63460"), "ALO", False, expiry), ts)
     assert modify["side"] == "SELL" and modify["orderId"] == "oid1" and modify["clientTime"] == str(ts)
     verify(signer, canonical(modify_payload(ADDRESS, 0, ts, expiry * 1000, "oid1", 1, 63460, 100, False, 1, 3)), modify["signature"])
+    tagged = exchange.build_modify(ArcusModify(m, "oid1", False, Decimal("0.01"), Decimal("63460"), "ALO", False, expiry, "0xabc"), ts)
+    assert "clientId" not in tagged and tagged["orderId"] == "oid1"
+    verify(signer, canonical(modify_payload(ADDRESS, 0, ts, expiry * 1000, "oid1", 1, 63460, 100, False, 1, 3)), tagged["signature"])
+    assert '"c"' not in canonical(modify_payload(ADDRESS, 0, ts, expiry * 1000, "oid1", 1, 63460, 100, False, 1, 3))
     cancel = exchange.build_cancel(ArcusCancel(m, oid="oid1"), ts)
     assert cancel["kind"] == "orderId"
     verify(signer, canonical(cancel_payload(ADDRESS, 0, ts, 1, oid="oid1")), cancel["signature"])
@@ -104,3 +108,222 @@ def test_parsing():
                          {"status": "ERROR", "error": "invalid order signature"}]}
     out = Arcus.parse_responses(res, 3)
     assert [r.ok for r in out] == [True, False, False] and out[1].error == "POST_ONLY_WOULD_CROSS"
+
+
+def test_refused():
+    import asyncio, json
+    from core.arcus.websocket import ArcusWebSocket
+    from log.messenger import Messenger
+
+    class Socket:
+        def __init__(self, ws):
+            self.ws = ws
+
+        async def send(self, raw):
+            msg = json.loads(raw)
+            if msg["channel"] == "bbo":
+                await self.ws.handle(json.dumps({"type": "subscribed", "channel": "bbo", "id": msg["id"], "contents": {}}))
+            else:
+                await self.ws.handle(json.dumps({"type": "error", "message": "address not on access whitelist"}))
+
+    async def go():
+        ws = ArcusWebSocket("wss://x", Messenger(None))
+        ws.ws = Socket(ws)
+        ws.connected.set()
+        await ws.bbo(lambda m: None, "SPY-USD")
+        try:
+            await ws.positions(lambda m: None, ADDRESS.lower())
+            raise AssertionError("should be refused")
+        except ValueError as e:
+            assert "positions" in str(e) and "whitelist" in str(e)
+    asyncio.run(go())
+
+
+def test_check():
+    import asyncio
+    from core.arcus.client import ArcusClient
+    from log.messenger import Messenger
+
+    def client(rows):
+        c = ArcusClient.__new__(ArcusClient)
+        c.signer, c.address, c.index, c.mainnet = Signer(KEY), LOWER, 0, True
+        c._log = __import__("log.logger", fromlist=["Logger"]).Logger("t", Messenger(None))
+        c.exchange = type("E", (), {"index": 0})()
+
+        class Info:
+            async def api_keys(self, address):
+                return rows
+        c.info = Info()
+        return c
+
+    async def go():
+        public = Signer(KEY).public
+        good = client([{"apiKey": public, "accountIndex": 2}])
+        await good.check()
+        assert good.index == 2 and good.exchange.index == 2
+        try:
+            await client([{"apiKey": "ab" * 32}]).check()
+            raise AssertionError("should fail")
+        except ValueError as e:
+            assert "not registered" in str(e)
+    asyncio.run(go())
+
+
+def test_fallback():
+    import asyncio
+    from adapters.models import AccountState
+    from log.messenger import Messenger
+
+    class Socket:
+        async def refuse(self, *args, **kwargs):
+            raise ValueError("subscription positions:0xabc:0 refused: address not on access whitelist")
+        positions = orders = account = refuse
+
+    class Client:
+        messenger, address, index, running = Messenger(None), "0xabc", 0, True
+        websocket = Socket()
+
+    async def go():
+        arcus = Arcus(Client())
+        arcus.running = True
+        async def account(symbols):
+            return AccountState("arcus", equity=100)
+        arcus.account = account
+        arcus.market = lambda s: Market(MARKET)
+        got = []
+        await arcus.subscribe_account(["BTC-USD"], got.append)
+        assert got and got[0].equity == 100 and arcus.poll == 2.0
+        await arcus.stop()
+    asyncio.run(go())
+
+
+class Stub:
+    def __init__(self):
+        from log.messenger import Messenger
+        from core.arcus.utils.types import Market as M
+        self.messenger, self.address, self.index, self.running = Messenger(None), LOWER, 0, True
+        markets = {1: M(BTC), 23: M({**MARKET, "marketId": 23, "marketDisplayName": "SPY-USD", "baseAsset": "SPY",
+                                     "isOutsideRth": True, "lowerTradingBound": "760", "upperTradingBound": "780"})}
+
+        class Info:
+            def market(self, x):
+                return markets[int(x)] if isinstance(x, int) or str(x).isdigit() else next(m for m in markets.values() if m.name == x)
+        self.info = Info()
+
+
+def test_routing():
+    import asyncio, json
+    from core.arcus.websocket import ArcusSubscription, ArcusWebSocket
+    from log.messenger import Messenger
+
+    async def go():
+        ws = ArcusWebSocket("wss://x", Messenger(None))
+        got = []
+        for market in ("SPY-USD", "QQQ-USD"):
+            s = ArcusSubscription("oraclePrices", market, got.append)
+            ws.subscriptions[s.key] = s
+        orders = ArcusSubscription("orders", LOWER, got.append, {"accountIndex": 2})
+        ws.subscriptions[orders.key] = orders
+        await ws.handle(json.dumps({"type": "channel_data", "channel": "oraclePrices", "contents": {"prices": []}}))
+        assert len(got) == 1
+        await ws.handle(json.dumps({"type": "channel_data", "channel": "orders", "id": ADDRESS, "contents": {"orderId": "x"}}))
+        assert len(got) == 2 and got[1]["contents"]["orderId"] == "x"
+    asyncio.run(go())
+
+
+def test_streams():
+    import asyncio
+    from adapters.models import Side
+
+    async def go():
+        arcus = Arcus(Stub())
+        updates, fills, prices = [], [], []
+        arcus.order_listeners.append(updates.append)
+        arcus.fill_listeners.append(fills.append)
+        arcus.oracle_listeners["SPY-USD"] = [lambda name, px: prices.append((name, px))]
+        row = {"orderId": "o2", "clientId": "0xabc", "marketId": 23, "side": "SELL", "status": "OPEN", "state": "PARTIALLY_FILLED",
+               "price": "770.5", "originalSize": "2", "remainingSize": "1.5"}
+        await arcus.on_orders({"type": "channel_data", "contents": row})
+        await arcus.on_orders({"type": "channel_data", "contents": {**row, "orderId": "o1", "status": "CANCELED", "cancelReason": "MODIFY_CANCELED"}})
+        await arcus.on_orders({"type": "channel_data", "contents": {**row, "status": "FILLED", "remainingSize": "0"}})
+        await arcus.on_orders({"type": "subscribed", "contents": {"isSnapshot": True, "orders": [row]}})
+        assert [u.status for u in updates] == ["open", "replaced", "filled"]
+        assert updates[0].symbol == "SPY-USD" and updates[0].side == Side.SELL and updates[0].remaining == 1.5
+        fill = {"tradeId": "t1", "orderId": "o2", "clientId": "0xabc", "marketId": 23, "side": "SELL", "size": "0.5",
+                "price": "770.5", "role": "MAKER", "remainingSize": "1.5", "createdAt": 1785801600123456}
+        await arcus.on_fills({"type": "subscribed", "contents": {"fills": [{**fill, "tradeId": "old"}]}})
+        await arcus.on_fills({"type": "channel_data", "contents": fill})
+        await arcus.dispatch([fill])
+        assert len(fills) == 1 and fills[0].maker and fills[0].value == 385.25 and fills[0].remaining == 1.5
+        await arcus.on_oracle({"type": "channel_data", "contents": {"prices": [{"marketDisplayName": "SPY-USD", "price": "770.1"},
+                                                                                {"marketDisplayName": "BTC-USD", "price": "1"}]}})
+        assert prices == [("SPY-USD", 770.1)]
+        inst = arcus.instrument("SPY-USD")
+        assert inst.closed and inst.lower == 760 and inst.upper == 780 and inst.tick(700) == 1.0 and not inst.bounded(781)
+    asyncio.run(go())
+
+
+def test_placement():
+    import asyncio
+    from adapters.models import Order, Side, TIF
+
+    async def go():
+        stub = Stub()
+
+        class Exchange:
+            async def batch_place(self, orders):
+                return {"responses": [{"orderId": "n1", "status": "ACK"}], "rateLimit": {"pool": "order", "remaining": 1234}}
+        stub.exchange = Exchange()
+        arcus = Arcus(stub)
+        result = (await arcus.place([Order("BTC-USD", Side.BUY, 0.01, 86000.0, TIF.ALO, False, "0xabc")]))[0]
+        assert result.ok and result.raw["goodTilTime"] > time_us() and result.raw["timeInForce"] == "ALO"
+        assert result.raw["clientId"] == "0xabc" and arcus.budget() == {"order": 1234}
+    asyncio.run(go())
+
+
+def time_us() -> int:
+    import time
+    return int(time.time() * 1_000_000)
+
+
+def test_deadman():
+    import asyncio, json, time
+
+    async def go():
+        signer = Signer(KEY)
+        exchange = ArcusExchange.__new__(ArcusExchange)
+        exchange.signer, exchange.address, exchange.index = signer, LOWER, 0
+        sent = {}
+
+        class Api:
+            async def post(self, path, body, headers, params):
+                sent.update(path=path, body=body, headers=headers)
+                return {"status": "scheduled"}
+        exchange.api = Api()
+        await exchange.schedule_cancel(15)
+        body = sent["body"]
+        assert sent["path"] == "/v1/scheduleCancel" and 14e6 < body["time"] - time.time() * 1e6 < 16e6
+        verify(signer, sent["headers"]["X-Timestamp"] + "scheduleCancel" + canonical(body), sent["headers"]["X-Signature"])
+        await exchange.schedule_cancel(None)
+        assert "time" not in sent["body"]
+    asyncio.run(go())
+
+
+def test_replay():
+    import asyncio, time
+
+    async def go():
+        arcus = Arcus(Stub())
+        fills = []
+        arcus.fill_listeners.append(fills.append)
+        now = time.time()
+        row = {"tradeId": "a", "orderId": "o", "marketId": 23, "side": "BUY", "size": "1", "price": "770",
+               "createdAt": int((now - 600) * 1e6)}
+        await arcus.on_fills({"type": "subscribed", "contents": {"fills": [row]}})
+        assert not fills
+        fresh = {**row, "tradeId": "b", "createdAt": int((now + 1) * 1e6)}
+        await arcus.on_fills({"type": "subscribed", "contents": {"fills": [row, fresh]}})
+        assert [f.id for f in fills] == ["b:o"]
+        await arcus.on_fills({"type": "subscribed", "contents": {"fills": [row, fresh]}})
+        assert len(fills) == 1
+    asyncio.run(go())

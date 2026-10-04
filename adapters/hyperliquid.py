@@ -3,9 +3,9 @@ import math
 import time
 from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR
 from typing import Any
-from adapters.exchange import AccountListener, BBOListener, Exchange
-from adapters.models import (AccountState, BBO, Cancel, Candle, Instrument, MarginMode, Modify, OpenOrder, Order,
-                         Position, Result, Side, TIF)
+from adapters.exchange import AccountListener, BBOListener, Exchange, FillListener, OrderListener, PriceListener
+from adapters.models import (AccountState, BBO, Cancel, Candle, Fill, Instrument, MarginMode, Modify, OpenOrder, Order,
+                             OrderUpdate, Position, Result, Side, TIF)
 from core.utils import call
 from core.HL.client import HLClient
 from core.HL.utils.types import BuilderInfo, Instrument as Asset
@@ -28,12 +28,17 @@ def rounding(side: Side | None, passive: bool) -> str:
     return ("down" if side.is_buy else "up") if passive else ("up" if side.is_buy else "down")
 
 
+def tick(asset: Asset, px: float) -> Decimal:
+    if px <= 0:
+        return Decimal(1).scaleb(-asset.px_decimals)
+    digits = int(math.floor(math.log10(px))) + 1
+    return Decimal(1).scaleb(-max(0, min(asset.px_decimals, 5 - digits)))
+
+
 def round_price(asset: Asset, px: float, mode: str) -> Decimal:
     if px <= 0:
         return Decimal(0)
-    digits = int(math.floor(math.log10(px))) + 1
-    decimals = max(0, min(asset.px_decimals, 5 - digits))
-    step = Decimal(1).scaleb(-decimals)
+    step = tick(asset, px)
     mode = {"down": ROUND_FLOOR, "up": ROUND_CEILING}.get(mode)
     return Decimal(str(px)).quantize(step, rounding=mode) if mode else Decimal(str(px)).quantize(step)
 
@@ -62,6 +67,10 @@ class Hyperliquid(Exchange):
         self.tracked: str | None = None
         self.state = AccountState(self.name)
         self.ready = False
+        self.fill_listeners: list[FillListener] = []
+        self.order_listeners: list[OrderListener] = []
+        self.oracle_listeners: dict[str, list[PriceListener]] = {}
+        self.seen: set[str] = set()
 
     async def start(self):
         if not self.client.running:
@@ -81,7 +90,76 @@ class Hyperliquid(Exchange):
             min_notional=self.min_notional, min_size=10 ** -asset.sz_decimals,
             pricer=lambda px, side, passive: float(round_price(asset, px, rounding(side, passive))),
             sizer=lambda sz: float(round_size(asset, sz)),
+            stepper=lambda px: float(tick(asset, px)),
             raw=asset)
+
+    @property
+    def connected(self) -> bool:
+        return self.client.websocket.connected.is_set()
+
+    def parse_fill(self, row: dict) -> Fill:
+        return Fill(self.asset(row["coin"]).name, Side.BUY if row["side"] == "B" else Side.SELL, float(row["sz"]),
+                    float(row["px"]), str(row.get("oid")), row.get("cloid"), str(row.get("tid") or row.get("hash")),
+                    not row.get("crossed", False), None, float(row.get("time") or time.time() * 1000) / 1000)
+
+    async def on_fills(self, msg):
+        rows = msg.get("fills", []) if isinstance(msg, dict) else []
+        snapshot = isinstance(msg, dict) and msg.get("isSnapshot")
+        for row in rows:
+            fill = self.parse_fill(row)
+            if fill.id in self.seen:
+                continue
+            self.seen.add(fill.id)
+            if not snapshot:
+                for listener in self.fill_listeners:
+                    await call(listener, fill)
+
+    async def subscribe_fills(self, symbols: list[str], listener: FillListener) -> None:
+        self.fill_listeners.append(listener)
+        if len(self.fill_listeners) == 1:
+            await self.client.websocket.user_fills(self.on_fills, self.address)
+
+    @staticmethod
+    def status(raw: str) -> str:
+        if raw == "open":
+            return "open"
+        if raw == "filled":
+            return "filled"
+        return "rejected" if raw.lower().endswith("rejected") else "canceled"
+
+    async def on_orders(self, msg):
+        for row in msg if isinstance(msg, list) else []:
+            o = row.get("order") or {}
+            if "oid" not in o:
+                continue
+            update = OrderUpdate(self.asset(o["coin"]).name, str(o["oid"]), Side.BUY if o["side"] == "B" else Side.SELL,
+                                 float(o["limitPx"]), float(o.get("origSz") or o["sz"]), float(o["sz"]),
+                                 self.status(row.get("status", "")), o.get("cloid"),
+                                 float(row.get("statusTimestamp") or time.time() * 1000) / 1000, row)
+            if update.status == "filled":
+                update.remaining = 0.0
+            for listener in self.order_listeners:
+                await call(listener, update)
+
+    async def subscribe_orders(self, symbols: list[str], listener: OrderListener) -> bool:
+        self.order_listeners.append(listener)
+        if len(self.order_listeners) == 1:
+            await self.client.websocket.order_updates(self.on_orders, self.address)
+        return True
+
+    async def subscribe_oracle(self, symbol: str, listener: PriceListener) -> bool:
+        asset = self.asset(symbol)
+        self.oracle_listeners.setdefault(asset.name, []).append(listener)
+        if len(self.oracle_listeners[asset.name]) > 1:
+            return True
+
+        async def on_ctx(msg):
+            price = (msg.get("ctx") or {}).get("oraclePx")
+            if price:
+                for listener in self.oracle_listeners[asset.name]:
+                    await call(listener, asset.name, float(price))
+        await self.client.websocket.active_asset_ctx(on_ctx, asset.coin)
+        return True
 
     async def subscribe_bbo(self, symbol: str, listener: BBOListener):
         asset = self.asset(symbol)

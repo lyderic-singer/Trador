@@ -1,9 +1,12 @@
 from abc import ABC, abstractmethod
 from typing import Awaitable, Callable
-from adapters.models import AccountState, BBO, Cancel, Candle, Instrument, Modify, OpenOrder, Order, Result
+from adapters.models import AccountState, BBO, Cancel, Candle, Fill, Instrument, Modify, OpenOrder, Order, OrderUpdate, Result
 
 BBOListener = Callable[[BBO], Awaitable[None] | None]
 AccountListener = Callable[[AccountState], Awaitable[None] | None]
+FillListener = Callable[[Fill], Awaitable[None] | None]
+OrderListener = Callable[[OrderUpdate], Awaitable[None] | None]
+PriceListener = Callable[[str, float], Awaitable[None] | None]
 
 
 class Exchange(ABC):
@@ -15,6 +18,13 @@ class Exchange(ABC):
 
     def tradable(self, symbol: str) -> bool:
         return True
+
+    @property
+    def connected(self) -> bool:
+        return True
+
+    def budget(self) -> dict[str, int] | None:
+        return None
 
     @abstractmethod
     async def start(self) -> None: ...
@@ -55,7 +65,22 @@ class Exchange(ABC):
     async def cancel_all(self, symbol: str | None = None) -> None:
         orders = await self.open_orders(symbol)
         if orders:
-            await self.cancel([Cancel(o.symbol, o.oid) for o in orders])
+            await self.cancel([Cancel(o.symbol, o.oid, o.client) for o in orders])
+
+    async def purge(self) -> None:
+        await self.cancel_all(None)
 
     async def set_leverage(self, symbol: str, leverage: int, cross: bool = True) -> bool:
+        return False
+
+    async def subscribe_fills(self, symbols: list[str], listener: FillListener) -> None:
+        raise NotImplementedError(f"{self.name} does not stream fills")
+
+    async def subscribe_orders(self, symbols: list[str], listener: OrderListener) -> bool:
+        return False
+
+    async def subscribe_oracle(self, symbol: str, listener: PriceListener) -> bool:
+        return False
+
+    async def schedule_cancel(self, seconds: float | None) -> bool:
         return False

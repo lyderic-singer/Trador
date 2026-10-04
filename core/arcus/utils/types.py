@@ -40,6 +40,9 @@ class Market:
         self.imf = float(info.get("initialMarginFraction") or 0) or None
         self.category: str = info.get("category", "")
         self.closed: bool = bool(info.get("isOutsideRth"))
+        self.lower = float(info["lowerTradingBound"]) if info.get("lowerTradingBound") else None
+        self.upper = float(info["upperTradingBound"]) if info.get("upperTradingBound") else None
+        self.hours = info.get("regularTradingHours")
 
     @property
     def online(self) -> bool:
@@ -93,8 +96,9 @@ class Market:
 
 class ArcusOrder:
     def __init__(self, market: Market, is_buy: bool, size: Decimal, price: Decimal, tif: str = "ALO",
-                 reduce: bool = False, client: str | None = None, kind: str = "LIMIT"):
+                 reduce: bool = False, client: str | None = None, kind: str = "LIMIT", expiry: int | None = None):
         self.market = market
+        self.expiry = expiry
         self.is_buy = is_buy
         self.size = D(size)
         self.price = D(price)

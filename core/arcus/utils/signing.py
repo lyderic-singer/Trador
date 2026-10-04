@@ -49,13 +49,17 @@ def cancel_payload(address: str, account: int, ct: int, market: int,
     return payload
 
 
-def modify_payload(address: str, account: int, ct: int, expiry: int, oid: str, market: int,
+def modify_payload(address: str, account: int, ct: int, expiry: int, oid: str | None, market: int,
                    p: int, q: int, reduce: bool, side: int, tif: int, client: str | None = None) -> dict:
+    if (oid is None) == (client is None):
+        raise ValueError("modify needs exactly one of oid / client")
     payload = {
-        "ad": address.lower(), "ai": account, "ct": ct, "g": expiry, "id": oid, "m": market,
+        "ad": address.lower(), "ai": account, "ct": ct, "g": expiry, "m": market,
         "op": OP_MODIFY, "p": p, "q": q, "r": 1 if reduce else 0, "s": side, "t": tif,
         "v": PAYLOAD_VERSION,
     }
-    if client:
+    if oid is not None:
+        payload["id"] = oid
+    else:
         payload["c"] = client
     return payload
