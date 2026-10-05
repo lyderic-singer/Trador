@@ -17,7 +17,8 @@ class Gateway:
         self.limit = limit
         self._log = Logger(f"{exchange.name} Gateway", exchange.messenger)
         self.places: list[Working] = []
-        self.modifies: list[Working] = []
+        # the target is frozen when the modify is queued: w.target can no longer be None at send time
+        self.modifies: list[tuple[Working, tuple[float, float]]] = []
         self.cancels: list[Working] = []
         self.wake = asyncio.Event()
         self.idle = asyncio.Event()
@@ -45,7 +46,7 @@ class Gateway:
 
     def modify(self, w: Working, price: float, size: float):
         w.state, w.sent, w.target = "moving", time.time(), (price, size)
-        self.modifies.append(w)
+        self.modifies.append((w, (price, size)))
         self.wake.set()
 
     def cancel(self, w: Working):
@@ -63,16 +64,17 @@ class Gateway:
         while (self.queued or not self.idle.is_set()) and time.time() < end:
             await asyncio.sleep(self.interval)
 
-    def take(self, queue: list[Working], room: int) -> list[Working]:
+    @staticmethod
+    def take(queue: list, room: int) -> list:
         batch, queue[:] = queue[:room], queue[room:]
         return batch
 
-    async def send(self, kind: str, batch: list[Working], call, apply):
+    async def send(self, kind: str, batch: list[Working], request, apply):
         if not batch:
             return
         self.stats[kind] += len(batch)
         try:
-            results: list[Result] = await call(batch)
+            results: list[Result] = await request()
         except Exception as e:
             retry = getattr(e, "retry", None) if getattr(e, "status", None) == 429 else None
             if retry is not None or getattr(e, "status", None) == 429:
@@ -94,18 +96,20 @@ class Gateway:
     async def round(self):
         room = self.limit
         cancels = self.take(self.cancels, room)
-        modifies = self.take(self.modifies, max(room - len(cancels), 0))
-        places = self.take(self.places, max(room - len(cancels) - len(modifies), 0))
+        # an order whose state changed while it was queued (failure, removal...) is no longer sent
+        moves = [(w, t) for w, t in self.take(self.modifies, max(room - len(cancels), 0)) if w.state == "moving"]
+        places = self.take(self.places, max(room - len(cancels) - len(moves), 0))
+        for w, target in moves:
+            w.target = target
+        modifies = [w for w, _ in moves]
+        # requests are built here, synchronously, before any await
+        cancel_args = [Cancel(w.symbol, w.oid or "", w.client) for w in cancels]
+        modify_args = [Modify(w.open_order(), size, price, TIF.ALO) for w, (price, size) in moves]
+        place_args = [Order(w.symbol, w.side, w.size, w.price, TIF.ALO, False, w.client) for w in places]
         await asyncio.gather(
-            self.send("cancel", cancels,
-                      lambda b: self.exchange.cancel([Cancel(w.symbol, w.oid or "", w.client) for w in b]),
-                      self.tracker.canceled),
-            self.send("modify", modifies,
-                      lambda b: self.exchange.modify([Modify(w.open_order(), w.target[1], w.target[0], TIF.ALO) for w in b]),
-                      self.tracker.moved),
-            self.send("place", places,
-                      lambda b: self.exchange.place([Order(w.symbol, w.side, w.size, w.price, TIF.ALO, False, w.client) for w in b]),
-                      self.tracker.placed))
+            self.send("cancel", cancels, lambda: self.exchange.cancel(cancel_args), self.tracker.canceled),
+            self.send("modify", modifies, lambda: self.exchange.modify(modify_args), self.tracker.moved),
+            self.send("place", places, lambda: self.exchange.place(place_args), self.tracker.placed))
 
     async def run(self):
         try:
