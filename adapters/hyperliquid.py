@@ -4,8 +4,8 @@ import time
 from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR
 from typing import Any
 from adapters.exchange import AccountListener, BBOListener, Exchange, FillListener, OrderListener, PriceListener
-from adapters.models import (AccountState, BBO, Cancel, Candle, Fill, Instrument, MarginMode, Modify, OpenOrder, Order,
-                             OrderUpdate, Position, Result, Side, TIF)
+from adapters.models import (AccountState, BBO, Cancel, Candle, Fill, Instrument, Listing, MarginMode, Modify, OpenOrder, Order,
+                             OrderUpdate, Portfolio, Position, Result, Side, TIF)
 from core.utils import call
 from core.HL.client import HLClient
 from core.HL.utils.types import BuilderInfo, Instrument as Asset
@@ -13,6 +13,7 @@ from log.logger import Logger
 
 TIFS = {TIF.ALO: "Alo", TIF.IOC: "Ioc", TIF.GTC: "Gtc"}
 FROM_TIFS = {"Alo": TIF.ALO, "Ioc": TIF.IOC, "Gtc": TIF.GTC}
+STABLES = {"USDC", "USDT0", "USDH", "USDE", "USDT"}
 TIMEFRAMES = {"1m": 60, "3m": 180, "5m": 300, "15m": 900, "30m": 1800, "1h": 3600, "2h": 7200, "4h": 14400,
               "8h": 28800, "12h": 43200, "1d": 86400}
 
@@ -84,14 +85,102 @@ class Hyperliquid(Exchange):
 
     def instrument(self, symbol: str) -> Instrument:
         asset = self.asset(symbol)
-        maker, taker = self.fees.get(asset.name, (self.maker_fee, self.taker_fee))
+        # fees by asset name first ("xyz:NVDA"), then by dex ("xyz"), then the adapter default
+        maker, taker = self.fees.get(asset.name) or self.fees.get(asset.dex) or (self.maker_fee, self.taker_fee)
         return Instrument(
             exchange=self.name, symbol=asset.name, maker_fee=maker, taker_fee=taker,
             min_notional=self.min_notional, min_size=10 ** -asset.sz_decimals,
             pricer=lambda px, side, passive: float(round_price(asset, px, rounding(side, passive))),
             sizer=lambda sz: float(round_size(asset, sz)),
             stepper=lambda px: float(tick(asset, px)),
-            raw=asset)
+            raw=asset, max_leverage=getattr(asset, "max_leverage", None))
+
+    def listings(self) -> list[Listing]:
+        out = []
+        for asset in self.client.info.instruments_dict.values():
+            if asset.type not in ("perp", "hip3"):
+                continue
+            out.append(Listing(asset.name, asset.name.split(":")[-1], "", asset.dex, not getattr(asset, "delisted", False)))
+        return out
+
+    async def set_leverage(self, symbol: str, leverage: int, cross: bool = True) -> bool:
+        asset = self.asset(symbol)
+        lev = int(min(leverage, asset.max_leverage or leverage))
+        cross = cross and not getattr(asset, "isolated_only", False)
+        res = await self.client.exchange.update_leverage(asset.asset, lev, cross)
+        ok = isinstance(res, dict) and res.get("status") == "ok"
+        if not ok and cross:
+            # some HIP-3 dexes refuse cross margin without flagging it in their meta
+            res = await self.client.exchange.update_leverage(asset.asset, lev, False)
+            ok = isinstance(res, dict) and res.get("status") == "ok"
+        if ok:
+            self.state.leverages[asset.name] = lev
+        return ok
+
+    @staticmethod
+    def summarize(chs: dict) -> tuple[float, float, float, float, list[dict]]:
+        summary = chs.get("marginSummary") or {}
+        positions = [row["position"] for row in chs.get("assetPositions", []) if float(row["position"].get("szi") or 0)]
+        return (float(summary.get("accountValue") or 0), float(chs.get("withdrawable") or 0),
+                sum(float(p.get("unrealizedPnl") or 0) for p in positions),
+                sum(abs(float(p.get("positionValue") or 0)) for p in positions), positions)
+
+    async def portfolio(self) -> Portfolio:
+        info = self.client.info
+        dexes = [""]
+        try:
+            dexes += [d["name"] for d in await info.perp_dexs() if isinstance(d, dict) and d.get("name")]
+        except Exception:
+            dexes += sorted({a.dex for a in info.instruments_dict.values() if a.dex})
+        gate = asyncio.Semaphore(6)
+
+        async def read(dex: str):
+            async with gate:
+                return await info.clearing_house_state(self.address, dex)
+        states = await asyncio.gather(*(read(d) for d in dexes), return_exceptions=True)
+        out = Portfolio(self.name)
+        failed = []
+        for dex, chs in zip(dexes, states):
+            if isinstance(chs, BaseException) or not isinstance(chs, dict):
+                failed.append(dex or "perp")
+                continue
+            value, free, pnl, notional, positions = self.summarize(chs)
+            if value == 0 and not positions:
+                continue
+            out.details[dex or "perp"] = value
+            out.equity += value
+            out.free += free
+            out.pnl += pnl
+            out.notional += notional
+            for p in positions:
+                try:
+                    name = self.asset(p["coin"]).name
+                except ValueError:
+                    name = p["coin"]
+                out.positions[name] = Position(name, float(p["szi"]), float(p["entryPx"]) if p.get("entryPx") else None,
+                                               abs(float(p.get("positionValue") or 0)), pnl=float(p.get("unrealizedPnl") or 0))
+        try:
+            spot = await info.spot_clearing_house_state(self.address)
+            balances = [b for b in spot.get("balances", []) if float(b.get("total") or 0)]
+            mids = await info.all_mids() if any(b["coin"] not in STABLES for b in balances) else {}
+            for b in balances:
+                total = float(b["total"])
+                if b["coin"] in STABLES:
+                    value = total
+                else:
+                    try:
+                        price = float(mids[info.instrument(f"{b['coin']}/USDC").coin])
+                        value = total * price
+                    except Exception:
+                        value = float(b.get("entryNtl") or 0)
+                if value:
+                    out.details[f"spot {b['coin']}"] = value
+                    out.equity += value
+        except Exception:
+            failed.append("spot")
+        if failed:
+            out.error = f"unreadable: {', '.join(failed)}"
+        return out
 
     @property
     def connected(self) -> bool:
@@ -175,6 +264,15 @@ class Hyperliquid(Exchange):
             for listener in self.bbo_listeners[asset.name]:
                 await call(listener, bbo)
         await self.client.websocket.bbo(on_bbo, asset.coin)
+
+    async def book(self, symbol: str) -> BBO | None:
+        asset = self.asset(symbol)
+        res = await self.client.info.l2_book(asset.name)
+        levels = res.get("levels") or [[], []]
+        bid = levels[0][0] if levels and levels[0] else None
+        ask = levels[1][0] if len(levels) > 1 and levels[1] else None
+        return BBO(asset.name, float(bid["px"]) if bid else None, float(ask["px"]) if ask else None,
+                   float(bid["sz"]) if bid else None, float(ask["sz"]) if ask else None)
 
     async def candles(self, symbol: str, timeframe: str, count: int) -> list[Candle]:
         asset = self.asset(symbol)

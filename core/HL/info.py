@@ -16,8 +16,12 @@ class HLInfo:
     async def post(self, payload):
         return await self.api.post("/info", payload)
     
-    def register(self, name: str, coin: str, asset: int, szDecimals: int):
+    def register(self, name: str, coin: str, asset: int, szDecimals: int, meta: dict | None = None):
         inst = Instrument(name, coin, asset, szDecimals)
+        if meta:
+            inst.max_leverage = int(meta["maxLeverage"]) if meta.get("maxLeverage") else None
+            inst.isolated_only = bool(meta.get("onlyIsolated")) or meta.get("marginMode") in ("strictIsolated", "noCross")
+            inst.delisted = bool(meta.get("isDelisted"))
         self.instruments_dict[asset] = inst
         self.instruments_table[asset] = asset
         self.instruments_table[name] = asset
@@ -36,7 +40,7 @@ class HLInfo:
             for index_in_meta, token in enumerate(infos["universe"]):
                 offset = 100000 if perp_dex_index > 0 else 0
                 asset = offset + perp_dex_index * 10000 + index_in_meta
-                self.register(token["name"], token["name"], asset, token["szDecimals"])
+                self.register(token["name"], token["name"], asset, token["szDecimals"], token)
     
     async def load_spot(self):
         spot_meta = await self.spot_meta()

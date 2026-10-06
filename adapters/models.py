@@ -52,6 +52,7 @@ class Instrument:
     lower: float | None = None
     upper: float | None = None
     raw: Any = None
+    max_leverage: float | None = None
 
     def round_price(self, px: float, side: Side | None = None, passive: bool = True) -> float:
         return self.pricer(px, side, passive) if self.pricer else px
@@ -232,3 +233,31 @@ class AccountState:
 
     def copy(self) -> AccountState:
         return AccountState(self.exchange, self.equity, self.free, self.margin, dict(self.positions), dict(self.leverages), self.ts)
+
+
+@dataclass
+class Listing:
+    symbol: str
+    base: str
+    category: str = ""
+    dex: str = ""
+    online: bool = True
+    volume: float = 0.0
+
+
+@dataclass
+class Portfolio:
+    exchange: str
+    equity: float = 0.0
+    free: float = 0.0
+    pnl: float = 0.0
+    notional: float = 0.0
+    details: dict[str, float] = field(default_factory=dict)
+    positions: dict[str, Position] = field(default_factory=dict)
+    error: str | None = None
+
+    @staticmethod
+    def of(state: AccountState, label: str | None = None) -> Portfolio:
+        positions = {s: p for s, p in state.positions.items() if p.size}
+        return Portfolio(state.exchange, state.equity, state.free, sum(p.pnl for p in positions.values()),
+                         sum(abs(p.value) for p in positions.values()), {label or "account": state.equity}, positions)

@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Awaitable, Callable
-from adapters.models import AccountState, BBO, Cancel, Candle, Fill, Instrument, Modify, OpenOrder, Order, OrderUpdate, Result
+from adapters.models import (AccountState, BBO, Cancel, Candle, Fill, Instrument, Listing, Modify, OpenOrder, Order, OrderUpdate,
+                             Portfolio, Result)
 
 BBOListener = Callable[[BBO], Awaitable[None] | None]
 AccountListener = Callable[[AccountState], Awaitable[None] | None]
@@ -24,6 +25,16 @@ class Exchange(ABC):
         return True
 
     def budget(self) -> dict[str, int] | None:
+        return None
+
+    def listings(self) -> list[Listing]:
+        return []
+
+    async def portfolio(self) -> Portfolio:
+        return Portfolio.of(await self.account([]))
+
+    async def book(self, symbol: str) -> BBO | None:
+        """best bid / ask read by REST, None when the exchange cannot (the websocket book is then trusted)"""
         return None
 
     @abstractmethod

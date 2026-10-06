@@ -327,3 +327,36 @@ def test_replay():
         await arcus.on_fills({"type": "subscribed", "contents": {"fills": [row, fresh]}})
         assert len(fills) == 1
     asyncio.run(go())
+
+
+def test_portfolio():
+    import asyncio
+
+    async def go():
+        stub = Stub()
+        raw = {"equity": "512.5", "freeCollateral": "400", "positions": {"23": {
+            "marketId": 23, "marketDisplayName": "SPY-USD", "side": "SHORT", "positionValueNotional": "100",
+            "unrealizedPnl": "-1.5", "markPx": "770", "marginUsed": "10"}}}
+
+        class Info(type(stub.info)):
+            async def account(self, address, index=0):
+                return raw
+
+            async def leverages(self, address, index=0, market=None):
+                return [{"marketDisplayName": "SPY-USD", "leverage": "4"}]
+
+            async def bbo(self, market):
+                return {"bestBid": {"price": "770.1", "size": "3"}, "bestAsk": {"price": "770.2", "size": "1.5"}}
+        stub.info = Info()
+        stub.info.by_id = {1: Market(BTC), 23: Market({**MARKET, "marketId": 23, "marketDisplayName": "SPY-USD",
+                                                        "baseAsset": "SPY", "category": "ETF", "volume24h": "27000000"})}
+        arcus = Arcus(stub)
+        pf = await arcus.portfolio()
+        assert pf.equity == 512.5 and pf.free == 400 and pf.details == {"sub-account 0": 512.5}
+        assert pf.positions["SPY-USD"].size < 0 and pf.pnl == -1.5 and pf.notional == 100
+        listings = {l.symbol: l for l in arcus.listings()}
+        assert listings["SPY-USD"].category == "ETF" and listings["SPY-USD"].volume == 27e6 and listings["SPY-USD"].base == "SPY"
+        bbo = await arcus.book("SPY-USD")
+        assert bbo.bid == 770.1 and bbo.ask_size == 1.5
+        assert arcus.instrument("BTC-USD").max_leverage == 40
+    asyncio.run(go())

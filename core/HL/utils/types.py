@@ -31,6 +31,9 @@ class Instrument:
         self.sz_factor = 10 ** self.sz_decimals
         self.px_decimals = self.max_decimals - sz_decimals
         self.px_factor = 10 ** self.px_decimals
+        self.max_leverage: int | None = None
+        self.isolated_only = False
+        self.delisted = False
 
     def format_price(self, price: float):
         if (price.is_integer()) or (len(str(int(price))) > 4):

@@ -15,6 +15,12 @@ class HLExchange:
         self.vault_address = vault_address
         self.info = info
         self.expires_after: Optional[int] = None
+        self.last_nonce = 0
+
+    def nonce(self) -> int:
+        # HL rejects a reused nonce: two actions signed in the same millisecond (concurrent strategies) must differ
+        self.last_nonce = max(timestamp_ms(), self.last_nonce + 1)
+        return self.last_nonce
 
     async def post(self, action, signature, nonce):
         payload = {
@@ -47,7 +53,7 @@ class HLExchange:
         return await self.order(x, is_buy, size, px or 0, execution_type, reduce_only, cloid, builder)
 
     async def batch_order(self, orders: List[Order], builder: Optional[BuilderInfo] = None) -> Any:
-        timestamp = timestamp_ms()
+        timestamp = self.nonce()
         if builder:
             builder["b"] = builder["b"].lower()
         order_action = {"type": "order", "orders": orders, "grouping": "na"}
@@ -63,7 +69,7 @@ class HLExchange:
         return await self.batch_modify([modify])
 
     async def batch_modify(self, modifies: List[Modify]) -> Any:
-        timestamp = timestamp_ms()
+        timestamp = self.nonce()
         modify_action = {"type": "batchModify", "modifies": modifies}
         signature = sign(self.wallet, modify_action, self.vault_address, timestamp, self.expires_after, self.url == MAINNET_API_URL)
         await self._log.debug(f"modifying {len(modifies)} orders")
@@ -75,15 +81,21 @@ class HLExchange:
         return await self.batch_cancel(oid is not None, [cancel])
 
     async def batch_cancel(self, is_oid, cancels: list[Cancel]) -> Any:
-        timestamp = timestamp_ms()
+        timestamp = self.nonce()
         t = "cancel" if is_oid else "cancelByCloid"
         cancel_action = {"type": t, "cancels": cancels}
         signature = sign(self.wallet, cancel_action, self.vault_address, timestamp, self.expires_after, self.url == MAINNET_API_URL)
         return await self.post(cancel_action, signature, timestamp)
 
+    async def update_leverage(self, asset: int, leverage: int, is_cross: bool = True) -> Any:
+        timestamp = self.nonce()
+        action = {"type": "updateLeverage", "asset": asset, "isCross": is_cross, "leverage": int(leverage)}
+        signature = sign(self.wallet, action, self.vault_address, timestamp, self.expires_after, self.url == MAINNET_API_URL)
+        return await self.post(action, signature, timestamp)
+
     async def transfer(self, token: str, amount: float, source_dex: str, destination_dex: str, destination_address: str, from_subaccount: str = "") -> Any:
         # use token: "USDC:0x6d1e7cde53ba9467b783cb7c530ce054" for USDC on Mainnet
-        timestamp = timestamp_ms()
+        timestamp = self.nonce()
         action = get_transfer(token, amount, source_dex, destination_dex, destination_address, nonce=timestamp, from_subaccount=from_subaccount, mainnet= self.url == MAINNET_API_URL)
         signature = sign_send_asset_action(self.wallet, action, self.url == MAINNET_API_URL,)
         return await self.post(action, signature, timestamp)

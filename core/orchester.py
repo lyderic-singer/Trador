@@ -2,6 +2,7 @@ import asyncio
 import time
 from typing import Iterable
 from adapters.exchange import Exchange
+from adapters.models import Portfolio
 from core.session import Session
 from core.utils import call
 from adapters import ADAPTERS, CLIENTS
@@ -30,6 +31,16 @@ class Orchester:
         if name not in self.adapters:
             self.adapters[name] = ADAPTERS[name](self.clients[name], **options)
         return self.adapters[name]
+
+    async def portfolios(self) -> list[Portfolio]:
+        async def read(name: str, client) -> Portfolio:
+            # an exchange started without strategy has no adapter yet: a bare one is enough to read the account
+            adapter = self.adapters.get(name) or ADAPTERS[name](client)
+            try:
+                return await asyncio.wait_for(adapter.portfolio(), timeout=20)
+            except Exception as e:
+                return Portfolio(name, error=f"{type(e).__name__}: {e}")
+        return list(await asyncio.gather(*(read(n, c) for n, c in self.clients.items())))
 
     async def start(self):
         if self.running:

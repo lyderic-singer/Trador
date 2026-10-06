@@ -3,8 +3,8 @@ import time
 from decimal import Decimal
 from typing import Any
 from adapters.exchange import AccountListener, BBOListener, Exchange, FillListener, OrderListener, PriceListener
-from adapters.models import (AccountState, BBO, Cancel, Candle, Fill, Instrument, MarginMode, Modify, OpenOrder, Order,
-                             OrderUpdate, Position, Result, Side, TIF)
+from adapters.models import (AccountState, BBO, Cancel, Candle, Fill, Instrument, Listing, MarginMode, Modify, OpenOrder, Order,
+                             OrderUpdate, Portfolio, Position, Result, Side, TIF)
 from core.utils import call, cancel
 from core.arcus.api import ArcusError
 from core.arcus.client import ArcusClient
@@ -15,6 +15,7 @@ from log.logger import Logger
 
 TIFS = {TIF.GTC: "GTT", TIF.ALO: "ALO", TIF.IOC: "IOC"}
 FROM_TIFS = {"GTT": TIF.GTC, "GTC": TIF.GTC, "ALO": TIF.ALO, "IOC": TIF.IOC, "FOK": TIF.IOC}
+VOLUMES = ("volume24h", "volume24H", "notionalVolume24h", "quoteVolume24h", "dayNtlVlm", "volume")
 STATUSES = {"FILLED": "filled", "CANCELED": "canceled", "MARGIN_CANCELED": "canceled", "REJECTED": "rejected",
             "LIQUIDATED": "canceled", "ADL": "canceled"}
 
@@ -95,7 +96,27 @@ class Arcus(Exchange):
             sizer=lambda sz: float(m.round_size(sz)),
             stepper=lambda px: float(m.tick_at(Decimal(str(px)))),
             closed=m.closed, lower=m.lower, upper=m.upper,
-            raw=m)
+            raw=m, max_leverage=m.max_leverage)
+
+    def listings(self) -> list[Listing]:
+        out = []
+        for m in self.client.info.by_id.values():
+            volume = next((m.raw[k] for k in VOLUMES if m.raw.get(k) not in (None, "")), 0)
+            try:
+                volume = float(volume)
+            except (TypeError, ValueError):
+                volume = 0.0
+            out.append(Listing(m.name, m.base, m.category, "", m.online, volume))
+        return out
+
+    async def portfolio(self) -> Portfolio:
+        await self.load_leverages()
+        raw = await self.client.info.account(self.address, self.index)
+        out = Portfolio.of(self.parse_account(raw, self.leverages, lambda i: self.client.info.market(i).name),
+                           f"sub-account {self.index}")
+        if raw is None:
+            out.error = f"no account {self.index} for {self.address}"
+        return out
 
     def tradable(self, symbol: str) -> bool:
         return self.market(symbol).online
@@ -145,6 +166,13 @@ class Arcus(Exchange):
             for listener in self.bbo_listeners[m.name]:
                 await call(listener, bbo)
         await self.client.websocket.bbo(on_bbo, m.name)
+
+    async def book(self, symbol: str) -> BBO | None:
+        m = self.market(symbol)
+        res = await self.client.info.bbo(m.name)
+        bid, ask = res.get("bestBid"), res.get("bestAsk")
+        return BBO(m.name, float(bid["price"]) if bid else None, float(ask["price"]) if ask else None,
+                   float(bid.get("size") or 0) if bid else None, float(ask.get("size") or 0) if ask else None)
 
     async def candles(self, symbol: str, timeframe: str, count: int) -> list[Candle]:
         if timeframe not in TIMEFRAMES:
@@ -493,6 +521,8 @@ class Arcus(Exchange):
         await self.client.exchange.cancel_all(None)
 
     async def set_leverage(self, symbol: str, leverage: int, cross: bool = True) -> bool:
-        res = await self.client.exchange.set_leverage(self.market(symbol).id, leverage, isolated=not cross)
+        m = self.market(symbol)
+        leverage = int(min(leverage, m.max_leverage or leverage))
+        res = await self.client.exchange.set_leverage(m.id, leverage, isolated=not cross)
         await self.load_leverages(force=True)
         return res.get("status") in ("APPLIED", "ACK")

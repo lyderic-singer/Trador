@@ -8,6 +8,32 @@ from log.logger import Logger
 
 load_dotenv()
 
+
+def money(x: float) -> str:
+    return f"{'-' if x < 0 else ''}${abs(x):,.2f}"
+
+
+def format_portfolio(portfolios, positions: int = 8) -> str:
+    total = sum(p.equity for p in portfolios)
+    lines = [f"💼 Portfolio {money(total)}"]
+    for p in portfolios:
+        lines.append("")
+        lines.append(f"🏦 {p.exchange}: {money(p.equity)}" + (f" ({p.equity / total:.0%})" if total > 0 else ""))
+        if p.error:
+            lines.append(f"  ⚠️ {p.error}")
+        for name, value in sorted(p.details.items(), key=lambda kv: -abs(kv[1])):
+            lines.append(f"  · {name}: {money(value)}")
+        lines.append(f"  free {money(p.free)} | exposure {money(p.notional)} | upnl {'+' if p.pnl >= 0 else ''}{money(p.pnl)}"
+                     f" | {len(p.positions)} positions")
+        ranked = sorted(p.positions.values(), key=lambda x: -abs(x.value))
+        for pos in ranked[:positions]:
+            lines.append(f"    {pos.symbol} {'long' if pos.size > 0 else 'short'} {money(pos.value)} "
+                         f"({'+' if pos.pnl >= 0 else ''}{money(pos.pnl)})")
+        if len(ranked) > positions:
+            lines.append(f"    … {len(ranked) - positions} more")
+    return "\n".join(lines)
+
+
 class Telegram:
     def __init__(self, messenger, delay: float = 2):
         self.token = str(os.getenv("TG_TOKEN"))
@@ -26,6 +52,7 @@ class Telegram:
         self.application.add_handler(CommandHandler("stop", self.on_stop))
         self.application.add_handler(CommandHandler("kill", self.on_kill))
         self.application.add_handler(CommandHandler("address", self.on_adress))
+        self.application.add_handler(CommandHandler("pf", self.on_pf))
 
     async def start(self, orchester):
         if self.running:
@@ -146,6 +173,16 @@ class Telegram:
             await self.send("killing bot")
             await self.orchester.stop()
         os._exit(0)
+
+    async def on_pf(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await self._log.info("portfolio requested")
+        try:
+            if not self.orchester:
+                raise ValueError("bot not started")
+            await self.send(format_portfolio(await self.orchester.portfolios()))
+        except Exception as e:
+            await self._log.error(f"portfolio failed: {e}")
+            await self.send(f"cannot read the portfolio: {e}")
 
     async def on_adress(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         await self._log.info("address requested")
