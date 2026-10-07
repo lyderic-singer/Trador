@@ -1,13 +1,14 @@
 from abc import ABC, abstractmethod
 from typing import Awaitable, Callable
 from adapters.models import (AccountState, BBO, Cancel, Candle, Fill, Instrument, Listing, Modify, OpenOrder, Order, OrderUpdate,
-                             Portfolio, Result, Volume)
+                             Portfolio, Print, Result, Volume)
 
 BBOListener = Callable[[BBO], Awaitable[None] | None]
 AccountListener = Callable[[AccountState], Awaitable[None] | None]
 FillListener = Callable[[Fill], Awaitable[None] | None]
 OrderListener = Callable[[OrderUpdate], Awaitable[None] | None]
 PriceListener = Callable[[str, float], Awaitable[None] | None]
+PrintListener = Callable[[Print], Awaitable[None] | None]
 
 
 class Exchange(ABC):
@@ -32,6 +33,10 @@ class Exchange(ABC):
 
     async def portfolio(self) -> Portfolio:
         return Portfolio.of(await self.account([]))
+
+    async def subscribe_trades(self, symbol: str, listener: PrintListener) -> bool:
+        """public trades of a market (everyone's), False when unsupported"""
+        return False
 
     async def volume(self) -> Volume | None:
         """volume traded on the account over 24h / 7j / 30j and since inception (/vol), None when unsupported"""

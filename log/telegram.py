@@ -14,7 +14,7 @@ COMMANDS = {
     "ping": "vérifie que le bot répond",
     "pf": "valeur du portefeuille par exchange, détail et principales positions",
     "vol": "volume traité 24h / 7j / 30j / total sur chaque exchange (maker, fills, frais)",
-    "stats": "rapport des stratégies en cours (CEMM : trades croisés, edge réalisé, budget d'actions)",
+    "stats": "rapport des stratégies en cours (CEMM : edge réalisé, budget · labo : configs rentables ou non)",
     "address": "adresses des comptes utilisés",
     "perpinventory": "valeur du compte perp Hyperliquid (dex principal)",
     "spotinventory": "soldes spot Hyperliquid",

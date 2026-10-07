@@ -2,9 +2,9 @@ import asyncio
 import time
 from decimal import Decimal
 from typing import Any
-from adapters.exchange import AccountListener, BBOListener, Exchange, FillListener, OrderListener, PriceListener
+from adapters.exchange import AccountListener, BBOListener, Exchange, FillListener, OrderListener, PriceListener, PrintListener
 from adapters.models import (AccountState, BBO, Cancel, Candle, Fill, Instrument, Listing, MarginMode, Modify, OpenOrder, Order,
-                             OrderUpdate, Portfolio, Position, Result, Side, TIF, Volume)
+                             OrderUpdate, Portfolio, Position, Print, Result, Side, TIF, Volume)
 from core.utils import call, cancel
 from core.arcus.api import ArcusError
 from core.arcus.client import ArcusClient
@@ -71,6 +71,8 @@ class Arcus(Exchange):
         self.latest = 0.0
         self.remaining: dict[str, int] = {}
         self.volumes: tuple[float, Volume] | None = None
+        self.print_listeners: dict[str, list[PrintListener]] = {}
+        self.print_logged = False
 
     async def start(self):
         if self.running:
@@ -169,6 +171,53 @@ class Arcus(Exchange):
             for listener in self.bbo_listeners[m.name]:
                 await call(listener, bbo)
         await self.client.websocket.bbo(on_bbo, m.name)
+
+    @staticmethod
+    def parse_print(name: str, row: dict, now: float) -> Print | None:
+        """public trade row; the field names are read tolerantly (price/px, size/quantity/qty/sz, side/takerSide)"""
+        price = next((row[k] for k in ("price", "px", "tradePrice") if row.get(k) not in (None, "")), None)
+        size = next((row[k] for k in ("size", "quantity", "qty", "sz", "baseSize") if row.get(k) not in (None, "")), None)
+        if price is None or size is None:
+            return None
+        raw = str(row.get("takerSide") or row.get("side") or row.get("aggressorSide") or "").upper()
+        side = Side.BUY if raw in ("BUY", "B", "BID", "LONG") else Side.SELL if raw in ("SELL", "S", "A", "ASK", "SHORT") else None
+        ts = row.get("createdAt") or row.get("timestamp") or row.get("time")
+        try:
+            stamp = float(ts) if ts not in (None, "") else now
+        except (TypeError, ValueError):
+            stamp = now
+        while stamp > 1e11:  # µs / ms -> s
+            stamp /= 1000
+        try:
+            return Print(name, float(price), abs(float(size)), side, stamp, now)
+        except (TypeError, ValueError):
+            return None
+
+    async def subscribe_trades(self, symbol: str, listener: PrintListener) -> bool:
+        m = self.market(symbol)
+        if m.name in self.print_listeners:
+            self.print_listeners[m.name].append(listener)
+            return True
+        self.print_listeners[m.name] = [listener]
+
+        async def on_trades(msg):
+            if msg.get("type") == "subscribed":
+                return  # snapshot of past trades
+            contents = msg.get("contents")
+            items = contents if isinstance(contents, list) else (contents.get("trades") if isinstance(contents, dict)
+                                                                 and isinstance(contents.get("trades"), list) else [contents])
+            now = time.time()
+            for row in items:
+                trade = self.parse_print(m.name, row, now) if isinstance(row, dict) else None
+                if trade is None:
+                    if not self.print_logged:
+                        self.print_logged = True
+                        await self._log.warning(f"unreadable public trade: {str(msg)[:300]}", send_tg=False)
+                    continue
+                for listener in self.print_listeners[m.name]:
+                    await call(listener, trade)
+        await self.client.websocket.trades(on_trades, m.name)
+        return True
 
     async def book(self, symbol: str) -> BBO | None:
         m = self.market(symbol)

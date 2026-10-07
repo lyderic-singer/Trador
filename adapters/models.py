@@ -193,6 +193,17 @@ class BBO:
 
 
 @dataclass
+class Print:
+    """a public trade on a market (anyone's)"""
+    symbol: str
+    price: float
+    size: float
+    side: Side | None = None  # aggressor side when the exchange gives it
+    ts: float = field(default_factory=time.time)        # exchange time
+    received: float = field(default_factory=time.time)  # when we got it
+
+
+@dataclass
 class Candle:
     time: float
     open: float

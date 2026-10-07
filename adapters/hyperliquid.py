@@ -3,9 +3,9 @@ import math
 import time
 from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR
 from typing import Any
-from adapters.exchange import AccountListener, BBOListener, Exchange, FillListener, OrderListener, PriceListener
+from adapters.exchange import AccountListener, BBOListener, Exchange, FillListener, OrderListener, PriceListener, PrintListener
 from adapters.models import (AccountState, BBO, Cancel, Candle, Fill, Instrument, Listing, MarginMode, Modify, OpenOrder, Order,
-                             OrderUpdate, Portfolio, Position, Result, Side, TIF, Volume)
+                             OrderUpdate, Portfolio, Position, Print, Result, Side, TIF, Volume)
 from core.utils import call, cancel
 from core.HL.client import HLClient
 from core.HL.utils.types import BuilderInfo, Instrument as Asset
@@ -71,6 +71,7 @@ class Hyperliquid(Exchange):
         self.fill_listeners: list[FillListener] = []
         self.order_listeners: list[OrderListener] = []
         self.oracle_listeners: dict[str, list[PriceListener]] = {}
+        self.print_listeners: dict[str, list[PrintListener]] = {}
         self.seen: set[str] = set()
         # address-based action budget (userRateLimit): 1 action per USDC traded, +10,000 at inception
         self.remaining: dict[str, int] = {}
@@ -341,6 +342,27 @@ class Hyperliquid(Exchange):
             for listener in self.bbo_listeners[asset.name]:
                 await call(listener, bbo)
         await self.client.websocket.bbo(on_bbo, asset.coin)
+
+    async def subscribe_trades(self, symbol: str, listener: PrintListener) -> bool:
+        asset = self.asset(symbol)
+        if asset.name in self.print_listeners:
+            self.print_listeners[asset.name].append(listener)
+            return True
+        self.print_listeners[asset.name] = [listener]
+
+        async def on_trades(msg):
+            now = time.time()
+            for row in msg if isinstance(msg, list) else []:
+                try:
+                    side = Side.BUY if row.get("side") == "B" else Side.SELL if row.get("side") == "A" else None
+                    trade = Print(asset.name, float(row["px"]), float(row["sz"]), side,
+                                  float(row.get("time") or now * 1000) / 1000, now)
+                except (KeyError, TypeError, ValueError):
+                    continue
+                for listener in self.print_listeners[asset.name]:
+                    await call(listener, trade)
+        await self.client.websocket.trades(on_trades, asset.coin)
+        return True
 
     async def book(self, symbol: str) -> BBO | None:
         asset = self.asset(symbol)
