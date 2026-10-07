@@ -8,6 +8,90 @@ from log.logger import Logger
 
 load_dotenv()
 
+# shown by /help, in this order
+COMMANDS = {
+    "help": "cette aide",
+    "ping": "vérifie que le bot répond",
+    "pf": "valeur du portefeuille par exchange, détail et principales positions",
+    "vol": "volume traité 24h / 7j / 30j / total sur chaque exchange (maker, fills, frais)",
+    "stats": "rapport des stratégies en cours (CEMM : trades croisés, edge réalisé, budget d'actions)",
+    "address": "adresses des comptes utilisés",
+    "perpinventory": "valeur du compte perp Hyperliquid (dex principal)",
+    "spotinventory": "soldes spot Hyperliquid",
+    "stop": "arrête les stratégies (le bot et Telegram restent en ligne)",
+    "kill": "arrête tout et quitte le programme",
+}
+LIMIT = 4000  # Telegram refuses messages over 4096 characters
+
+
+def chunks(text: str, limit: int = LIMIT) -> list[str]:
+    out, current = [], ""
+    for line in text.split("\n"):
+        while len(line) > limit:
+            if current:
+                out.append(current)
+                current = ""
+            out.append(line[:limit])
+            line = line[limit:]
+        if len(current) + len(line) + 1 > limit:
+            out.append(current)
+            current = line
+        else:
+            current = f"{current}\n{line}" if current else line
+    if current:
+        out.append(current)
+    return out or [""]
+
+
+def short(x: float) -> str:
+    sign = "-" if x < 0 else ""
+    x = abs(x)
+    if x >= 1e9:
+        return f"{sign}${x / 1e9:.2f}B"
+    if x >= 1e6:
+        return f"{sign}${x / 1e6:.2f}M"
+    if x >= 1e4:
+        return f"{sign}${x / 1e3:.1f}k"
+    return f"{sign}${x:,.0f}"
+
+
+def format_volume(volumes) -> str:
+    windows = ("24h", "7j", "30j")
+    lines = ["📊 Volume (fenêtres glissantes)"]
+    totals = {w: 0.0 for w in windows}
+    total_all, partial = 0.0, False
+    for v in volumes:
+        lines.append("")
+        lines.append(f"🏦 {v.exchange}" + (f" · {v.label}" if v.label else ""))
+        if v.error and not v.volume:
+            lines.append(f"  ⚠️ {v.error}")
+            partial = True
+            continue
+        for w in windows:
+            vol = v.volume.get(w, 0.0)
+            totals[w] += vol
+            maker = v.maker.get(w, 0.0)
+            share = f"maker {maker / vol:.0%} · " if vol else ""
+            lines.append(f"  {w:<4} {short(vol):>9}   {share}{v.fills.get(w, 0)} fills · frais {money(v.fees.get(w, 0.0))}")
+        if v.total is not None:
+            total_all += v.total
+            lines.append(f"  total {'≈' if v.estimated else ''}{short(v.total)}" + (" (estimé depuis le pool d'actions)" if v.estimated else ""))
+        else:
+            partial = True
+            lines.append("  total n/d")
+        if v.truncated:
+            lines.append("  ⚠️ fenêtre incomplète : l'exchange ne renvoie pas tous les fills (au moins ce volume)")
+        if v.error:
+            lines.append(f"  ⚠️ {v.error}")
+    if len(volumes) > 1:
+        lines.append("")
+        lines.append("Σ " + " · ".join(f"{w} {short(totals[w])}" for w in windows) + f" · total {'≥' if partial else ''}{short(total_all)}")
+    return "\n".join(lines)
+
+
+def format_help() -> str:
+    return "Commandes :\n" + "\n".join(f"/{name} — {text}" for name, text in COMMANDS.items())
+
 
 def money(x: float) -> str:
     return f"{'-' if x < 0 else ''}${abs(x):,.2f}"
@@ -53,6 +137,8 @@ class Telegram:
         self.application.add_handler(CommandHandler("kill", self.on_kill))
         self.application.add_handler(CommandHandler("address", self.on_adress))
         self.application.add_handler(CommandHandler("pf", self.on_pf))
+        self.application.add_handler(CommandHandler("vol", self.on_vol))
+        self.application.add_handler(CommandHandler("stats", self.on_stats))
 
     async def start(self, orchester):
         if self.running:
@@ -92,20 +178,21 @@ class Telegram:
             if text is None:
                 self.messages.task_done()
                 break
-            retry = 5
-            backoff = 2
-            while retry > 0:
-                try:
-                    await self.application.bot.send_message(chat_id=self.chat_id, text=text)
-                    await asyncio.sleep(self.delay)
-                    break
-                except Exception as e:
-                    retry -= 1
-                    await self._log.error(f"send failed: {e}, retries left: {retry}")
-                    await asyncio.sleep(backoff)
-                    backoff *= 2
-            else:
-                await self._log.error(f"Failed to send message after retries: {text}")
+            for part in chunks(text):
+                retry = 5
+                backoff = 2
+                while retry > 0:
+                    try:
+                        await self.application.bot.send_message(chat_id=self.chat_id, text=part)
+                        await asyncio.sleep(self.delay)
+                        break
+                    except Exception as e:
+                        retry -= 1
+                        await self._log.error(f"send failed: {e}, retries left: {retry}", send_tg=False)
+                        await asyncio.sleep(backoff)
+                        backoff *= 2
+                else:
+                    await self._log.error(f"Failed to send message after retries: {part[:200]}", send_tg=False)
             self.messages.task_done()
 
     async def send(self, msg: str | None):
@@ -116,16 +203,28 @@ class Telegram:
 
     async def on_help(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         await self._log.info("help requested")
-        tg_commands = []
-        for handler in self.application.handlers.get(0, []):
-            if isinstance(handler, CommandHandler):
-                commands = handler.commands
-                if isinstance(commands, str):
-                    commands = [commands]
-                for cmd in commands:
-                    tg_commands.append(f"/{cmd}")
-        tg_commands = "Available commands:\n" + "\n".join(tg_commands)
-        await self.send(tg_commands)
+        await self.send(format_help())
+
+    async def on_vol(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await self._log.info("volume requested")
+        try:
+            if not self.orchester:
+                raise ValueError("bot not started")
+            await self.send(format_volume(await self.orchester.volumes()))
+        except Exception as e:
+            await self._log.error(f"volume failed: {e}", send_tg=False)
+            await self.send(f"cannot read the volume: {e}")
+
+    async def on_stats(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await self._log.info("stats requested")
+        try:
+            if not self.orchester:
+                raise ValueError("bot not started")
+            reports = self.orchester.reports()
+            await self.send("\n\n".join(reports) if reports else "no running strategy with a report")
+        except Exception as e:
+            await self._log.error(f"stats failed: {e}", send_tg=False)
+            await self.send(f"cannot build the report: {e}")
 
     async def on_ping(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         await self._log.info("ping received")
