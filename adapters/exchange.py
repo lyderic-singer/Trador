@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Awaitable, Callable
 from adapters.models import (AccountState, BBO, Cancel, Candle, Fill, Instrument, Listing, Modify, OpenOrder, Order, OrderUpdate,
-                             Portfolio, Result)
+                             Portfolio, Result, Volume)
 
 BBOListener = Callable[[BBO], Awaitable[None] | None]
 AccountListener = Callable[[AccountState], Awaitable[None] | None]
@@ -32,6 +32,10 @@ class Exchange(ABC):
 
     async def portfolio(self) -> Portfolio:
         return Portfolio.of(await self.account([]))
+
+    async def volume(self) -> Volume | None:
+        """volume traded on the account over 24h / 7j / 30j and since inception (/vol), None when unsupported"""
+        return None
 
     async def book(self, symbol: str) -> BBO | None:
         """best bid / ask read by REST, None when the exchange cannot (the websocket book is then trusted)"""

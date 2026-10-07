@@ -4,7 +4,7 @@ from decimal import Decimal
 from typing import Any
 from adapters.exchange import AccountListener, BBOListener, Exchange, FillListener, OrderListener, PriceListener
 from adapters.models import (AccountState, BBO, Cancel, Candle, Fill, Instrument, Listing, MarginMode, Modify, OpenOrder, Order,
-                             OrderUpdate, Portfolio, Position, Result, Side, TIF)
+                             OrderUpdate, Portfolio, Position, Result, Side, TIF, Volume)
 from core.utils import call, cancel
 from core.arcus.api import ArcusError
 from core.arcus.client import ArcusClient
@@ -16,6 +16,8 @@ from log.logger import Logger
 TIFS = {TIF.GTC: "GTT", TIF.ALO: "ALO", TIF.IOC: "IOC"}
 FROM_TIFS = {"GTT": TIF.GTC, "GTC": TIF.GTC, "ALO": TIF.ALO, "IOC": TIF.IOC, "FOK": TIF.IOC}
 VOLUMES = ("volume24h", "volume24H", "notionalVolume24h", "quoteVolume24h", "dayNtlVlm", "volume")
+POOL_START = 20_000  # an order pool starts at 20,000 units and grows by 1 per UNIT of filled volume
+UNIT = 0.10
 STATUSES = {"FILLED": "filled", "CANCELED": "canceled", "MARGIN_CANCELED": "canceled", "REJECTED": "rejected",
             "LIQUIDATED": "canceled", "ADL": "canceled"}
 
@@ -68,6 +70,7 @@ class Arcus(Exchange):
         self.listening = False
         self.latest = 0.0
         self.remaining: dict[str, int] = {}
+        self.volumes: tuple[float, Volume] | None = None
 
     async def start(self):
         if self.running:
@@ -311,7 +314,59 @@ class Arcus(Exchange):
                     float(row["price"]), str(row.get("orderId")) if row.get("orderId") else None,
                     row.get("clientId") or None, uid, (row.get("role") or "").upper() == "MAKER" if row.get("role") else None,
                     float(row["remainingSize"]) if row.get("remainingSize") not in (None, "") else None,
-                    float(row.get("createdAt") or time.time() * 1e6) / 1e6)
+                    float(row.get("createdAt") or time.time() * 1e6) / 1e6, self.fee_of(row))
+
+    @staticmethod
+    def fee_of(row: dict) -> float | None:
+        for k in ("fee", "fees", "feeAmount", "tradingFee"):
+            if row.get(k) not in (None, ""):
+                try:
+                    return float(row[k])
+                except (TypeError, ValueError):
+                    return None
+        return None
+
+    async def volume(self) -> Volume:
+        """24h / 7j / 30j summed from /v1/fills; the total is derived from the order pool (1 unit per $0.10 filled)"""
+        if self.volumes and time.time() - self.volumes[0] < 120:
+            return self.volumes[1]
+        now = time.time()
+        cursor = int((now - 30 * 86_400) * 1e6)
+        fills: dict[str, dict] = {}
+        truncated = True
+        for _ in range(40):
+            try:
+                items = await self.client.info.fills_since(self.address, self.index, cursor, 1000)
+            except ArcusError as e:
+                if e.status != 429:
+                    raise
+                await asyncio.sleep((e.retry or 2000) / 1000)
+                continue
+            for r in items or []:
+                fills[f"{r.get('tradeId')}:{r.get('orderId')}"] = r
+            last = max((int(r.get("createdAt") or 0) for r in items or []), default=0)
+            if len(items or []) < 1000 or last < cursor:
+                truncated = False
+                break
+            cursor = last + 1
+        rows = []
+        for r in fills.values():
+            try:
+                rows.append((float(r.get("createdAt") or 0) / 1e6, float(r["size"]) * float(r["price"]),
+                             (r.get("role") or "").upper() == "MAKER", self.fee_of(r) or 0.0))
+            except (KeyError, TypeError, ValueError):
+                continue
+        out = Volume.of(self.name, rows, now, f"sous-compte {self.index}")
+        out.truncated = truncated
+        try:
+            pool = (await self.client.info.rate_limit(self.address, self.index)).get("order") or {}
+            if pool.get("cap") is not None:
+                out.total = max((int(pool["cap"]) - POOL_START) * UNIT, out.volume.get("30j", 0.0))
+                out.estimated = True
+        except Exception as e:
+            out.error = f"rateLimit: {e}"
+        self.volumes = (time.time(), out)
+        return out
 
     async def dispatch(self, items: list[dict]):
         now = time.time()

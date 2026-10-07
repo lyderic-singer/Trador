@@ -5,8 +5,8 @@ from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR
 from typing import Any
 from adapters.exchange import AccountListener, BBOListener, Exchange, FillListener, OrderListener, PriceListener
 from adapters.models import (AccountState, BBO, Cancel, Candle, Fill, Instrument, Listing, MarginMode, Modify, OpenOrder, Order,
-                             OrderUpdate, Portfolio, Position, Result, Side, TIF)
-from core.utils import call
+                             OrderUpdate, Portfolio, Position, Result, Side, TIF, Volume)
+from core.utils import call, cancel
 from core.HL.client import HLClient
 from core.HL.utils.types import BuilderInfo, Instrument as Asset
 from log.logger import Logger
@@ -72,13 +72,89 @@ class Hyperliquid(Exchange):
         self.order_listeners: list[OrderListener] = []
         self.oracle_listeners: dict[str, list[PriceListener]] = {}
         self.seen: set[str] = set()
+        # address-based action budget (userRateLimit): 1 action per USDC traded, +10,000 at inception
+        self.remaining: dict[str, int] = {}
+        self.limits: dict[str, Any] = {}
+        self.watching: asyncio.Task | None = None
+        self.volumes: tuple[float, Volume] | None = None
 
     async def start(self):
         if not self.client.running:
             await self.client.start()
+        if self.watching is None or self.watching.done():
+            self.watching = asyncio.create_task(self.watch_budget())
 
     async def stop(self):
-        pass
+        await cancel(self.watching)
+
+    def budget(self) -> dict[str, int] | None:
+        return dict(self.remaining) if self.remaining else None
+
+    async def rate_limit(self) -> dict:
+        res = await self.client.info.post({"type": "userRateLimit", "user": self.address})
+        cap, used = int(res.get("nRequestsCap") or 0), int(res.get("nRequestsUsed") or 0)
+        # cancels get min(cap + 100000, 2 cap); the counter used is shared
+        self.remaining = {"order": cap - used, "cancel": min(cap + 100_000, 2 * cap) - used}
+        self.limits = {"cap": cap, "used": used, "volume": float(res.get("cumVlm") or 0),
+                       "surplus": int(res.get("nRequestsSurplus") or 0), "ts": time.time()}
+        return res
+
+    async def watch_budget(self):
+        while True:
+            try:
+                await self.rate_limit()
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                await self._log.debug(f"userRateLimit read failed: {e}")
+            low = self.remaining and self.remaining.get("order", 0) < 5_000
+            await asyncio.sleep(10 if low else 30)
+
+    def spend(self, pool: str, n: int):
+        # one counter for every action: a cancel uses it too, it is only allowed further (up to the cancel cap)
+        for name in self.remaining:
+            self.remaining[name] -= n
+
+    async def volume(self) -> Volume:
+        """24h / 7j / 30j summed from userFillsByTime (only the 10,000 latest fills exist), total from userRateLimit"""
+        if self.volumes and time.time() - self.volumes[0] < 120:
+            return self.volumes[1]
+        info = self.client.info
+        now = int(time.time() * 1000)
+        fills: dict[str, dict] = {}
+        truncated, calls = False, 0
+        # a full response (2000 fills) covers [oldest, newest] of what it returned: the rest of the window is asked
+        # again on both sides, whatever the order the API uses (boundaries overlap by 1 ms, rows are deduplicated)
+        windows = [(now - 30 * 86_400_000 + i * 10 * 86_400_000, now - 20 * 86_400_000 + i * 10 * 86_400_000) for i in range(3)]
+        while windows:
+            if calls >= 16:
+                truncated = True
+                break
+            start, end = windows.pop()
+            calls += 1
+            batch = await info.user_fills_by_time(self.address, start, end) or []
+            for row in batch:
+                fills[f"{row.get('tid')}:{row.get('hash')}:{row.get('oid')}"] = row
+            if len(batch) >= 2000:
+                times = [int(row.get("time") or 0) for row in batch]
+                low, high = min(times), max(times)
+                if low > start:
+                    windows.append((start, low + 1))
+                if high < end - 1:
+                    windows.append((high, end))
+                if low <= start and high >= end - 1:
+                    truncated = True
+        rows = [(float(r.get("time") or 0) / 1000, float(r["px"]) * float(r["sz"]), not r.get("crossed", False),
+                 float(r.get("fee") or 0) + float(r.get("builderFee") or 0)) for r in fills.values()]
+        out = Volume.of(self.name, rows, now / 1000, "tous dex")
+        out.truncated = truncated or len(fills) >= 10_000
+        try:
+            await self.rate_limit()
+            out.total = self.limits["volume"]
+        except Exception as e:
+            out.error = f"userRateLimit: {e}"
+        self.volumes = (time.time(), out)
+        return out
 
     def asset(self, symbol: str) -> Asset:
         return self.client.info.instrument(symbol)
@@ -187,9 +263,10 @@ class Hyperliquid(Exchange):
         return self.client.websocket.connected.is_set()
 
     def parse_fill(self, row: dict) -> Fill:
+        fee = float(row["fee"]) + float(row.get("builderFee") or 0) if row.get("fee") not in (None, "") else None
         return Fill(self.asset(row["coin"]).name, Side.BUY if row["side"] == "B" else Side.SELL, float(row["sz"]),
                     float(row["px"]), str(row.get("oid")), row.get("cloid"), str(row.get("tid") or row.get("hash")),
-                    not row.get("crossed", False), None, float(row.get("time") or time.time() * 1000) / 1000)
+                    not row.get("crossed", False), None, float(row.get("time") or time.time() * 1000) / 1000, fee)
 
     async def on_fills(self, msg):
         rows = msg.get("fills", []) if isinstance(msg, dict) else []
@@ -401,7 +478,7 @@ class Hyperliquid(Exchange):
         out += [Result(False, error="missing status")] * (size - len(out))
         return out[:size]
 
-    async def send(self, items: list, build, post) -> list[Result]:
+    async def send(self, items: list, build, post, pool: str = "order") -> list[Result]:
         results: list[Result | None] = [None] * len(items)
         wires, indexes = [], []
         for i, item in enumerate(items):
@@ -412,6 +489,8 @@ class Hyperliquid(Exchange):
                 wires.append(w)
                 indexes.append(i)
         if wires:
+            # a batch of n orders costs n actions of the address budget: count them before the next userRateLimit read
+            self.spend(pool, len(wires))
             res = await post(wires)
             for i, r in zip(indexes, self.parse_statuses(res, len(wires))):
                 results[i] = r
@@ -434,4 +513,4 @@ class Hyperliquid(Exchange):
         return await self.send(
             cancels,
             lambda c: {"a": self.asset(c.symbol).asset, "o": int(c.oid)},
-            lambda w: self.client.exchange.batch_cancel(True, w))
+            lambda w: self.client.exchange.batch_cancel(True, w), "cancel")

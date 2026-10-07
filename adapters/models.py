@@ -149,6 +149,7 @@ class Fill:
     maker: bool | None = None
     remaining: float | None = None
     ts: float = field(default_factory=time.time)
+    fee: float | None = None  # fee paid in $ when the exchange reports it (negative = rebate)
 
     @property
     def value(self) -> float:
@@ -261,3 +262,35 @@ class Portfolio:
         positions = {s: p for s, p in state.positions.items() if p.size}
         return Portfolio(state.exchange, state.equity, state.free, sum(p.pnl for p in positions.values()),
                          sum(abs(p.value) for p in positions.values()), {label or "account": state.equity}, positions)
+
+
+WINDOWS = (("24h", 86_400), ("7j", 7 * 86_400), ("30j", 30 * 86_400))
+
+
+@dataclass
+class Volume:
+    """traded volume of one account over rolling windows (24h, 7j, 30j) and since inception"""
+    exchange: str
+    volume: dict[str, float] = field(default_factory=dict)  # window -> $ traded
+    maker: dict[str, float] = field(default_factory=dict)   # window -> $ traded as maker
+    fills: dict[str, int] = field(default_factory=dict)     # window -> number of fills
+    fees: dict[str, float] = field(default_factory=dict)    # window -> $ of fees paid
+    total: float | None = None                              # since inception
+    estimated: bool = False                                 # total derived, not summed
+    truncated: bool = False                                 # the exchange did not return every fill of the window
+    label: str = ""
+    error: str | None = None
+
+    @staticmethod
+    def of(exchange: str, rows: list[tuple[float, float, bool | None, float]], now: float | None = None,
+           label: str = "") -> Volume:
+        """rows: (timestamp s, notional $, maker or None, fee $)"""
+        now = now or time.time()
+        out = Volume(exchange, label=label)
+        for name, span in WINDOWS:
+            picked = [r for r in rows if now - r[0] <= span]
+            out.volume[name] = sum(r[1] for r in picked)
+            out.maker[name] = sum(r[1] for r in picked if r[2])
+            out.fills[name] = len(picked)
+            out.fees[name] = sum(r[3] for r in picked)
+        return out

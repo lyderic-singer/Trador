@@ -2,7 +2,7 @@ import asyncio
 import time
 from typing import Iterable
 from adapters.exchange import Exchange
-from adapters.models import Portfolio
+from adapters.models import Portfolio, Volume
 from core.session import Session
 from core.utils import call
 from adapters import ADAPTERS, CLIENTS
@@ -21,6 +21,7 @@ class Orchester:
         self.clients = {name: CLIENTS[name](mainnet, self.messenger, self.session) for name in exchanges}
         self.adapters: dict[str, Exchange] = {}
         self.strategies: list = []
+        self.readers: dict[str, Exchange] = {}
         self.running = False
 
     @property
@@ -32,15 +33,42 @@ class Orchester:
             self.adapters[name] = ADAPTERS[name](self.clients[name], **options)
         return self.adapters[name]
 
+    def reader(self, name: str) -> Exchange:
+        # an exchange started without strategy has no adapter yet: a bare one (kept for its caches) reads the account
+        if name in self.adapters:
+            return self.adapters[name]
+        if name not in self.readers:
+            self.readers[name] = ADAPTERS[name](self.clients[name])
+        return self.readers[name]
+
     async def portfolios(self) -> list[Portfolio]:
         async def read(name: str, client) -> Portfolio:
-            # an exchange started without strategy has no adapter yet: a bare one is enough to read the account
-            adapter = self.adapters.get(name) or ADAPTERS[name](client)
+            adapter = self.reader(name)
             try:
                 return await asyncio.wait_for(adapter.portfolio(), timeout=20)
             except Exception as e:
                 return Portfolio(name, error=f"{type(e).__name__}: {e}")
         return list(await asyncio.gather(*(read(n, c) for n, c in self.clients.items())))
+
+    async def volumes(self) -> list[Volume]:
+        async def read(name: str) -> Volume:
+            try:
+                volume = await asyncio.wait_for(self.reader(name).volume(), timeout=60)
+                return volume or Volume(name, error="volume not available on this exchange")
+            except Exception as e:
+                return Volume(name, error=f"{type(e).__name__}: {e}")
+        return list(await asyncio.gather(*(read(n) for n in self.clients)))
+
+    def reports(self) -> list[str]:
+        out = []
+        for strategy in self.strategies:
+            report = getattr(strategy, "telegram_report", None)
+            if report:
+                try:
+                    out.append(report())
+                except Exception as e:
+                    out.append(f"{type(strategy).__name__}: report failed ({e})")
+        return out
 
     async def start(self):
         if self.running:
