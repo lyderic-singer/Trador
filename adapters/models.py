@@ -54,6 +54,7 @@ class Instrument:
     raw: Any = None
     max_leverage: float | None = None
     maintenance: float | None = None  # maintenance margin fraction of the notional, when the exchange publishes it
+    initial: float | None = None      # initial margin fraction required NOW to open (Arcus raises it off-hours)
     isolated: bool = False            # the market only accepts isolated margin
 
     def round_price(self, px: float, side: Side | None = None, passive: bool = True) -> float:

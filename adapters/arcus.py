@@ -101,7 +101,7 @@ class Arcus(Exchange):
             sizer=lambda sz: float(m.round_size(sz)),
             stepper=lambda px: float(m.tick_at(Decimal(str(px)))),
             closed=m.closed, lower=m.lower, upper=m.upper,
-            raw=m, max_leverage=m.max_leverage, maintenance=m.mmf)
+            raw=m, max_leverage=m.max_leverage, maintenance=m.mmf, initial=m.initial)
 
     async def fundings(self, symbols: list[str]) -> dict[str, Funding]:
         """from /v1/markets (reloaded every `refresh` s): fundingRate = last applied, nextFundingRate = forecast; off-hours both

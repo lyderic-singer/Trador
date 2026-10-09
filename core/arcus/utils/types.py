@@ -56,6 +56,11 @@ class Market:
         return self.status == "ONLINE"
 
     @property
+    def initial(self) -> float | None:
+        """initial margin fraction enforced now: x1.5 while the underlying is closed"""
+        return self.offhours_imf if self.closed and self.offhours_imf else self.imf
+
+    @property
     def max_leverage(self) -> int | None:
         return int(1 / self.imf) if self.imf else None
 

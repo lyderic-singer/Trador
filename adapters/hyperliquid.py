@@ -175,6 +175,7 @@ class Hyperliquid(Exchange):
             raw=asset, max_leverage=getattr(asset, "max_leverage", None),
             # HL maintenance margin is half the initial margin at max leverage
             maintenance=0.5 / asset.max_leverage if getattr(asset, "max_leverage", None) else None,
+            initial=1 / asset.max_leverage if getattr(asset, "max_leverage", None) else None,
             isolated=bool(getattr(asset, "isolated_only", False)))
 
     def listings(self) -> list[Listing]:
