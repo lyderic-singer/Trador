@@ -53,6 +53,8 @@ class Instrument:
     upper: float | None = None
     raw: Any = None
     max_leverage: float | None = None
+    maintenance: float | None = None  # maintenance margin fraction of the notional, when the exchange publishes it
+    isolated: bool = False            # the market only accepts isolated margin
 
     def round_price(self, px: float, side: Side | None = None, passive: bool = True) -> float:
         return self.pricer(px, side, passive) if self.pricer else px
@@ -201,6 +203,29 @@ class Print:
     side: Side | None = None  # aggressor side when the exchange gives it
     ts: float = field(default_factory=time.time)        # exchange time
     received: float = field(default_factory=time.time)  # when we got it
+
+
+@dataclass
+class Funding:
+    """funding of a perp, as hourly fractions of the notional: > 0 = longs pay shorts"""
+    symbol: str
+    rate: float | None = None        # last rate applied (or the one accruing for the current hour)
+    predicted: float | None = None   # forecast for the next payment
+    next_at: float | None = None     # unix seconds of the next payment
+    closed: bool = False             # underlying closed: rate pinned to a fixed base (Arcus off-hours)
+    ts: float = field(default_factory=time.time)
+
+    @property
+    def hourly(self) -> float | None:
+        return self.predicted if self.predicted is not None else self.rate
+
+
+@dataclass
+class FundingPayment:
+    symbol: str
+    ts: float
+    usd: float                       # > 0 = received, < 0 = paid
+    rate: float | None = None
 
 
 @dataclass

@@ -1,3 +1,4 @@
+import time
 from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR
 from typing import Literal
 
@@ -43,6 +44,12 @@ class Market:
         self.lower = float(info["lowerTradingBound"]) if info.get("lowerTradingBound") else None
         self.upper = float(info["upperTradingBound"]) if info.get("upperTradingBound") else None
         self.hours = info.get("regularTradingHours")
+        self.mmf = float(info.get("maintenanceMarginFraction") or 0) or None
+        self.offhours_imf = float(info.get("offHoursInitialMarginFraction") or 0) or None
+        self.funding = float(info["fundingRate"]) if info.get("fundingRate") not in (None, "") else None
+        self.next_funding = float(info["nextFundingRate"]) if info.get("nextFundingRate") not in (None, "") else None
+        self.next_funding_at = float(info["nextFundingAt"]) if info.get("nextFundingAt") else None
+        self.updated = time.time()
 
     @property
     def online(self) -> bool:

@@ -3,8 +3,8 @@ import time
 from decimal import Decimal
 from typing import Any
 from adapters.exchange import AccountListener, BBOListener, Exchange, FillListener, OrderListener, PriceListener, PrintListener
-from adapters.models import (AccountState, BBO, Cancel, Candle, Fill, Instrument, Listing, MarginMode, Modify, OpenOrder, Order,
-                             OrderUpdate, Portfolio, Position, Print, Result, Side, TIF, Volume)
+from adapters.models import (AccountState, BBO, Cancel, Candle, Fill, Funding, FundingPayment, Instrument, Listing, MarginMode, Modify,
+                             OpenOrder, Order, OrderUpdate, Portfolio, Position, Print, Result, Side, TIF, Volume)
 from core.utils import call, cancel
 from core.arcus.api import ArcusError
 from core.arcus.client import ArcusClient
@@ -101,7 +101,49 @@ class Arcus(Exchange):
             sizer=lambda sz: float(m.round_size(sz)),
             stepper=lambda px: float(m.tick_at(Decimal(str(px)))),
             closed=m.closed, lower=m.lower, upper=m.upper,
-            raw=m, max_leverage=m.max_leverage)
+            raw=m, max_leverage=m.max_leverage, maintenance=m.mmf)
+
+    async def fundings(self, symbols: list[str]) -> dict[str, Funding]:
+        """from /v1/markets (reloaded every `refresh` s): fundingRate = last applied, nextFundingRate = forecast; off-hours both
+        are pinned to the base rate (SOFR + 0.5 %)"""
+        out = {}
+        for symbol in symbols:
+            m = self.market(symbol)
+            if m.funding is None and m.next_funding is None:
+                continue
+            out[m.name] = Funding(m.name, m.funding, m.next_funding, m.next_funding_at, m.closed, m.updated)
+        return out
+
+    async def funding_history(self, symbol: str, since: float) -> list[tuple[float, float]]:
+        m = self.market(symbol)
+        rows = await self.client.info.funding_rates(m.name, int(since * 1e6), 1000)
+        out = {}
+        for r in rows or []:
+            try:
+                out[int(r["time"])] = float(r["fundingRate"])
+            except (KeyError, TypeError, ValueError):
+                continue
+        return [(t / 1e6, v) for t, v in sorted(out.items())]
+
+    async def funding_payments(self, since: float) -> list[FundingPayment]:
+        out, start, seen = [], int(since * 1e6), set()
+        for _ in range(20):
+            rows = await self.client.info.funding_payments(self.address, self.index, start, 1000) or []
+            for r in rows:
+                key = (r.get("time"), r.get("marketId"))
+                if key in seen:
+                    continue
+                seen.add(key)
+                try:
+                    out.append(FundingPayment(r.get("marketDisplayName") or self.market(int(r["marketId"])).name,
+                                              float(r["time"]) / 1e6, float(r["payment"]),
+                                              float(r["fundingRate"]) if r.get("fundingRate") not in (None, "") else None))
+                except (KeyError, TypeError, ValueError):
+                    continue
+            if len(rows) < 1000:
+                break
+            start = max(int(r.get("time") or 0) for r in rows) + 1
+        return out
 
     def listings(self) -> list[Listing]:
         out = []
@@ -273,11 +315,16 @@ class Arcus(Exchange):
             size = sign * value / mark
             pnl = float(p.get("unrealizedPnl") or 0)
             mode = (p.get("marginMode") or "").lower()
+            liquidation = next((p[k] for k in ("liquidationPrice", "liquidationPx", "liqPrice") if p.get(k) not in (None, "")), None)
+            try:
+                liquidation = float(liquidation) if liquidation is not None and float(liquidation) > 0 else None
+            except (TypeError, ValueError):
+                liquidation = None
             state.positions[symbol] = Position(
                 symbol=symbol, size=size, entry=mark - pnl / size, value=value,
                 leverage=float(p.get("leverage") or leverages.get(symbol, 1)),
                 mode=MarginMode(mode) if mode in ("cross", "isolated") else None,
-                pnl=pnl, margin=float(p.get("marginUsed") or 0))
+                pnl=pnl, liquidation=liquidation, margin=float(p.get("marginUsed") or 0))
         state.ts = time.time()
         return state
 

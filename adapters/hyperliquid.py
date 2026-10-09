@@ -4,8 +4,8 @@ import time
 from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR
 from typing import Any
 from adapters.exchange import AccountListener, BBOListener, Exchange, FillListener, OrderListener, PriceListener, PrintListener
-from adapters.models import (AccountState, BBO, Cancel, Candle, Fill, Instrument, Listing, MarginMode, Modify, OpenOrder, Order,
-                             OrderUpdate, Portfolio, Position, Print, Result, Side, TIF, Volume)
+from adapters.models import (AccountState, BBO, Cancel, Candle, Fill, Funding, FundingPayment, Instrument, Listing, MarginMode, Modify,
+                             OpenOrder, Order, OrderUpdate, Portfolio, Position, Print, Result, Side, TIF, Volume)
 from core.utils import call, cancel
 from core.HL.client import HLClient
 from core.HL.utils.types import BuilderInfo, Instrument as Asset
@@ -78,6 +78,8 @@ class Hyperliquid(Exchange):
         self.limits: dict[str, Any] = {}
         self.watching: asyncio.Task | None = None
         self.volumes: tuple[float, Volume] | None = None
+        self.ctxs: dict[str, tuple[float, dict]] = {}  # name -> (received, activeAssetCtx ctx)
+        self.watched: set[str] = set()
 
     async def start(self):
         if not self.client.running:
@@ -170,7 +172,10 @@ class Hyperliquid(Exchange):
             pricer=lambda px, side, passive: float(round_price(asset, px, rounding(side, passive))),
             sizer=lambda sz: float(round_size(asset, sz)),
             stepper=lambda px: float(tick(asset, px)),
-            raw=asset, max_leverage=getattr(asset, "max_leverage", None))
+            raw=asset, max_leverage=getattr(asset, "max_leverage", None),
+            # HL maintenance margin is half the initial margin at max leverage
+            maintenance=0.5 / asset.max_leverage if getattr(asset, "max_leverage", None) else None,
+            isolated=bool(getattr(asset, "isolated_only", False)))
 
     def listings(self) -> list[Listing]:
         out = []
@@ -314,19 +319,105 @@ class Hyperliquid(Exchange):
             await self.client.websocket.order_updates(self.on_orders, self.address)
         return True
 
+    async def watch_ctx(self, asset: Asset):
+        # one activeAssetCtx subscription per coin (the websocket keeps the first callback only): oracle and funding share it
+        if asset.name in self.watched:
+            return
+        self.watched.add(asset.name)
+
+        async def on_ctx(msg):
+            ctx = msg.get("ctx") or {}
+            self.ctxs[asset.name] = (time.time(), ctx)
+            price = ctx.get("oraclePx")
+            if price:
+                for listener in self.oracle_listeners.get(asset.name, []):
+                    await call(listener, asset.name, float(price))
+        try:
+            await self.client.websocket.active_asset_ctx(on_ctx, asset.coin)
+        except Exception:
+            self.watched.discard(asset.name)
+            raise
+
     async def subscribe_oracle(self, symbol: str, listener: PriceListener) -> bool:
         asset = self.asset(symbol)
         self.oracle_listeners.setdefault(asset.name, []).append(listener)
-        if len(self.oracle_listeners[asset.name]) > 1:
-            return True
-
-        async def on_ctx(msg):
-            price = (msg.get("ctx") or {}).get("oraclePx")
-            if price:
-                for listener in self.oracle_listeners[asset.name]:
-                    await call(listener, asset.name, float(price))
-        await self.client.websocket.active_asset_ctx(on_ctx, asset.coin)
+        await self.watch_ctx(asset)
         return True
+
+    async def fundings(self, symbols: list[str]) -> dict[str, Funding]:
+        """ctx.funding = rate accruing for the current hour (paid at the top of the hour), > 0 = longs pay"""
+        assets = [self.asset(s) for s in symbols]
+        now = time.time()
+        top = (now // 3600 + 1) * 3600
+        out: dict[str, Funding] = {}
+        for dex in sorted({a.dex for a in assets}):
+            try:
+                res = await self.client.info.post({"type": "metaAndAssetCtxs", "dex": dex})
+                meta, ctxs = res[0], res[1]
+                for info, ctx in zip(meta.get("universe", []), ctxs):
+                    name = info.get("name")
+                    if name and ctx.get("funding") not in (None, ""):
+                        self.ctxs[name] = (now, ctx)
+            except Exception as e:
+                await self._log.debug(f"metaAndAssetCtxs {dex or 'main'} failed: {e}")
+        for asset in assets:
+            received, ctx = self.ctxs.get(asset.name, (0.0, {}))
+            if now - received > 600:
+                await self.watch_ctx(asset)  # REST did not return it: the websocket ctx fills the cache
+                continue
+            try:
+                rate = float(ctx["funding"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            out[asset.name] = Funding(asset.name, rate, rate, top, False, received)
+        return out
+
+    async def funding_history(self, symbol: str, since: float) -> list[tuple[float, float]]:
+        asset = self.asset(symbol)
+        start, out = int(since * 1000), {}
+        for _ in range(20):
+            rows = await self.client.info.post({"type": "fundingHistory", "coin": asset.coin, "startTime": start}) or []
+            for r in rows:
+                try:
+                    out[int(r["time"])] = float(r["fundingRate"])
+                except (KeyError, TypeError, ValueError):
+                    continue
+            if len(rows) < 500:
+                break
+            start = max(int(r.get("time") or 0) for r in rows) + 1
+        return [(t / 1000, v) for t, v in sorted(out.items())]
+
+    async def funding_payments(self, since: float) -> list[FundingPayment]:
+        start, out, seen = int(since * 1000), [], set()
+        for _ in range(20):
+            rows = await self.client.info.post({"type": "userFunding", "user": self.address, "startTime": start}) or []
+            for r in rows:
+                delta = r.get("delta") or {}
+                key = (r.get("time"), r.get("hash"), delta.get("coin"))
+                if delta.get("type", "funding") != "funding" or key in seen:
+                    continue
+                seen.add(key)
+                try:
+                    name = self.asset(delta["coin"]).name
+                except (KeyError, ValueError):
+                    name = str(delta.get("coin"))
+                try:
+                    out.append(FundingPayment(name, float(r["time"]) / 1000, float(delta["usdc"]),
+                                              float(delta["fundingRate"]) if delta.get("fundingRate") else None))
+                except (KeyError, TypeError, ValueError):
+                    continue
+            if len(rows) < 500:
+                break
+            start = max(int(r.get("time") or 0) for r in rows) + 1
+        return out
+
+    async def add_margin(self, symbol: str, usd: float) -> bool:
+        asset = self.asset(symbol)
+        if usd <= 0:
+            return False
+        res = await self.client.exchange.update_isolated_margin(asset.asset, usd)
+        self.spend("order", 1)
+        return isinstance(res, dict) and res.get("status") == "ok"
 
     async def subscribe_bbo(self, symbol: str, listener: BBOListener):
         asset = self.asset(symbol)

@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Awaitable, Callable
-from adapters.models import (AccountState, BBO, Cancel, Candle, Fill, Instrument, Listing, Modify, OpenOrder, Order, OrderUpdate,
-                             Portfolio, Print, Result, Volume)
+from adapters.models import (AccountState, BBO, Cancel, Candle, Fill, Funding, FundingPayment, Instrument, Listing, Modify, OpenOrder,
+                             Order, OrderUpdate, Portfolio, Print, Result, Volume)
 
 BBOListener = Callable[[BBO], Awaitable[None] | None]
 AccountListener = Callable[[AccountState], Awaitable[None] | None]
@@ -45,6 +45,22 @@ class Exchange(ABC):
     async def book(self, symbol: str) -> BBO | None:
         """best bid / ask read by REST, None when the exchange cannot (the websocket book is then trusted)"""
         return None
+
+    async def fundings(self, symbols: list[str]) -> dict[str, Funding]:
+        """current and predicted hourly funding of these markets (by canonical symbol), {} when unsupported"""
+        return {}
+
+    async def funding_history(self, symbol: str, since: float) -> list[tuple[float, float]]:
+        """(unix s, hourly rate) of the funding payments of a market since `since`, oldest first"""
+        return []
+
+    async def funding_payments(self, since: float) -> list[FundingPayment]:
+        """funding paid / received by the account since `since`"""
+        return []
+
+    async def add_margin(self, symbol: str, usd: float) -> bool:
+        """move free collateral onto an isolated position, False when unsupported"""
+        return False
 
     @abstractmethod
     async def start(self) -> None: ...

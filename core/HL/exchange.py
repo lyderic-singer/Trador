@@ -93,6 +93,13 @@ class HLExchange:
         signature = sign(self.wallet, action, self.vault_address, timestamp, self.expires_after, self.url == MAINNET_API_URL)
         return await self.post(action, signature, timestamp)
 
+    async def update_isolated_margin(self, asset: int, amount: float, is_buy: bool = True) -> Any:
+        # adds (amount > 0) or removes (amount < 0) USDC on an isolated position; ntli = amount x 1e6
+        timestamp = self.nonce()
+        action = {"type": "updateIsolatedMargin", "asset": asset, "isBuy": is_buy, "ntli": int(round(amount * 1_000_000))}
+        signature = sign(self.wallet, action, self.vault_address, timestamp, self.expires_after, self.url == MAINNET_API_URL)
+        return await self.post(action, signature, timestamp)
+
     async def transfer(self, token: str, amount: float, source_dex: str, destination_dex: str, destination_address: str, from_subaccount: str = "") -> Any:
         # use token: "USDC:0x6d1e7cde53ba9467b783cb7c530ce054" for USDC on Mainnet
         timestamp = self.nonce()

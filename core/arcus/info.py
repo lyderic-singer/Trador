@@ -100,6 +100,16 @@ class ArcusInfo:
         res = await self.api.get("/v1/fills", {"address": address, "accountIndex": index, "from": start, "limit": limit})
         return res.get("fills", []) if isinstance(res, dict) else res
 
+    async def funding_rates(self, market: str, start: int | None = None, limit: int = 1000) -> list[dict]:
+        """hourly funding rates of a market, newest first; start in epoch microseconds"""
+        res = await self.api.get("/v1/fundingRates", {"market": market, "from": start, "limit": limit})
+        return res.get("fundingRates", []) if isinstance(res, dict) else res
+
+    async def funding_payments(self, address: str, index: int = 0, start: int | None = None, limit: int = 1000) -> list[dict]:
+        """funding paid / received by the account, newest first; payment > 0 = received"""
+        res = await self.api.get("/v1/funding", {"address": address, "accountIndex": index, "from": start, "limit": limit})
+        return res.get("fundingPayments", []) if isinstance(res, dict) else res
+
     async def rate_limit(self, address: str, index: int = 0) -> Any:
         return await self.api.get("/v1/rateLimit", {"address": address, "accountIndex": index})
 
