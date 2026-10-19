@@ -1,4 +1,6 @@
+import time
 from eth_account.signers.local import LocalAccount
+from core.latency import LATENCY
 from core.HL.info import HLInfo
 from core.HL.utils.constants import MAINNET_API_URL
 from core.HL.utils.signing import sign, sign_send_asset_action
@@ -16,6 +18,10 @@ class HLExchange:
         self.info = info
         self.expires_after: Optional[int] = None
         self.last_nonce = 0
+        # actions sent over the already open websocket ("post"): no HTTPS round trip; HTTP when the socket is down
+        self.transport = "ws"
+        self.ws = None          # HLWebSocket, wired by the client
+        self.timeout = 5.0
 
     def nonce(self) -> int:
         # HL rejects a reused nonce: two actions signed in the same millisecond (concurrent strategies) must differ
@@ -30,7 +36,31 @@ class HLExchange:
             "vaultAddress": self.vault_address if action["type"] != "usdClassTransfer" else None,
             "expiresAfter": self.expires_after,
         }
-        return await self.info.api.post("/exchange", payload)
+        kind = action.get("type", "?")
+        items = len(action.get("orders") or action.get("cancels") or action.get("modifies") or [None])
+        ws = getattr(self, "ws", None)
+        t = time.perf_counter()
+        if getattr(self, "transport", "rest") == "ws" and ws is not None and ws.connected.is_set():
+            try:
+                response = await ws.post({"type": "action", "payload": payload}, timeout=getattr(self, "timeout", 5.0))
+            except Exception as e:
+                LATENCY.record("hyperliquid", kind, "ws", (time.perf_counter() - t) * 1000, False, items, type(e).__name__)
+                raise
+            ms = (time.perf_counter() - t) * 1000
+            if response.get("type") == "error":
+                LATENCY.record("hyperliquid", kind, "ws", ms, False, items, str(response.get("payload"))[:60])
+                return {"status": "err", "response": response.get("payload")}
+            out = response.get("payload")
+            LATENCY.record("hyperliquid", kind, "ws", ms, isinstance(out, dict) and out.get("status") == "ok", items)
+            return out
+        try:
+            out = await self.info.api.post("/exchange", payload)
+        except Exception as e:
+            LATENCY.record("hyperliquid", kind, "rest", (time.perf_counter() - t) * 1000, False, items, type(e).__name__)
+            raise
+        LATENCY.record("hyperliquid", kind, "rest", (time.perf_counter() - t) * 1000,
+                       isinstance(out, dict) and out.get("status") == "ok", items)
+        return out
 
     async def order(self, x: str | int, is_buy: bool, size: float, price: float, execution_type: ExecutionType, reduce_only: bool = False, cloid: Optional[Cloid] = None, builder: Optional[BuilderInfo] = None) -> Any:
         instrument = self.info.instrument(x)

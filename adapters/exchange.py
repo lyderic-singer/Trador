@@ -9,6 +9,8 @@ FillListener = Callable[[Fill], Awaitable[None] | None]
 OrderListener = Callable[[OrderUpdate], Awaitable[None] | None]
 PriceListener = Callable[[str, float], Awaitable[None] | None]
 PrintListener = Callable[[Print], Awaitable[None] | None]
+DepthListener = Callable[[list[tuple[float, float]], list[tuple[float, float]], float], Awaitable[None] | None]
+DisconnectListener = Callable[[], Awaitable[None] | None]
 
 
 class Exchange(ABC):
@@ -37,6 +39,19 @@ class Exchange(ABC):
     async def subscribe_trades(self, symbol: str, listener: PrintListener) -> bool:
         """public trades of a market (everyone's), False when unsupported"""
         return False
+
+    async def subscribe_depth(self, symbol: str, listener: DepthListener, levels: int = 10) -> bool:
+        """order book snapshots (bids best first, asks best first, exchange ts in s), False when unsupported"""
+        return False
+
+    def on_disconnect(self, listener: DisconnectListener) -> bool:
+        """called when the market / order stream drops, False when unsupported"""
+        return False
+
+    @property
+    def transport(self) -> str:
+        """how orders are sent right now ("ws", "rest" or "" when unknown)"""
+        return ""
 
     async def volume(self) -> Volume | None:
         """volume traded on the account over 24h / 7j / 30j and since inception (/vol), None when unsupported"""

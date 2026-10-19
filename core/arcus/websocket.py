@@ -1,6 +1,7 @@
 import asyncio
 import itertools
 import json
+import time
 from typing import Callable
 import websockets
 from core.utils import call, cancel
@@ -34,11 +35,19 @@ class ArcusWebSocket:
         self.ws = None
         self.subscriptions: dict[str, ArcusSubscription] = {}
         self.pending: dict[int, asyncio.Future] = {}
+        # request ids must be strictly increasing per connection: one counter for the whole process (never reset) and
+        # the id is taken and sent under a lock, so two concurrent requests can never reach the socket out of order
         self.ids = itertools.count(1)
+        self.lock = asyncio.Lock()
+        self.inflight = asyncio.Semaphore(45)   # the server allows 50 `post` in flight per connection
         self.running = False
         self.connected = asyncio.Event()
         self.reconnect = 1
         self.task = None
+        self.received = 0.0      # time.time() of the last frame
+        self.connects = 0        # successful connections (1 + reconnections)
+        self.since = 0.0         # time.time() of the current connection
+        self.disconnect_listeners: list[Callable] = []
 
     async def start(self):
         if self.running:
@@ -61,10 +70,15 @@ class ArcusWebSocket:
     async def run(self):
         while self.running:
             try:
-                async with websockets.connect(self.url, ping_interval=20, ping_timeout=20, max_size=2**24) as ws:
+                # no permessage-deflate: compressing / inflating every frame costs CPU time on the hot path
+                async with websockets.connect(self.url, ping_interval=20, ping_timeout=20, max_size=2**24,
+                                              compression=None, open_timeout=10) as ws:
                     self.ws = ws
+                    self.connects += 1
+                    self.since = time.time()
+                    self.reconnect = 1
                     self.connected.set()
-                    await self._log.success("connected")
+                    await self._log.success("connected" if self.connects == 1 else f"reconnected (#{self.connects - 1})")
                     for s in self.subscriptions.values():
                         s.active.clear()
                         await ws.send(json.dumps(s.message()))
@@ -75,15 +89,25 @@ class ArcusWebSocket:
             except Exception as e:
                 await self._log.error(f"disconnected ({e}){f', reconnect in {self.reconnect}s' if self.running else ''}")
             finally:
+                was = self.connected.is_set()
                 self.connected.clear()
+                self.ws = None
                 for f in self.pending.values():
                     if not f.done():
                         f.set_exception(ConnectionError("arcus websocket disconnected"))
                 self.pending.clear()
+                if was and self.running:
+                    for listener in list(self.disconnect_listeners):
+                        try:
+                            await call(listener)
+                        except Exception as e:
+                            await self._log.error(f"disconnect listener failed: {e}")
             if self.running:
                 await asyncio.sleep(self.reconnect)
+                self.reconnect = min(self.reconnect * 2, 10)
 
     async def handle(self, raw):
+        self.received = time.time()
         try:
             msg = json.loads(raw)
         except json.JSONDecodeError:
@@ -156,17 +180,33 @@ class ArcusWebSocket:
         if s and self.ws and self.connected.is_set():
             await self.ws.send(json.dumps(s.message("unsubscribe")))
 
-    async def request(self, kind: str, request: dict, timeout: float = 10) -> dict:
-        await self.connected.wait()
-        assert self.ws is not None
-        rid = next(self.ids)
-        future = asyncio.get_running_loop().create_future()
-        self.pending[rid] = future
-        await self.ws.send(json.dumps({"type": kind, "id": rid, "request": request}))
+    async def request(self, kind: str, request: dict, timeout: float = 10, wait: bool = True) -> dict:
+        """RPC over the socket: {"type": kind, "id": n, "request": request} -> the reply carrying the same id.
+        wait=False raises ConnectionError at once when the socket is down (an order must not wait for a reconnection)"""
+        if not self.connected.is_set():
+            if not wait:
+                raise ConnectionError("arcus websocket not connected")
+            await asyncio.wait_for(self.connected.wait(), timeout=timeout)
+        loop = asyncio.get_running_loop()
+        future = loop.create_future()
+        gate = self.inflight if kind == "post" else None
+        if gate:
+            await gate.acquire()
         try:
-            return await asyncio.wait_for(future, timeout=timeout)
+            async with self.lock:
+                ws = self.ws
+                if ws is None or not self.connected.is_set():
+                    raise ConnectionError("arcus websocket not connected")
+                rid = next(self.ids)
+                self.pending[rid] = future
+                await ws.send(json.dumps({"type": kind, "id": rid, "request": request}, separators=(",", ":")))
+            try:
+                return await asyncio.wait_for(future, timeout=timeout)
+            finally:
+                self.pending.pop(rid, None)
         finally:
-            self.pending.pop(rid, None)
+            if gate:
+                gate.release()
 
     async def bbo(self, callback: Callable, market: str):
         return await self.subscribe("bbo", market, callback)

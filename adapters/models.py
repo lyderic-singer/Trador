@@ -204,6 +204,11 @@ class Print:
     side: Side | None = None  # aggressor side when the exchange gives it
     ts: float = field(default_factory=time.time)        # exchange time
     received: float = field(default_factory=time.time)  # when we got it
+    maker: str | None = None        # maker address / order id when the exchange publishes them (Arcus)
+    maker_order: str | None = None
+    taker: str | None = None
+    taker_order: str | None = None
+    id: str | None = None
 
 
 @dataclass

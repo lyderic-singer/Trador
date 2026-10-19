@@ -429,8 +429,10 @@ class Hyperliquid(Exchange):
 
         async def on_bbo(msg):
             bid, ask = (msg.get("bbo") or [None, None])[:2]
+            stamp = msg.get("time")
             bbo = BBO(asset.name, float(bid["px"]) if bid else None, float(ask["px"]) if ask else None,
-                      float(bid["sz"]) if bid else None, float(ask["sz"]) if ask else None)
+                      float(bid["sz"]) if bid else None, float(ask["sz"]) if ask else None,
+                      float(stamp) / 1000 if stamp else time.time())
             for listener in self.bbo_listeners[asset.name]:
                 await call(listener, bbo)
         await self.client.websocket.bbo(on_bbo, asset.coin)

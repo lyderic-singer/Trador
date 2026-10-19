@@ -11,30 +11,38 @@ from log.logger import Logger
 from log.messenger import Messenger
 
 
-def credentials(mainnet: bool) -> tuple[LocalAccount, str]:
-    account: LocalAccount = Account.from_key(env("HL", mainnet, "PRIVATE_KEY"))
-    return account, env("HL", mainnet, "ADDRESS")
+def credentials(mainnet: bool) -> tuple[LocalAccount, str, bool]:
+    """(wallet, address, read only): without HL keys in .env the client still reads the market data (a strategy that
+    only follows HL prices, like mm, runs on a server holding only the Arcus keys)"""
+    try:
+        account: LocalAccount = Account.from_key(env("HL", mainnet, "PRIVATE_KEY"))
+        return account, env("HL", mainnet, "ADDRESS"), False
+    except ValueError:
+        account = Account.create()
+        return account, account.address, True
 
 class HLClient:
     def __init__(self, mainnet, messenger: Messenger, session: Session):
         self.messenger = messenger
         self._log = Logger("HL Client", messenger)
-        account, address = credentials(mainnet)
+        account, address, readonly = credentials(mainnet)
         self.account = account
         self.address = address
+        self.readonly = readonly
         url = MAINNET_API_URL if mainnet else TESTNET_API_URL
         self.session = session
         self.api = HLApi(url, messenger, self.session)
         self.info = HLInfo(url, messenger, self.api)
         self.websocket = HLWebSocket(MAINNET_WS_URL if mainnet else TESTNET_WS_URL, self.messenger, self.info)
         self.exchange = HLExchange(url, messenger, account, self.info)
+        self.exchange.ws = self.websocket      # actions over the socket (see HLExchange.transport)
         self.running = False
 
     async def start(self) -> None:
         if self.running:
             return await self._log.info("already started")
         try:
-            await self._log.info("Starting")
+            await self._log.info("Starting" + (" (no HL key in .env: market data only)" if self.readonly else ""))
             await self.info.start()
             await self.websocket.start()
             self.running = True

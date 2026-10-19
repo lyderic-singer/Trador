@@ -1,5 +1,7 @@
+import asyncio
 import time
 from core.config import env
+from core.latency import LATENCY
 from core.session import Session
 from core.arcus.api import ArcusApi
 from core.arcus.exchange import ArcusExchange
@@ -30,7 +32,11 @@ class ArcusClient:
         self.info = ArcusInfo(messenger, self.api)
         self.exchange = ArcusExchange(messenger, self.api, self.info, signer, address, index)
         self.websocket = ArcusWebSocket(MAINNET_WS_URL if mainnet else TESTNET_WS_URL, messenger)
+        self.exchange.ws = self.websocket      # order entry over the socket (see ArcusExchange.transport)
+        self.session = session
+        self.url = url
         self.running = False
+        self.clock_task = None
 
     async def start(self):
         if self.running:
@@ -38,7 +44,11 @@ class ArcusClient:
         await self._log.info("Starting")
         await self.info.start()
         await self.check()
+        await self.sync_clock()
         await self.websocket.start()
+        # REST stays the fallback (socket down) and carries the dead man's switch: its TLS connections are kept warm
+        self.session.warm(self.url + "/health", every=15.0, connections=3, venue="arcus")
+        self.clock_task = asyncio.create_task(self.watch_clock())
         self.running = True
         await self._log.success(f"Started ({len(self.info.by_id)} markets, api key {self.signer.public[:8]})")
 
@@ -65,7 +75,56 @@ class ArcusClient:
             self.exchange.index = self.index
         await self._log.info(f"api key {self.signer.public[:8]} registered for {self.address}, account {self.index}")
 
+    async def sync_clock(self, samples: int = 5) -> tuple[float, float] | None:
+        """offset = exchange clock - local clock (ms), from the GET /v1/time of lowest round trip. Signed timestamps must
+        be within +-30 s of the exchange: beyond 2 s of drift they are corrected (and a warning is sent)"""
+        best = None
+        for _ in range(samples):
+            t0 = time.time_ns()
+            try:
+                server = await self.info.server_time()
+            except Exception as e:
+                await self._log.debug(f"clock sync failed: {e}")
+                continue
+            t1 = time.time_ns()
+            if server is None:
+                continue
+            rtt = (t1 - t0) / 1e6
+            offset = (server - (t0 + t1) / 2) / 1e6
+            if best is None or rtt < best[1]:
+                best = (offset, rtt)
+        if best is None:
+            return None
+        LATENCY.clock["arcus"] = (best[0], best[1], time.time())
+        if abs(best[0]) > 2000:
+            self.exchange.clock = int(best[0] * 1e6)
+            await self._log.warning(f"local clock is {best[0]:+.0f} ms off the Arcus clock: signed timestamps corrected "
+                                    f"(install chrony / NTP on this server)")
+        elif abs(best[0]) > 100:
+            await self._log.warning(f"local clock {best[0]:+.0f} ms off the Arcus clock (rtt {best[1]:.0f} ms): the feed "
+                                    f"delays measured are corrected, but sync this server with NTP", send_tg=False)
+        else:
+            await self._log.info(f"clock offset {best[0]:+.1f} ms (rtt {best[1]:.1f} ms)")
+        return best
+
+    async def watch_clock(self):
+        while True:
+            await asyncio.sleep(600)
+            try:
+                await self.sync_clock(3)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                pass
+
     async def stop(self):
+        if self.clock_task:
+            self.clock_task.cancel()
+            try:
+                await self.clock_task
+            except BaseException:
+                pass
+            self.clock_task = None
         if self.running:
             await self.websocket.stop()
             self.running = False

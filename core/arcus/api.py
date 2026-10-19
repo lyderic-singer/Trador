@@ -1,5 +1,7 @@
 import json
+import time
 from typing import Any
+from core.latency import LATENCY
 from core.session import Session
 from core.arcus.utils.signing import canonical
 from log.logger import Logger
@@ -29,18 +31,49 @@ class ArcusApi:
         self.session = session
         self._log = Logger("Arcus Api", messenger)
 
+    @staticmethod
+    def method(path: str) -> str:
+        parts = [p for p in path.split("/") if p and p != "v1"]
+        return parts[0] if parts else path
+
     async def get(self, path: str, params: dict | None = None, headers: dict | None = None) -> Any:
         session = await self.session.get()
         params = {k: (str(v).lower() if isinstance(v, bool) else v) for k, v in (params or {}).items() if v is not None}
-        async with session.get(self.url + path, params=params, headers=headers) as response:
-            return await self.handle(response, path)
+        t = time.perf_counter()
+        ok, error = False, ""
+        try:
+            async with session.get(self.url + path, params=params, headers=headers) as response:
+                out = await self.handle(response, path)
+                ok = True
+                return out
+        except ArcusError as e:
+            error = str(e.status)
+            raise
+        except Exception as e:
+            error = type(e).__name__
+            raise
+        finally:
+            LATENCY.record("arcus", self.method(path), "rest", (time.perf_counter() - t) * 1000, ok, error=error)
 
-    async def post(self, path: str, body: Any, headers: dict | None = None, params: dict | None = None) -> Any:
+    async def post(self, path: str, body: Any, headers: dict | None = None, params: dict | None = None, items: int = 1) -> Any:
         session = await self.session.get()
         data = canonical(body).encode()
-        async with session.post(self.url + path, data=data, params=params,
-                                headers={"Content-Type": "application/json", **(headers or {})}) as response:
-            return await self.handle(response, path)
+        t = time.perf_counter()
+        ok, error = False, ""
+        try:
+            async with session.post(self.url + path, data=data, params=params,
+                                    headers={"Content-Type": "application/json", **(headers or {})}) as response:
+                out = await self.handle(response, path)
+                ok = True
+                return out
+        except ArcusError as e:
+            error = str(e.status)
+            raise
+        except Exception as e:
+            error = type(e).__name__
+            raise
+        finally:
+            LATENCY.record("arcus", self.method(path), "rest", (time.perf_counter() - t) * 1000, ok, items, error)
 
     async def handle(self, response, path: str) -> Any:
         text = await response.text()

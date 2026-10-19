@@ -2,7 +2,8 @@ import asyncio
 import time
 from decimal import Decimal
 from typing import Any
-from adapters.exchange import AccountListener, BBOListener, Exchange, FillListener, OrderListener, PriceListener, PrintListener
+from adapters.exchange import (AccountListener, BBOListener, DepthListener, DisconnectListener, Exchange, FillListener,
+                               OrderListener, PriceListener, PrintListener)
 from adapters.models import (AccountState, BBO, Cancel, Candle, Fill, Funding, FundingPayment, Instrument, Listing, MarginMode, Modify,
                              OpenOrder, Order, OrderUpdate, Portfolio, Position, Print, Result, Side, TIF, Volume)
 from core.utils import call, cancel
@@ -231,7 +232,12 @@ class Arcus(Exchange):
         while stamp > 1e11:  # µs / ms -> s
             stamp /= 1000
         try:
-            return Print(name, float(price), abs(float(size)), side, stamp, now)
+            return Print(name, float(price), abs(float(size)), side, stamp, now,
+                         str(row["makerAddress"]).lower() if row.get("makerAddress") else None,
+                         str(row["makerOrderId"]) if row.get("makerOrderId") not in (None, "") else None,
+                         str(row["takerAddress"]).lower() if row.get("takerAddress") else None,
+                         str(row["takerOrderId"]) if row.get("takerOrderId") not in (None, "") else None,
+                         str(row["tradeId"]) if row.get("tradeId") not in (None, "") else None)
         except (TypeError, ValueError):
             return None
 
@@ -260,6 +266,35 @@ class Arcus(Exchange):
                     await call(listener, trade)
         await self.client.websocket.trades(on_trades, m.name)
         return True
+
+    async def subscribe_depth(self, symbol: str, listener: DepthListener, levels: int = 10) -> bool:
+        """l2Orderbook: a full snapshot every ~200 ms"""
+        m = self.market(symbol)
+
+        async def on_book(msg):
+            c = msg.get("contents") or {}
+            if not isinstance(c, dict) or "bids" not in c:
+                return
+            try:
+                bids = [(float(p), float(q)) for p, q in c.get("bids") or []]
+                asks = [(float(p), float(q)) for p, q in c.get("asks") or []]
+            except (TypeError, ValueError):
+                return
+            await call(listener, bids, asks, float(c.get("timestamp") or time.time() * 1e6) / 1e6)
+        try:
+            await self.client.websocket.l2_book(on_book, m.name, levels)
+            return True
+        except ValueError as e:
+            await self._log.warning(f"l2 book websocket unavailable for {m.name}: {e}")
+            return False
+
+    def on_disconnect(self, listener: DisconnectListener) -> bool:
+        self.client.websocket.disconnect_listeners.append(listener)
+        return True
+
+    @property
+    def transport(self) -> str:
+        return "ws" if self.client.exchange.streaming else "rest"
 
     async def book(self, symbol: str) -> BBO | None:
         m = self.market(symbol)

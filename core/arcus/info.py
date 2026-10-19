@@ -65,6 +65,25 @@ class ArcusInfo:
     async def fee_tiers(self) -> Any:
         return await self.api.get("/v1/feetiers")
 
+    async def account_stats(self, address: str, index: int = 0) -> Any:
+        """volume, maker share and the fee tier of the sub-account (weight 2)"""
+        return await self.api.get("/v1/account/stats", {"address": address, "accountIndex": index, "include": "feeTier"})
+
+    async def server_time(self) -> int | None:
+        """exchange clock in unix nanoseconds (GET /v1/time, weight 1)"""
+        res = await self.api.get("/v1/time")
+        if isinstance(res, (int, float)):
+            value = float(res)
+        elif isinstance(res, dict):
+            value = next((float(res[k]) for k in ("timeNs", "time", "serverTime", "timestamp", "now") if res.get(k) not in (None, "")), None)
+            if value is None:
+                return None
+        else:
+            return None
+        while value < 1e17:   # s / ms / µs -> ns
+            value *= 1000
+        return int(value)
+
     async def candles(self, market: str, timeframe: str, count: int | None = None,
                       start: int | None = None, end: int | None = None) -> list[dict]:
         params = {"market": market, "timeframe": timeframe, "to": end or int(time.time() * 1_000_000)}

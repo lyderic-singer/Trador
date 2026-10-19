@@ -1,4 +1,5 @@
 import asyncio
+import itertools
 import json
 from time import time
 import websockets
@@ -50,10 +51,17 @@ class HLWebSocket:
         self.subscriptions: Dict[str, Subscription] = {}
         self.running = False
         self.connected = asyncio.Event()
-        self.reconnect_delay = 5
+        self.reconnect_delay = 1
         self.ping_delay = 30
         self.task = None
         self.last_pong = 0
+        # order entry over the socket ("post" requests): replies are matched by id
+        self.ids = itertools.count(1)
+        self.pending: Dict[int, asyncio.Future] = {}
+        self.lock = asyncio.Lock()
+        self.inflight = asyncio.Semaphore(90)   # HL allows 100 posts in flight
+        self.received = 0.0
+        self.connects = 0
 
     async def start(self):
         if self.running:
@@ -84,22 +92,45 @@ class HLWebSocket:
     async def run(self):
         while self.running:
             try:
-                self.ws = await websockets.connect(self.url)
+                # no permessage-deflate: inflating every frame costs CPU time on the hot path
+                self.ws = await websockets.connect(self.url, compression=None, max_size=2**24, open_timeout=10)
+                self.connects += 1
                 self.connected.set()
-                await self._log.success("connected")
+                await self._log.success("connected" if self.connects == 1 else f"reconnected (#{self.connects - 1})")
                 for k in self.subscriptions:
                     subscription = self.subscriptions[k]
                     await self.ws.send(json.dumps({"method": "subscribe", "subscription": subscription.sub}))
                 self.last_pong = time()
-                await asyncio.gather(self.ping(), self.handle())
+                tasks = [asyncio.create_task(self.ping()), asyncio.create_task(self.handle())]
+                try:
+                    done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+                    for task in done:
+                        task.result()
+                    raise ConnectionError("closed by the server")
+                finally:
+                    for task in tasks:
+                        await cancel(task)
+            except asyncio.CancelledError:
+                raise
             except Exception as e:
+                self.drop()   # at once: an order sent now goes by HTTP instead of waiting for a dead socket
                 await self._log.error(f"disconnected ({e}){f" , reconnect in {self.reconnect_delay}s" if self.running else ""}")
                 await asyncio.sleep(self.reconnect_delay)
             finally:
+                self.drop()
                 if self.ws:
-                    await self.ws.close()
-                self.connected.clear()
-    
+                    try:
+                        await self.ws.close()
+                    except Exception:
+                        pass
+
+    def drop(self):
+        self.connected.clear()
+        for f in self.pending.values():
+            if not f.done():
+                f.set_exception(ConnectionError("hyperliquid websocket disconnected"))
+        self.pending.clear()
+
     async def ping(self):
         assert self.ws is not None
         while self.connected.is_set():
@@ -112,9 +143,15 @@ class HLWebSocket:
         assert self.ws is not None
         async for msg in self.ws:
             try:
+                self.received = time()
                 msg = json.loads(msg)
                 channel = msg.get("channel")
                 data = msg.get("data")
+                if channel == "post":
+                    future = self.pending.pop(data.get("id"), None) if isinstance(data, dict) else None
+                    if future is not None and not future.done():
+                        future.set_result(data.get("response") or {})
+                    continue
                 if channel == "pong":
                     self.last_pong = time()
                 elif channel == "subscriptionResponse" and data:
@@ -144,6 +181,28 @@ class HLWebSocket:
                 await self._log.warning(f"{e}")
                 continue
     
+    async def post(self, request: dict, timeout: float = 10) -> dict:
+        """{"method": "post", "id": n, "request": {"type": "action" | "info", "payload": ...}} -> the reply's
+        `response` ({"type": "action" | "info" | "error", "payload": ...}); ConnectionError when the socket is down"""
+        if not self.connected.is_set() or self.ws is None:
+            raise ConnectionError("hyperliquid websocket not connected")
+        future = asyncio.get_running_loop().create_future()
+        await self.inflight.acquire()
+        try:
+            async with self.lock:
+                ws = self.ws
+                if ws is None or not self.connected.is_set():
+                    raise ConnectionError("hyperliquid websocket not connected")
+                rid = next(self.ids)
+                self.pending[rid] = future
+                await ws.send(json.dumps({"method": "post", "id": rid, "request": request}, separators=(",", ":")))
+            try:
+                return await asyncio.wait_for(future, timeout=timeout)
+            finally:
+                self.pending.pop(rid, None)
+        finally:
+            self.inflight.release()
+
     async def subscribe(self, sub: Sub, callback: Callable):
         assert self.ws is not None
         subscription = None
