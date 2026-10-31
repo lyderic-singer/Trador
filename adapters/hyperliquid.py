@@ -498,9 +498,12 @@ class Hyperliquid(Exchange):
         try:
             res = await self.client.exchange.action(action)
         except Exception as e:
-            await self._log.debug(f"scheduleCancel failed: {e}")
+            await self._log.warning(f"scheduleCancel failed: {e}", send_tg=False)
             return False
-        return isinstance(res, dict) and res.get("status") == "ok"
+        ok = isinstance(res, dict) and res.get("status") == "ok"
+        if not ok:
+            await self._log.warning(f"scheduleCancel refused: {res}", send_tg=False)
+        return ok
 
     def mark(self, symbol: str) -> float | None:
         received, ctx = self.ctxs.get(self.asset(symbol).name, (0.0, {}))
