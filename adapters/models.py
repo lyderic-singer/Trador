@@ -336,3 +336,68 @@ class Volume:
             out.fills[name] = len(picked)
             out.fees[name] = sum(r[3] for r in picked)
         return out
+
+
+@dataclass
+class Outcome:
+    """a HIP-4 outcome market as listed by outcomeMeta; `key` names one instance (the outcome slot may be reused by the
+    next market of a recurring series: same id, new expiry / target)"""
+    outcome: int
+    name: str
+    description: str
+    kind: str = ""                  # class: "priceBinary" for "underlying >= target at expiry"
+    underlying: str = ""
+    expiry: float = 0.0             # unix s (description "expiry:YYYYMMDD-HHMM", UTC)
+    target: float = 0.0
+    period: str = ""                # "1d", "15m"...
+    sides: tuple[str, str] = ("Yes", "No")
+    yes: str = ""                   # trading symbol of side 0 (pays settleFraction): "#<10 x outcome>"
+    no: str = ""                    # trading symbol of side 1: "#<10 x outcome + 1>"
+    raw: Any = None
+
+    @property
+    def key(self) -> str:
+        return f"{self.outcome}:{self.underlying}:{int(self.expiry)}:{self.target:g}"
+
+    @staticmethod
+    def parse(row: dict) -> "Outcome":
+        n = int(row["outcome"])
+        desc = str(row.get("description") or "")
+        fields = dict(part.split(":", 1) for part in desc.split("|") if ":" in part)
+        expiry = 0.0
+        if fields.get("expiry"):
+            try:
+                import calendar
+                expiry = float(calendar.timegm(time.strptime(fields["expiry"], "%Y%m%d-%H%M")))
+            except ValueError:
+                expiry = 0.0
+        try:
+            target = float(fields.get("targetPrice") or 0)
+        except ValueError:
+            target = 0.0
+        sides = tuple(str(x.get("name", "")) for x in (row.get("sideSpecs") or [])[:2]) or ("Yes", "No")
+        return Outcome(n, str(row.get("name") or ""), desc, fields.get("class", ""), fields.get("underlying", ""), expiry,
+                       target, fields.get("period", ""), sides if len(sides) == 2 else ("Yes", "No"),
+                       f"#{10 * n}", f"#{10 * n + 1}", row)
+
+
+@dataclass
+class OutcomeBalances:
+    """spot balances that matter for outcomes: the quote token (collateral) and every side token held (by trading
+    symbol "#<encoding>", whatever the "+<encoding>" form the API uses for balances)"""
+    quote: str = "USDC"
+    total: float = 0.0              # quote token
+    hold: float = 0.0               # quote locked by resting buy orders
+    tokens: dict[str, tuple[float, float, float]] = field(default_factory=dict)  # symbol -> (total, hold, entryNtl)
+    ts: float = field(default_factory=time.time)
+
+    @property
+    def free(self) -> float:
+        return self.total - self.hold
+
+    def held(self, symbol: str) -> float:
+        return self.tokens.get(symbol, (0.0, 0.0, 0.0))[0]
+
+    def available(self, symbol: str) -> float:
+        total, hold, _ = self.tokens.get(symbol, (0.0, 0.0, 0.0))
+        return total - hold

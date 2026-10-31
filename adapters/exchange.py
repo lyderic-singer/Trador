@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Awaitable, Callable
 from adapters.models import (AccountState, BBO, Cancel, Candle, Fill, Funding, FundingPayment, Instrument, Listing, Modify, OpenOrder,
-                             Order, OrderUpdate, Portfolio, Print, Result, Volume)
+                             Order, OrderUpdate, Outcome, OutcomeBalances, Portfolio, Print, Result, Volume)
 
 BBOListener = Callable[[BBO], Awaitable[None] | None]
 AccountListener = Callable[[AccountState], Awaitable[None] | None]
@@ -76,6 +76,28 @@ class Exchange(ABC):
     async def add_margin(self, symbol: str, usd: float) -> bool:
         """move free collateral onto an isolated position, False when unsupported"""
         return False
+
+    # ==== HIP-4 outcomes (optional) ====
+
+    async def outcomes(self) -> list[Outcome]:
+        """live outcome markets (their side symbols become tradable), [] when unsupported"""
+        return []
+
+    async def outcome_balances(self) -> OutcomeBalances | None:
+        """quote collateral and side tokens held, None when unsupported"""
+        return None
+
+    async def merge_outcome(self, outcome: int, amount: int | None = None) -> Result:
+        """burn `amount` Yes + No pairs of an outcome back into the quote token (None = all the pairs held)"""
+        return Result(False, error="unsupported")
+
+    async def reserve_actions(self, weight: int) -> Result:
+        """buy `weight` more actions of the address budget (Hyperliquid: 0.0005 USDC each, from the perp balance)"""
+        return Result(False, error="unsupported")
+
+    def mark(self, symbol: str) -> float | None:
+        """last mark price received (after subscribe_oracle), None when unknown"""
+        return None
 
     @abstractmethod
     async def start(self) -> None: ...

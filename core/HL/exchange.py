@@ -117,6 +117,12 @@ class HLExchange:
         signature = sign(self.wallet, cancel_action, self.vault_address, timestamp, self.expires_after, self.url == MAINNET_API_URL)
         return await self.post(cancel_action, signature, timestamp)
 
+    async def action(self, action: dict) -> Any:
+        """any L1 action (signed like an order): userOutcome (split / merge), reserveRequestWeight, scheduleCancel, noop"""
+        timestamp = self.nonce()
+        signature = sign(self.wallet, action, self.vault_address, timestamp, self.expires_after, self.url == MAINNET_API_URL)
+        return await self.post(action, signature, timestamp)
+
     async def update_leverage(self, asset: int, leverage: int, is_cross: bool = True) -> Any:
         timestamp = self.nonce()
         action = {"type": "updateLeverage", "asset": asset, "isCross": is_cross, "leverage": int(leverage)}

@@ -19,14 +19,17 @@ class Instrument:
         self.coin = coin # real internal symbol ex: '@152'
         self.asset = asset # asset id ex: 10152
         self.type: InstrumentType = ""
-        if ('@' in name) or ('/' in name):
+        if name.startswith("#"):
+            self.type = "outcome"   # HIP-4: "#<10 x outcome + side>", asset 100 000 000 + encoding
+        elif ('@' in name) or ('/' in name):
             self.type = "spot"
         elif ':' in name:
             self.type = "hip3"
         else:
             self.type = "perp"
         self.dex = name[:name.index(":")] if self.type == "hip3" else ""
-        self.max_decimals = MAX_DECIMALS_SPOT if self.type == "spot" else MAX_DECIMALS_PERP
+        self.max_decimals = MAX_DECIMALS_SPOT if self.type in ("spot", "outcome") else MAX_DECIMALS_PERP
+        self.tick_size: float | None = None  # outcomes: price step of the market (0.0001 on the BTC daily binary)
         self.sz_decimals = sz_decimals
         self.sz_factor = 10 ** self.sz_decimals
         self.px_decimals = self.max_decimals - sz_decimals
@@ -106,7 +109,7 @@ Meta = TypedDict("Meta", {"universe": List[AssetInfo]})
 SIDE = Literal["A", "B"]
 TIF = Literal["Alo", "Ioc", "Gtc"]
 TPSL = Literal["tp", "sl"]
-InstrumentType = Literal["perp", "spot", "hip3", ""]
+InstrumentType = Literal["perp", "spot", "hip3", "outcome", ""]
 LimitOrder = TypedDict("LimitOrder", {"tif": TIF})
 LimitOrderType = TypedDict("LimitOrderType", {"limit": LimitOrder})
 TriggerType = TypedDict("TriggerType", {"isMarket": bool, "triggerPx": str, "tpsl": TPSL})

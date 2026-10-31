@@ -4,6 +4,8 @@ from core.HL.utils.types import (Any, Meta, Optional, SpotMeta, SpotMetaAndAsset
 from log.logger import Logger
 from log.messenger import Messenger
 
+OUTCOME_ASSET_BASE = 100_000_000
+
 class HLInfo:
     def __init__(self, url, messenger: Messenger, api: HLApi):
         self.api = api
@@ -27,9 +29,26 @@ class HLInfo:
         self.instruments_table[name] = asset
         self.instruments_table[coin] = asset
 
+    def register_outcome(self, encoding: int, tick: float | None = None) -> Instrument:
+        """HIP-4 side token: coin "#<encoding>" (books, orders, fills), balance "+<encoding>", asset 100 000 000 + encoding,
+        integer sizes. Not in spotMeta / allPerpMetas: registered from outcomeMeta (or on the fly from a fill)"""
+        coin = f"#{int(encoding)}"
+        asset = OUTCOME_ASSET_BASE + int(encoding)
+        if asset not in self.instruments_dict:
+            self.register(coin, coin, asset, 0)
+        inst = self.instruments_dict[asset]
+        if tick:
+            inst.tick_size = tick
+        self.instruments_table[f"+{int(encoding)}"] = asset
+        return inst
+
     def instrument(self, x: str | int) -> Instrument:
         asset = self.instruments_table.get(x, -1)
         instrument = self.instruments_dict.get(asset)
+        if instrument is None and isinstance(x, str) and x[:1] in ("#", "+") and x[1:].isdigit():
+            return self.register_outcome(int(x[1:]))
+        if instrument is None and isinstance(x, int) and x >= OUTCOME_ASSET_BASE and (x - OUTCOME_ASSET_BASE) % 10 <= 1:
+            return self.register_outcome(x - OUTCOME_ASSET_BASE)
         if instrument is None:
             raise ValueError(f"The ID provided ({x}) does not correspond to any hyperliquid market")
         return instrument

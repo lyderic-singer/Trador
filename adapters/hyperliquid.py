@@ -5,7 +5,8 @@ from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR
 from typing import Any
 from adapters.exchange import AccountListener, BBOListener, Exchange, FillListener, OrderListener, PriceListener, PrintListener
 from adapters.models import (AccountState, BBO, Cancel, Candle, Fill, Funding, FundingPayment, Instrument, Listing, MarginMode, Modify,
-                             OpenOrder, Order, OrderUpdate, Portfolio, Position, Print, Result, Side, TIF, Volume)
+                             OpenOrder, Order, OrderUpdate, Outcome, OutcomeBalances, Portfolio, Position, Print, Result, Side,
+                             TIF, Volume)
 from core.utils import call, cancel
 from core.HL.client import HLClient
 from core.HL.utils.types import BuilderInfo, Instrument as Asset
@@ -30,10 +31,14 @@ def rounding(side: Side | None, passive: bool) -> str:
 
 
 def tick(asset: Asset, px: float) -> Decimal:
+    step = getattr(asset, "tick_size", None)
     if px <= 0:
-        return Decimal(1).scaleb(-asset.px_decimals)
-    digits = int(math.floor(math.log10(px))) + 1
-    return Decimal(1).scaleb(-max(0, min(asset.px_decimals, 5 - digits)))
+        out = Decimal(1).scaleb(-asset.px_decimals)
+    else:
+        digits = int(math.floor(math.log10(px))) + 1
+        out = Decimal(1).scaleb(-max(0, min(asset.px_decimals, 5 - digits)))
+    # outcomes: 5 significant figures AND a multiple of the market step (0.0001 on the BTC daily binary)
+    return max(out, Decimal(str(step))) if step else out
 
 
 def round_price(asset: Asset, px: float, mode: str) -> Decimal:
@@ -52,7 +57,8 @@ class Hyperliquid(Exchange):
     name = "hyperliquid"
 
     def __init__(self, client: HLClient, builder: BuilderInfo | None = None, maker_fee: float = 0.00015,
-                 taker_fee: float = 0.00045, fees: dict[str, tuple[float, float]] | None = None, min_notional: float = 10.0):
+                 taker_fee: float = 0.00045, fees: dict[str, tuple[float, float]] | None = None, min_notional: float = 10.0,
+                 outcome_tick: float = 0.0001):
         self.client = client
         self.messenger = client.messenger
         self.builder = builder
@@ -80,6 +86,8 @@ class Hyperliquid(Exchange):
         self.volumes: tuple[float, Volume] | None = None
         self.ctxs: dict[str, tuple[float, dict]] = {}  # name -> (received, activeAssetCtx ctx)
         self.watched: set[str] = set()
+        self.outcome_tick = outcome_tick     # HIP-4 price step (outcomeMeta does not give it): 0.0001 on BTC daily
+        self.outcome_meta: dict[int, Outcome] = {}
 
     async def start(self):
         if not self.client.running:
@@ -164,6 +172,14 @@ class Hyperliquid(Exchange):
 
     def instrument(self, symbol: str) -> Instrument:
         asset = self.asset(symbol)
+        if asset.type == "outcome":
+            # no leverage, integer sizes, $10 minimum; opening is free, closing / settling pays "outcome" fees
+            maker, taker = self.fees.get("outcome") or (0.0, 0.0)
+            return Instrument(
+                exchange=self.name, symbol=asset.name, maker_fee=maker, taker_fee=taker, min_notional=self.min_notional,
+                min_size=1.0, pricer=lambda px, side, passive: float(round_price(asset, px, rounding(side, passive))),
+                sizer=lambda sz: float(round_size(asset, sz)), stepper=lambda px: float(tick(asset, px)),
+                lower=0.001, upper=0.999, raw=asset)
         # fees by asset name first ("xyz:NVDA"), then by dex ("xyz"), then the adapter default
         maker, taker = self.fees.get(asset.name) or self.fees.get(asset.dex) or (self.maker_fee, self.taker_fee)
         return Instrument(
@@ -279,7 +295,10 @@ class Hyperliquid(Exchange):
         rows = msg.get("fills", []) if isinstance(msg, dict) else []
         snapshot = isinstance(msg, dict) and msg.get("isSnapshot")
         for row in rows:
-            fill = self.parse_fill(row)
+            try:
+                fill = self.parse_fill(row)
+            except (KeyError, ValueError):
+                continue  # a market this process does not know (another dex, a new listing): not ours
             if fill.id in self.seen:
                 continue
             self.seen.add(fill.id)
@@ -304,6 +323,10 @@ class Hyperliquid(Exchange):
         for row in msg if isinstance(msg, list) else []:
             o = row.get("order") or {}
             if "oid" not in o:
+                continue
+            try:
+                self.asset(o["coin"])
+            except (KeyError, ValueError):
                 continue
             update = OrderUpdate(self.asset(o["coin"]).name, str(o["oid"]), Side.BUY if o["side"] == "B" else Side.SELL,
                                  float(o["limitPx"]), float(o.get("origSz") or o["sz"]), float(o["sz"]),
@@ -419,6 +442,83 @@ class Hyperliquid(Exchange):
         res = await self.client.exchange.update_isolated_margin(asset.asset, usd)
         self.spend("order", 1)
         return isinstance(res, dict) and res.get("status") == "ok"
+
+    # ==== HIP-4 outcomes ====
+
+    async def outcomes(self) -> list[Outcome]:
+        """outcomeMeta (weight 20): live outcomes, their two side symbols registered ("#<10 x outcome + side>")"""
+        meta = await self.client.info.post({"type": "outcomeMeta"}) or {}
+        out = []
+        for row in meta.get("outcomes") or []:
+            try:
+                o = Outcome.parse(row)
+            except (KeyError, TypeError, ValueError):
+                continue
+            for enc in (10 * o.outcome, 10 * o.outcome + 1):
+                self.client.info.register_outcome(enc, self.outcome_tick)
+            self.outcome_meta[o.outcome] = o
+            out.append(o)
+        return out
+
+    async def outcome_balances(self) -> OutcomeBalances:
+        """spotClearinghouseState (weight 2): side tokens come as "+<encoding>", returned as "#<encoding>" """
+        res = await self.client.info.spot_clearing_house_state(self.address) or {}
+        out = OutcomeBalances()
+        for b in res.get("balances") or []:
+            coin = str(b.get("coin") or "")
+            total, hold = float(b.get("total") or 0), float(b.get("hold") or 0)
+            if coin.startswith("+") and coin[1:].isdigit():
+                out.tokens[f"#{coin[1:]}"] = (total, hold, float(b.get("entryNtl") or 0))
+            elif coin == out.quote:
+                out.total, out.hold = total, hold
+        return out
+
+    async def merge_outcome(self, outcome: int, amount: int | None = None) -> Result:
+        action = {"type": "userOutcome", "mergeOutcome": {"outcome": int(outcome), "amount": None if amount is None else str(int(amount))}}
+        self.spend("order", 1)
+        res = await self.client.exchange.action(action)
+        ok = isinstance(res, dict) and res.get("status") == "ok"
+        return Result(ok, status="merged" if ok else "error", error=None if ok else str(res), raw=res)
+
+    async def reserve_actions(self, weight: int) -> Result:
+        res = await self.client.exchange.action({"type": "reserveRequestWeight", "weight": int(weight)})
+        ok = isinstance(res, dict) and res.get("status") == "ok"
+        if ok:
+            for name in self.remaining:
+                self.remaining[name] += int(weight)
+        return Result(ok, status="reserved" if ok else "error", error=None if ok else str(res), raw=res)
+
+    async def schedule_cancel(self, seconds: float | None) -> bool:
+        """dead man's switch: ALL the open orders of the address are canceled in `seconds` unless re-armed (None removes
+        it). At least 5 s ahead; at most 10 triggers per UTC day"""
+        action: dict[str, Any] = {"type": "scheduleCancel"}
+        if seconds is not None:
+            action["time"] = int((time.time() + max(float(seconds), 5.0)) * 1000)
+        self.spend("order", 1)
+        try:
+            res = await self.client.exchange.action(action)
+        except Exception as e:
+            await self._log.debug(f"scheduleCancel failed: {e}")
+            return False
+        return isinstance(res, dict) and res.get("status") == "ok"
+
+    def mark(self, symbol: str) -> float | None:
+        received, ctx = self.ctxs.get(self.asset(symbol).name, (0.0, {}))
+        try:
+            return float(ctx["markPx"]) if ctx.get("markPx") else None
+        except (TypeError, ValueError):
+            return None
+
+    async def subscribe_depth(self, symbol: str, listener, levels: int = 10) -> bool:
+        """l2Book (every block it changes): bids best first, asks best first, exchange time in s"""
+        asset = self.asset(symbol)
+
+        async def on_book(msg):
+            raw = msg.get("levels") or [[], []]
+            side = lambda rows: [(float(x["px"]), float(x["sz"])) for x in rows[:levels]]
+            await call(listener, side(raw[0]), side(raw[1]) if len(raw) > 1 else [], float(msg.get("time") or 0) / 1000)
+        await self.client.websocket.subscribe({"type": "l2Book", "coin": asset.coin}, on_book)
+        return True
 
     async def subscribe_bbo(self, symbol: str, listener: BBOListener):
         asset = self.asset(symbol)
