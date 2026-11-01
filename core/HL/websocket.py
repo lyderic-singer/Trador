@@ -62,6 +62,10 @@ class HLWebSocket:
         self.inflight = asyncio.Semaphore(90)   # HL allows 100 posts in flight
         self.received = 0.0
         self.connects = 0
+        self.connected_at = 0.0     # time of the last successful connect (0 while down)
+        self.flaps = 0              # connections in a row that died within FLAP_S of opening
+        self.max_delay = 30.0
+        self.flap_s = 30.0
 
     async def start(self):
         if self.running:
@@ -95,10 +99,13 @@ class HLWebSocket:
                 # no permessage-deflate: inflating every frame costs CPU time on the hot path
                 self.ws = await websockets.connect(self.url, compression=None, max_size=2**24, open_timeout=10)
                 self.connects += 1
+                self.connected_at = time()
                 self.connected.set()
-                await self._log.success("connected" if self.connects == 1 else f"reconnected (#{self.connects - 1})")
-                for k in self.subscriptions:
+                if self.connects == 1 or self.flaps == 0:
+                    await self._log.success("connected" if self.connects == 1 else f"reconnected (#{self.connects - 1})")
+                for k in list(self.subscriptions):
                     subscription = self.subscriptions[k]
+                    subscription.clear()    # active again only once the server confirms it on THIS connection
                     await self.ws.send(json.dumps({"method": "subscribe", "subscription": subscription.sub}))
                 self.last_pong = time()
                 tasks = [asyncio.create_task(self.ping()), asyncio.create_task(self.handle())]
@@ -114,7 +121,19 @@ class HLWebSocket:
                 raise
             except Exception as e:
                 self.drop()   # at once: an order sent now goes by HTTP instead of waiting for a dead socket
-                await self._log.error(f"disconnected ({e}){f" , reconnect in {self.reconnect_delay}s" if self.running else ""}")
+                lived = time() - self.connected_at if self.connected_at else 0.0
+                self.connected_at = 0.0
+                if lived and lived < self.flap_s:
+                    self.flaps += 1
+                    self.reconnect_delay = min(self.reconnect_delay * 2, self.max_delay)
+                    if self.flaps >= 3:
+                        await self.shed()
+                else:
+                    self.flaps, self.reconnect_delay = 0, 1
+                # one message per incident, not one per reconnect (01/11: hundreds of Telegram alerts)
+                if self.flaps <= 1 or self.flaps in (3, 10) or self.flaps % 50 == 0:
+                    await self._log.error(f"disconnected ({e}){f" , reconnect in {self.reconnect_delay}s" if self.running else ""}"
+                                          + (f" [{self.flaps} short connections in a row]" if self.flaps > 1 else ""))
                 await asyncio.sleep(self.reconnect_delay)
             finally:
                 self.drop()
@@ -123,6 +142,22 @@ class HLWebSocket:
                         await self.ws.close()
                     except Exception:
                         pass
+
+    async def shed(self):
+        """connections dying right after the resubscription, again and again (01/11 after the settlement of an
+        outcome: its books were resubscribed at every reconnect): the outcome books ("#...") the server never
+        confirmed on the last connection are dropped. User and perp subscriptions are never dropped here"""
+        dead = [k for k, x in self.subscriptions.items()
+                if not x.active.is_set() and str(x.coin or "").startswith("#")]
+        for k in dead:
+            self.subscriptions.pop(k, None)
+        if dead:
+            await self._log.warning(f"dropped {len(dead)} unconfirmed outcome subscription(s) after {self.flaps} short "
+                                    f"connections: {', '.join(dead)}")
+
+    def forget(self, sub: Sub):
+        """stop following a subscription without talking to the server (it is not resent on reconnect)"""
+        self.subscriptions.pop(key(sub), None)
 
     def drop(self):
         self.connected.clear()

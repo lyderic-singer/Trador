@@ -101,6 +101,15 @@ class Hyperliquid(Exchange):
     def budget(self) -> dict[str, int] | None:
         return dict(self.remaining) if self.remaining else None
 
+    async def max_builder_fee(self, builder: str) -> int | None:
+        """maximum builder fee the user approved for `builder`, in tenths of a basis point (info "maxBuilderFee").
+        0 is ambiguous: never approved, or approved at 0"""
+        res = await self.client.info.post({"type": "maxBuilderFee", "user": self.address, "builder": builder.lower()})
+        try:
+            return int(res)
+        except (TypeError, ValueError):
+            return None
+
     async def rate_limit(self) -> dict:
         res = await self.client.info.post({"type": "userRateLimit", "user": self.address})
         cap, used = int(res.get("nRequestsCap") or 0), int(res.get("nRequestsUsed") or 0)
@@ -522,6 +531,28 @@ class Hyperliquid(Exchange):
             await call(listener, side(raw[0]), side(raw[1]) if len(raw) > 1 else [], float(msg.get("time") or 0) / 1000)
         await self.client.websocket.subscribe({"type": "l2Book", "coin": asset.coin}, on_book)
         return True
+
+    async def unsubscribe_symbol(self, symbol: str, kinds: tuple = ("l2Book", "trades")):
+        """stop the market data of a symbol (a settled outcome: its coin no longer exists and resubscribing it at every
+        reconnect can kill the socket). Never waits more than 5 s: falls back to forgetting it locally"""
+        coin = self.asset(symbol).coin
+        for kind in kinds:
+            sub = {"type": kind, "coin": coin}
+            ws = self.client.websocket
+            try:
+                if ws.connected.is_set():
+                    await asyncio.wait_for(ws.unsubscribe(sub), timeout=5)
+            except Exception:
+                pass
+            ws.forget(sub)
+        name = self.asset(symbol).name
+        self.print_listeners.pop(name, None)
+
+    @property
+    def connected_for(self) -> float:
+        """seconds since the websocket (re)connected, 0 while it is down"""
+        at = getattr(self.client.websocket, "connected_at", 0.0)
+        return time.time() - at if at and self.connected else 0.0
 
     async def subscribe_bbo(self, symbol: str, listener: BBOListener):
         asset = self.asset(symbol)
