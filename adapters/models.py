@@ -341,11 +341,21 @@ class Volume:
 @dataclass
 class Outcome:
     """a HIP-4 outcome market as listed by outcomeMeta; `key` names one instance (the outcome slot may be reused by the
-    next market of a recurring series: same id, new expiry / target)"""
+    next market of a recurring series: same id, new expiry / target).
+
+    Two kinds of "price above a level" markets are read the same way (kind "priceBinary"):
+    - Hyperliquid's recurring series: name "Recurring", description
+      "class:priceBinary|underlying:BTC|expiry:20261102-0600|targetPrice:77886|period:1d", settled by the protocol on
+      the interpolated mark (>= target);
+    - markets deployed from a template by a builder (Outcome.xyz's "BTC Up or Down 15 min"...): name "template:<id>",
+      description = the template keywords sorted, "perp:BTC|threshold:78123|time:20261101-1530" (aliases of
+      underlying / targetPrice / expiry, a trailing "metadata=..." tag is ignored), sides named by the template
+      ("Up" / "Down"), settled by the deployer: the first side pays if the mark is ABOVE the level at that time
+      (@outcome.xyz/hip4 suggestPriceSettlement). The period comes from the template id ("...15m...") when present"""
     outcome: int
     name: str
     description: str
-    kind: str = ""                  # class: "priceBinary" for "underlying >= target at expiry"
+    kind: str = ""                  # "priceBinary" for "underlying >= target at expiry"
     underlying: str = ""
     expiry: float = 0.0             # unix s (description "expiry:YYYYMMDD-HHMM", UTC)
     target: float = 0.0
@@ -354,31 +364,79 @@ class Outcome:
     yes: str = ""                   # trading symbol of side 0 (pays settleFraction): "#<10 x outcome>"
     no: str = ""                    # trading symbol of side 1: "#<10 x outcome + 1>"
     raw: Any = None
+    template: str = ""              # template id of a builder-deployed market ("" for the protocol's series)
+    source: str = "mark"            # settlement price: "mark" (HL perp mark), "oracle" (Pyth / spot index), "trade"
+    window: float = 0.0             # template keyword "seconds": settlement window / tolerance around `time` (s)
+    venue: str = ""                 # deployer venue of a builder-deployed market (outcomeMeta "venue", when given)
+
+    ALIASES = {"perp": "underlying", "threshold": "targetPrice", "target": "targetPrice", "time": "expiry"}
 
     @property
     def key(self) -> str:
         return f"{self.outcome}:{self.underlying}:{int(self.expiry)}:{self.target:g}"
 
     @staticmethod
+    def fields(desc: str) -> dict:
+        out = {}
+        for raw in desc.split("|"):
+            part = raw.split("metadata=", 1)[0].strip()
+            if ":" not in part:
+                continue
+            k, v = part.split(":", 1)
+            k, v = k.strip(), v.strip()
+            out.setdefault(Outcome.ALIASES.get(k, k), v)
+        return out
+
+    @staticmethod
     def parse(row: dict) -> "Outcome":
+        import calendar
+        import re
         n = int(row["outcome"])
+        name = str(row.get("name") or "")
         desc = str(row.get("description") or "")
-        fields = dict(part.split(":", 1) for part in desc.split("|") if ":" in part)
+        fields = Outcome.fields(desc)
+        template = name[len("template:"):] if name.startswith("template:") else ""
         expiry = 0.0
-        if fields.get("expiry"):
+        stamp = fields.get("expiry", "")
+        for fmt in ("%Y%m%d-%H%M", "%Y%m%d"):
             try:
-                import calendar
-                expiry = float(calendar.timegm(time.strptime(fields["expiry"], "%Y%m%d-%H%M")))
+                expiry = float(calendar.timegm(time.strptime(stamp, fmt)))
+                break
             except ValueError:
-                expiry = 0.0
+                continue
         try:
             target = float(fields.get("targetPrice") or 0)
         except ValueError:
             target = 0.0
         sides = tuple(str(x.get("name", "")) for x in (row.get("sideSpecs") or [])[:2]) or ("Yes", "No")
-        return Outcome(n, str(row.get("name") or ""), desc, fields.get("class", ""), fields.get("underlying", ""), expiry,
-                       target, fields.get("period", ""), sides if len(sides) == 2 else ("Yes", "No"),
-                       f"#{10 * n}", f"#{10 * n + 1}", row)
+        kind = fields.get("class", "")
+        period = fields.get("period", "")
+        underlying = fields.get("underlying", "")
+        source, window = "mark", 0.0
+        if template:
+            # 01/11 listing: "binaryPrice" (above a level at a time) and "priceTouch" (touches a level before a date: a
+            # barrier, NOT priced like a binary at expiry, never typed priceBinary)
+            t = template.lower()
+            if not kind and "binary" in t and "touch" not in t and underlying and target > 0 and expiry > 0:
+                kind = "priceBinary"
+            elif not kind and "touch" in t:
+                kind = "priceTouch"
+            if not period:
+                m = re.search(r"(\d+)(m|h|d)(?![a-z])", template, re.I)
+                if m:
+                    period = f"{int(m.group(1))}{m.group(2).lower()}"
+            text = fields.get("priceDescription", "").lower()
+            source = "mark" if "mark" in text else "oracle" if any(k in text for k in ("pyth", "oracle", "index", "spot")) \
+                else "trade" if ("trade" in text or "candle" in text) else "mark"
+            try:
+                window = float(fields.get("seconds") or 0)
+            except ValueError:
+                window = 0.0
+        sides = tuple(x.split("template:", 1)[-1] for x in sides)
+        underlying = underlying.split(":")[-1].upper() if underlying else ""
+        return Outcome(n, name, desc, kind, underlying, expiry, target, period,
+                       sides if len(sides) == 2 else ("Yes", "No"), f"#{10 * n}", f"#{10 * n + 1}", row, template,
+                       source, window, str(row.get("venue") or row.get("deployer") or ""))
 
 
 @dataclass
