@@ -28,6 +28,7 @@ class Gateway:
         self.stats: Counter = Counter()
         self.hold = 0.0
         self.errors: Counter = Counter()
+        self.refused: Counter = Counter()   # (kind, symbol) -> requests failed: lets a strategy tell its markets apart
 
     async def start(self):
         if self.running:
@@ -84,11 +85,13 @@ class Gateway:
                 await self._log.error(f"{kind} x{len(batch)} failed: {e}\n{traceback.format_exc(limit=3)}")
             for w in batch:
                 self.tracker.failed(w)
+                self.refused[(kind, w.symbol)] += 1
             self.errors[kind] += len(batch)
             return
         for w, r in zip(batch, results):
             if not r.ok:
                 self.errors[f"{kind}:{(r.error or r.status or '?')[:40]}"] += 1
+                self.refused[(kind, w.symbol)] += 1
             apply(w, r)
         for w in batch[len(results):]:
             self.tracker.failed(w)
@@ -126,3 +129,4 @@ class Gateway:
                     self.wake.set()
         except asyncio.CancelledError:
             pass
+
