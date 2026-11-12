@@ -48,6 +48,14 @@ class ArcusWebSocket:
         self.connects = 0        # successful connections (1 + reconnections)
         self.since = 0.0         # time.time() of the current connection
         self.disconnect_listeners: list[Callable] = []
+        # a cut followed by a successful reconnection at the first retry is not reported (logs.txt only): the error is
+        # written (and sent to Telegram) only when the retry fails too, or when the new connections keep dying at once
+        self.down_at = 0.0          # time of the first failure of the current incident (0 = up)
+        self.down_reason = ""
+        self.down_fails = 0
+        self.down_logged = False
+        self.flaps = 0              # connections in a row that died within FLAP_S of opening
+        self.flap_s = 30.0
 
     async def start(self):
         if self.running:
@@ -78,16 +86,17 @@ class ArcusWebSocket:
                     self.since = time.time()
                     self.reconnect = 1
                     self.connected.set()
-                    await self._log.success("connected" if self.connects == 1 else f"reconnected (#{self.connects - 1})")
+                    await self.report_connected()
                     for s in self.subscriptions.values():
                         s.active.clear()
                         await ws.send(json.dumps(s.message()))
                     async for raw in ws:
                         await self.handle(raw)
+                    raise ConnectionError("closed by the server")     # reported like any other cut
             except asyncio.CancelledError:
                 raise
             except Exception as e:
-                await self._log.error(f"disconnected ({e}){f', reconnect in {self.reconnect}s' if self.running else ''}")
+                await self.report_disconnected(e)
             finally:
                 was = self.connected.is_set()
                 self.connected.clear()
@@ -105,6 +114,42 @@ class ArcusWebSocket:
             if self.running:
                 await asyncio.sleep(self.reconnect)
                 self.reconnect = min(self.reconnect * 2, 10)
+
+    async def report_connected(self):
+        down = time.time() - self.down_at if self.down_at else 0.0
+        if self.connects == 1:
+            await self._log.success("connected")
+        elif self.down_logged:
+            if self.flaps == 0:
+                await self._log.success(f"reconnected (#{self.connects - 1}) after {down:.0f}s", send_tg=True)
+        elif self.down_at:
+            await self._log.info(f"cut ({self.down_reason}) and reconnected at the first retry in {down:.1f}s "
+                                 f"(#{self.connects - 1})", display=False)
+        self.down_at, self.down_reason, self.down_fails, self.down_logged = 0.0, "", 0, False
+
+    async def report_disconnected(self, e: Exception):
+        """called before the reconnection wait: says nothing when the first retry is going to work"""
+        if not self.running:
+            return
+        retry = f", reconnect in {self.reconnect}s"
+        if self.connected.is_set():                     # the connection was up: did it live?
+            lived = time.time() - self.since
+            self.flaps = self.flaps + 1 if lived < self.flap_s else 0
+        if self.flaps >= 1 and self.connected.is_set():
+            # reconnected, then died again within flap_s: the reconnection did not really work
+            if self.flaps == 1 or self.flaps in (3, 10) or self.flaps % 50 == 0:
+                await self._log.error(f"disconnected ({e}){retry}"
+                                      + (f" [{self.flaps} short connections in a row]" if self.flaps > 1 else ""))
+                self.down_logged = True
+        elif self.down_at:
+            # the reconnection attempt failed: now it is an incident
+            self.down_fails += 1
+            if not self.down_logged or self.down_fails in (10, 50) or self.down_fails % 100 == 0:
+                await self._log.error(f"disconnected ({self.down_reason}) {time.time() - self.down_at:.0f}s ago, "
+                                      f"reconnection failed ({e}){retry} [{self.down_fails} failed attempts]")
+                self.down_logged = True
+        if not self.down_at:
+            self.down_at, self.down_reason, self.down_fails = time.time(), str(e) or type(e).__name__, 0
 
     async def handle(self, raw):
         self.received = time.time()

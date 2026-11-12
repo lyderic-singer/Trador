@@ -3,7 +3,7 @@ from dotenv import load_dotenv
 import os
 from core.utils import cancel
 from telegram import Update
-from telegram.ext import Application, ApplicationBuilder, CommandHandler, ContextTypes
+from telegram.ext import Application, ApplicationBuilder, CommandHandler, ContextTypes, filters
 from log.logger import Logger
 
 load_dotenv()
@@ -129,16 +129,18 @@ class Telegram:
         self.task = None
         self.delay = delay
         self.running = False
-        self.application.add_handler(CommandHandler("help", self.on_help))
-        self.application.add_handler(CommandHandler("ping", self.on_ping))
-        self.application.add_handler(CommandHandler("perpinventory", self.on_perp_inventory))
-        self.application.add_handler(CommandHandler("spotinventory", self.on_spot_inventory))
-        self.application.add_handler(CommandHandler("stop", self.on_stop))
-        self.application.add_handler(CommandHandler("kill", self.on_kill))
-        self.application.add_handler(CommandHandler("address", self.on_adress))
-        self.application.add_handler(CommandHandler("pf", self.on_pf))
-        self.application.add_handler(CommandHandler("vol", self.on_vol))
-        self.application.add_handler(CommandHandler("stats", self.on_stats))
+        # commands are obeyed only from TG_CHAT_ID: anyone else who finds the bot gets no answer (TG_CHAT_ID unset = none)
+        self.allowed = filters.Chat(chat_id=self.chat_id)
+        self.application.add_handler(CommandHandler("help", self.on_help, filters=self.allowed))
+        self.application.add_handler(CommandHandler("ping", self.on_ping, filters=self.allowed))
+        self.application.add_handler(CommandHandler("perpinventory", self.on_perp_inventory, filters=self.allowed))
+        self.application.add_handler(CommandHandler("spotinventory", self.on_spot_inventory, filters=self.allowed))
+        self.application.add_handler(CommandHandler("stop", self.on_stop, filters=self.allowed))
+        self.application.add_handler(CommandHandler("kill", self.on_kill, filters=self.allowed))
+        self.application.add_handler(CommandHandler("address", self.on_adress, filters=self.allowed))
+        self.application.add_handler(CommandHandler("pf", self.on_pf, filters=self.allowed))
+        self.application.add_handler(CommandHandler("vol", self.on_vol, filters=self.allowed))
+        self.application.add_handler(CommandHandler("stats", self.on_stats, filters=self.allowed))
 
     async def start(self, orchester):
         if self.running:

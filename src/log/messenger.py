@@ -1,4 +1,5 @@
 import asyncio
+import os
 import sys
 from core.utils import cancel
 from log.logger import Logger, Message
@@ -41,6 +42,8 @@ class Messenger:
         self.path = path
         self.messages: asyncio.Queue[Message] = asyncio.Queue()
         self.running = False
+        if path:
+            os.makedirs(os.path.dirname(os.fspath(path)) or ".", exist_ok=True)
         self.file = open(path, "a", buffering=1, encoding="utf-8") if path else None
         self._log = Logger(self, self)
         self.task = None

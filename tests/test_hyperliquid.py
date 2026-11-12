@@ -6,7 +6,7 @@ from adapters.models import AccountState, Side, TIF
 from adapters.hyperliquid import Hyperliquid, round_price, round_size
 from core.HL.utils.types import Instrument as Asset
 
-DATA = Path(__file__).parent.parent / "core/HL/utils/data"
+DATA = Path(__file__).parent.parent / "src/core/HL/utils/data"
 
 
 def test_rounding():

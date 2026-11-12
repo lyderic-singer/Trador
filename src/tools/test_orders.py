@@ -1,7 +1,7 @@
 """
 Teste l'envoi d'ordres sur Arcus et Hyperliquid avec les clés du .env et les réglages de main.py (fundings).
 
-    python -m tools.test_venues
+    uv run python -m tools.test_orders
 
 Pour chaque venue : un ordre ALO (post-only) 3 % sous le bid, qui ne peut pas se remplir, puis son annulation.
 Côté HL, il affiche aussi l'adresse qui signe (HL_MAINNET_PRIVATE_KEY) et vérifie qu'elle est bien autorisée à

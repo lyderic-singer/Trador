@@ -3,6 +3,8 @@ import time
 from typing import Iterable
 from adapters.exchange import Exchange
 from adapters.models import Portfolio, Volume
+from core.config import LOG_FILE
+from core.run import log_run
 from core.session import Session
 from core.utils import call
 from adapters import ADAPTERS, CLIENTS
@@ -14,12 +16,14 @@ from log.telegram import Telegram
 class Orchester:
     def __init__(self, mainnet: bool = False, notify: bool = False, exchanges: Iterable[str] = ("hyperliquid",)):
         self.mainnet = mainnet
-        self.messenger = Messenger("log/logs.txt")
+        self.notify = notify
+        self.messenger = Messenger(str(LOG_FILE))
         self.telegram = Telegram(self.messenger) if notify else None
         self.session = Session(self.messenger)
         self._log = Logger(self, self.messenger)
         self.clients = {name: CLIENTS[name](mainnet, self.messenger, self.session) for name in exchanges}
         self.adapters: dict[str, Exchange] = {}
+        self.options: dict[str, dict] = {}       # options given to exchange(...) (fees, builder), journaled at each launch
         self.strategies: list = []
         self.readers: dict[str, Exchange] = {}
         self.running = False
@@ -31,6 +35,7 @@ class Orchester:
     def exchange(self, name: str, **options) -> Exchange:
         if name not in self.adapters:
             self.adapters[name] = ADAPTERS[name](self.clients[name], **options)
+            self.options[name] = options
         return self.adapters[name]
 
     def reader(self, name: str) -> Exchange:
@@ -108,8 +113,14 @@ class Orchester:
         except Exception:
             await self._log.error("Stop failed")
 
-    async def add_strategy(self, strategy):
+    async def add_strategy(self, strategy, label: str | None = None):
+        """label: the STRATEGY key of main.py. Before starting, the launch is journaled (strategy, versions, every
+        parameter and what changed since the previous launch of the same strategy): see core/run.py"""
         if not self.running:
             raise ValueError("must start before adding a strategy")
+        try:
+            await log_run(self._log, strategy, label, self.mainnet, self.options, notify=self.telegram is not None)
+        except Exception as e:
+            await self._log.warning(f"launch journal failed ({type(e).__name__}: {e}), the strategy starts anyway")
         await strategy.start()
         self.strategies.append(strategy)

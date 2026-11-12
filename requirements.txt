@@ -1,9 +1,0 @@
-aiohttp
-websockets
-eth-account
-msgpack
-cryptography
-python-dotenv
-python-telegram-bot
-matplotlib
-numpy

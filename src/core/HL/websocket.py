@@ -66,6 +66,12 @@ class HLWebSocket:
         self.flaps = 0              # connections in a row that died within FLAP_S of opening
         self.max_delay = 30.0
         self.flap_s = 30.0
+        # a cut followed by a successful reconnection at the first retry is not reported (logs.txt only): the error is
+        # written (and sent to Telegram) only when the retry fails too, or when the connections keep dying (flaps)
+        self.down_at = 0.0          # time of the first failure of the current incident (0 = up)
+        self.down_reason = ""
+        self.down_fails = 0         # failed attempts since
+        self.down_logged = False    # the incident was reported: its end is reported too
 
     async def start(self):
         if self.running:
@@ -101,8 +107,7 @@ class HLWebSocket:
                 self.connects += 1
                 self.connected_at = time()
                 self.connected.set()
-                if self.connects == 1 or self.flaps == 0:
-                    await self._log.success("connected" if self.connects == 1 else f"reconnected (#{self.connects - 1})")
+                await self.report_connected()
                 for k in list(self.subscriptions):
                     subscription = self.subscriptions[k]
                     subscription.clear()    # active again only once the server confirms it on THIS connection
@@ -130,10 +135,7 @@ class HLWebSocket:
                         await self.shed()
                 else:
                     self.flaps, self.reconnect_delay = 0, 1
-                # one message per incident, not one per reconnect (01/11: hundreds of Telegram alerts)
-                if self.flaps <= 1 or self.flaps in (3, 10) or self.flaps % 50 == 0:
-                    await self._log.error(f"disconnected ({e}){f" , reconnect in {self.reconnect_delay}s" if self.running else ""}"
-                                          + (f" [{self.flaps} short connections in a row]" if self.flaps > 1 else ""))
+                await self.report_disconnected(e)
                 await asyncio.sleep(self.reconnect_delay)
             finally:
                 self.drop()
@@ -142,6 +144,40 @@ class HLWebSocket:
                         await self.ws.close()
                     except Exception:
                         pass
+
+    async def report_connected(self):
+        down = time() - self.down_at if self.down_at else 0.0
+        if self.connects == 1:
+            await self._log.success("connected")
+        elif self.down_logged:
+            if self.flaps == 0:
+                await self._log.success(f"reconnected (#{self.connects - 1}) after {down:.0f}s", send_tg=True)
+        elif self.down_at:
+            await self._log.info(f"cut ({self.down_reason}) and reconnected at the first retry in {down:.1f}s "
+                                 f"(#{self.connects - 1})", display=False)
+        self.down_at, self.down_reason, self.down_fails, self.down_logged = 0.0, "", 0, False
+
+    async def report_disconnected(self, e: Exception):
+        """one message per incident, not one per reconnect (01/11: hundreds of Telegram alerts), and none at all when
+        the first retry works"""
+        retry = f", reconnect in {self.reconnect_delay}s" if self.running else ""
+        if not self.running:
+            return
+        if self.flaps >= 1:
+            # reconnected, then died again within flap_s: the reconnection did not really work
+            if self.flaps == 1 or self.flaps in (3, 10) or self.flaps % 50 == 0:
+                await self._log.error(f"disconnected ({e}){retry}"
+                                      + (f" [{self.flaps} short connections in a row]" if self.flaps > 1 else ""))
+                self.down_logged = True
+        elif self.down_at:
+            # the reconnection attempt failed: now it is an incident
+            self.down_fails += 1
+            if not self.down_logged or self.down_fails in (10, 50) or self.down_fails % 100 == 0:
+                await self._log.error(f"disconnected ({self.down_reason}) {time() - self.down_at:.0f}s ago, reconnection "
+                                      f"failed ({e}){retry} [{self.down_fails} failed attempts]")
+                self.down_logged = True
+        if not self.down_at:
+            self.down_at, self.down_reason, self.down_fails = time(), str(e) or type(e).__name__, 0
 
     async def shed(self):
         """connections dying right after the resubscription, again and again (01/11 after the settlement of an

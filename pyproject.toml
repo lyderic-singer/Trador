@@ -1,0 +1,42 @@
+[project]
+name = "trador"
+version = "0.1.0"
+description = "Bots de trading Hyperliquid / Arcus (market making, fundings, arbitrage, HIP-4...)"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "aiohttp",
+    "websockets",
+    "eth-account",
+    "eth-utils",
+    "msgpack",
+    "cryptography",
+    "python-dotenv",
+    "python-telegram-bot",
+    "tzdata>=2026.6",
+]
+
+[project.scripts]
+trador = "main:run"
+
+[dependency-groups]
+# installed by default by `uv sync` / `uv run`
+dev = ["pytest"]
+# heavy dependencies of the studies / simulations in src/tools (hip4_sim, hip4_replay, hip4_study, hip4_15m_*,
+# gap_study charts): `uv sync --all-groups` once, or `uv run --group tools python -m tools.<name>`
+tools = ["numpy", "pandas", "scipy", "numba", "matplotlib"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+# every package of src/ (core, adapters, strategies, log, tools) and src/main.py are top-level modules.
+# uv installs the project in editable mode: src/ is put on sys.path, so `uv run python -m tools.x` works from the root
+[tool.hatch.build.targets.wheel]
+only-include = ["src"]
+sources = ["src"]
+dev-mode-dirs = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src", "."]
