@@ -5,7 +5,7 @@ On each `Orchester.add_strategy`, `describe()` builds a record:
     strategy   the STRATEGY key of main.py ("fundings", "hip4", ...), the class, its VERSION / BUILD if the module has one
     code       project version (pyproject.toml), git commit / branch / uncommitted changes, python
     parameters every field of the strategy's Parameters dataclass (`strategy.base` for hip4, `strategy.p` otherwise),
-               nested dataclasses and lists included, plus the preset class (hip4: strategies.hip4.presets.weekend...)
+               nested dataclasses and lists included, plus the preset class (hip4: strategies.hip4.presets.equilibre...)
     exchanges  the options given to `orchester.exchange(...)` (fees, builder code)
 
 `changes()` compares it with the previous launch of the same strategy (data/runs/<strategy>.json), parameter by
