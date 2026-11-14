@@ -1,4 +1,4 @@
-"""Reconnecting websocket of the Lighter engine (a base class: `handle`, `endpoint`, `opened`, `closed`).
+"""Reconnecting websocket shared by the Lighter and Aster engines.
 
 Same rules as the Hyperliquid and Arcus sockets (which keep their own code): no compression, reconnection after 1 s then
 exponential up to 10 s, a cut repaired at the first retry is not reported (one line in logs.txt), the error (and

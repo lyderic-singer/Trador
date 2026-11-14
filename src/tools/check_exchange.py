@@ -1,10 +1,10 @@
 """
-Vérifie en réel l'intégration Lighter avec les clés du .env, sans jamais prendre de position.
+Vérifie en réel l'intégration Lighter ou Aster avec les clés du .env, sans jamais prendre de position.
 
     uv run python -m tools.check_exchange lighter                 # lecture seule : marchés, prix, compte
     uv run python -m tools.check_exchange lighter SPY --order     # + un ordre post-only loin du marché : place, modify, cancel
     uv run python -m tools.check_exchange lighter SPY --order --ws    # idem, ordres par le websocket (Lighter seulement)
-    uv run python -m tools.check_exchange lighter SPY --order --ioc --switch
+    uv run python -m tools.check_exchange aster SPY --order --ioc --switch
     uv run python -m tools.check_exchange lighter BTC --testnet --order
 
 Ce que chaque option contrôle (tout ce que les tests hors ligne ne peuvent pas prouver) :
@@ -88,7 +88,7 @@ async def read_only(ex, symbol: str):
     need(funding is not None, f"funding : {funding.rate * 100:.5f} %/h payé, {funding.predicted * 100:.5f} %/h prévu, prochain à "
          f"{time.strftime('%H:%M', time.localtime(funding.next_at)) if funding and funding.next_at else '?'}" if funding else "funding : rien")
     if funding and funding.rate is not None and abs(funding.rate) > 0.001:
-        say(False, "funding horaire > 0,1 %/h : unité à vérifier (voir lighter.md)")
+        say(False, "funding horaire > 0,1 %/h : unité à vérifier (voir lighter.md / aster.md)")
     say(None, f"mark {ex.mark(name)}")
     if getattr(client, "readonly", False):
         say(None, "pas de clé dans le .env : lecture seule, fin des contrôles")
