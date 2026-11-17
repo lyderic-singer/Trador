@@ -51,7 +51,7 @@ an `Exchange` and only handles `adapters.models`.
 is named as in the strategy parameters (`SPY-USD`): each adapter finds its own by base (`SPY` on Lighter, `SPYUSDT` on
 Aster) and `Exchange.canonical` returns the native name. The differences of each exchange (asynchronous answers on
 Lighter, 48-bit client ids, nonces per API key, volume quota; HTTPS-only orders, GTX, funding per 4 / 8 h period,
-per-market dead man's switch on Aster...) are handled in the adapter and listed, with what could not be verified live,
+per-market dead man's switch on Aster...) are handled in the adapter and listed
 in `src/core/lighter/lighter.md` and `src/core/aster/aster.md`. Live check without a position:
 `uv run python -m tools.check_exchange <venue> <market> --order --ioc`.
 

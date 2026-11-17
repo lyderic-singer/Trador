@@ -70,19 +70,3 @@ tier requires an account with no position and no order.
 **The volume quota starts at 1,000**: with action-reserve thresholds designed for Arcus / HL, a new account is
 throttled until the quota grows. Either buy quota (500 USDC per million), let volume build it (+1 per ~$2 traded), or
 adapt the thresholds in the strategy parameters.
-
-## What could NOT be verified live
-
-Developed without network access to the exchange or the SDK: everything is tested against a simulator written from
-the docs (`tests/lighter_sim.py`). To check with `tools.check_exchange`, then on a small account:
-
-- the SDK calls (`lighter.SignerClient(url=, account_index=, api_private_keys=)`, `sign_create_order(...)` etc. with
-  `nonce=` and `api_key_index=`): written from the source of the `elliottech/lighter-python` repository, never run;
-- the exact format of the websocket answer to `jsonapi/sendtx` (hence REST by default; the parser accepts the `id`
-  returned at the root or in `data`, otherwise arrival order);
-- the unit of `initial_margin_fraction` on positions (`"0.1"` and `"10.00"` are both accepted), the meaning of
-  `direction` in the funding history (taken as "the side that pays"), the unit of `update_margin` (USDC × 10⁶);
-- that a native modify keeps the client index, and that a scheduled cancel-all replaces the previous one;
-- the content of `accountLimits` (tier name), of the `account_tx` and `user_stats` channels. For `account_tx`, status
-  0 is read as "failed"; to be safe it is only believed if the order never showed up on the order stream within a
-  second (an order that exists is never rejected on the strength of a transaction status).

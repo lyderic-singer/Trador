@@ -54,17 +54,3 @@ and nonces are corrected beyond a 2 s offset.
 | Margin | cross by default, isolated per market; multi-asset mode possible | `set_leverage(symbol, x, cross)` sets the margin type then the leverage; equity is `totalMarginBalance`, counted in dollars |
 | `/vol` volume | no account volume endpoint (`userTrades` is per market, in 7-day slices) | "volume not available" |
 | Markets | perpetuals `BTCUSDT`, `SPYUSDT`... | found by symbol, by base (`SPY`, USDT quote first) or by another venue's name (`SPY-USD`) |
-
-## What could NOT be verified live
-
-Developed without network access to the exchange: everything is tested against a simulator written from the docs
-(`tests/aster_sim.py`). To check with `tools.check_exchange`, then on a small account:
-
-- **the signature**: follows the docs example (field order, `msg`, domain) and is verified by recovering the address,
-  but never presented to the exchange. The docs list `user` among the parameters without sending it in their example:
-  it is not sent by default (`ASTER_MAINNET_SEND_USER=1` to add it if the exchange answers -1022);
-- the host (`fapi.asterdex.com`; the docs example uses `fapi3.asterdex.com`) and the websocket URL `…/ws` with live
-  subscription;
-- that the `RESULT` answer of an IOC is final (otherwise: `ok` with 0 filled, resolved by the fills);
-- the exact content of `/account` (presence of every market with its leverage) and of `leverageBrackets`;
-- the default fees (1 / 3.5 bp): replaced by the account's as soon as a market is followed.
