@@ -1,7 +1,7 @@
 [project]
 name = "trador"
 version = "0.1.0"
-description = "Bots de trading Hyperliquid / Arcus (market making, fundings, arbitrage, HIP-4...)"
+description = "Async multi-exchange trading framework: Hyperliquid, Arcus, Lighter, Aster"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -22,8 +22,8 @@ trador = "main:run"
 [dependency-groups]
 # installed by default by `uv sync` / `uv run`
 dev = ["pytest"]
-# heavy dependencies of the studies / simulations in src/tools (hip4_sim, hip4_replay, hip4_study, hip4_15m_*,
-# gap_study charts): `uv sync --all-groups` once, or `uv run --group tools python -m tools.<name>`
+# heavy dependencies for offline research and charts (not used by the bot):
+# `uv sync --all-groups` once, or `uv run --group tools python ...`
 tools = ["numpy", "pandas", "scipy", "numba", "matplotlib"]
 
 [build-system]

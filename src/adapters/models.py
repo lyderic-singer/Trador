@@ -306,12 +306,12 @@ class Portfolio:
                          sum(abs(p.value) for p in positions.values()), {label or "account": state.equity}, positions)
 
 
-WINDOWS = (("24h", 86_400), ("7j", 7 * 86_400), ("30j", 30 * 86_400))
+WINDOWS = (("24h", 86_400), ("7d", 7 * 86_400), ("30d", 30 * 86_400))
 
 
 @dataclass
 class Volume:
-    """traded volume of one account over rolling windows (24h, 7j, 30j) and since inception"""
+    """traded volume of one account over rolling windows (24h, 7d, 30d) and since inception"""
     exchange: str
     volume: dict[str, float] = field(default_factory=dict)  # window -> $ traded
     maker: dict[str, float] = field(default_factory=dict)   # window -> $ traded as maker

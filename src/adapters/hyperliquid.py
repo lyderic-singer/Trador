@@ -136,7 +136,7 @@ class Hyperliquid(Exchange):
             self.remaining[name] -= n
 
     async def volume(self) -> Volume:
-        """24h / 7j / 30j summed from userFillsByTime (only the 10,000 latest fills exist), total from userRateLimit"""
+        """24h / 7d / 30d summed from userFillsByTime (only the 10,000 latest fills exist), total from userRateLimit"""
         if self.volumes and time.time() - self.volumes[0] < 120:
             return self.volumes[1]
         info = self.client.info

@@ -1,0 +1,47 @@
+{
+  "dex": "rrrrr",
+  "user": "0x0000000000000000000000000000000000000001",
+  "clearinghouseState": {
+    "marginSummary": {
+      "accountValue": "3.461931",
+      "totalNtlPos": "10.365586",
+      "totalRawUsd": "-6.903655",
+      "totalMarginUsed": "3.461931"
+    },
+    "crossMarginSummary": {
+      "accountValue": "0.0",
+      "totalNtlPos": "0.0",
+      "totalRawUsd": "0.0",
+      "totalMarginUsed": "0.0"
+    },
+    "crossMaintenanceMarginUsed": "0.0",
+    "withdrawable": "0.0",
+    "assetPositions": [
+      {
+        "type": "oneWay",
+        "position": {
+          "coin": "rrrrr:PTEST",
+          "szi": "4.466",
+          "leverage": {
+            "type": "isolated",
+            "value": 3,
+            "rawUsd": "-6.903655"
+          },
+          "entryPx": "2.317",
+          "positionValue": "10.365586",
+          "unrealizedPnl": "0.017864",
+          "returnOnEquity": "0.0051791109",
+          "liquidationPx": "1.8549901478",
+          "marginUsed": "3.461931",
+          "maxLeverage": 3,
+          "cumFunding": {
+            "allTime": "0.0",
+            "sinceOpen": "0.0",
+            "sinceChange": "0.0"
+          }
+        }
+      }
+    ],
+    "time": 1769275342436
+  }
+}

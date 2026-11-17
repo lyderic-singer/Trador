@@ -1,11 +1,11 @@
 """
-Teste l'envoi d'ordres sur Arcus et Hyperliquid avec les clés du .env et les réglages de main.py (fundings).
+Live order test on Arcus and Hyperliquid with the keys of the .env and the exchange settings of main.py.
 
     uv run python -m tools.test_orders
 
-Pour chaque venue : un ordre ALO (post-only) 3 % sous le bid, qui ne peut pas se remplir, puis son annulation.
-Côté HL, il affiche aussi l'adresse qui signe (HL_MAINNET_PRIVATE_KEY) et vérifie qu'elle est bien autorisée à
-trader pour HL_MAINNET_ADDRESS (sinon : "User or API Wallet ... does not exist").
+For each venue: an ALO (post-only) order 3 % under the bid, which cannot fill, then its cancel.
+On HL it also prints the signing address (HL_MAINNET_PRIVATE_KEY) and checks that it is allowed to trade for
+HL_MAINNET_ADDRESS (otherwise: "User or API Wallet ... does not exist").
 """
 import asyncio
 import secrets
@@ -13,29 +13,29 @@ import sys
 
 from adapters.models import Cancel, Order, Side, TIF
 from core.orchester import Orchester
-from main import ARCUS, HL_FUNDINGS, MAINNET
+from main import ARCUS, HL, MAINNET
 
 if sys.platform.startswith("win"):
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
-TESTS = [("arcus", "QQQ-USD", ARCUS), ("hyperliquid", "xyz:XYZ100", HL_FUNDINGS)]
-AWAY = 0.03  # 3 % sous le bid
+TESTS = [("arcus", "QQQ-USD", ARCUS), ("hyperliquid", "BTC", HL)]
+AWAY = 0.03  # 3 % under the bid
 
 
 async def check_hl_wallet(client):
     signer, user = client.account.address, client.address
-    print(f"hyperliquid  signe avec {signer}, compte {user}")
+    print(f"hyperliquid  signing with {signer}, account {user}")
     if client.readonly:
-        print("hyperliquid  ❌ pas de clé HL dans le .env : lecture seule")
+        print("hyperliquid  ❌ no HL key in the .env: read only")
         return
     if signer.lower() == user.lower():
-        print("hyperliquid  clé = wallet principal")
+        print("hyperliquid  key = main wallet")
         return
     role = await client.info.post({"type": "userRole", "user": signer})
     agents = await client.info.post({"type": "extraAgents", "user": user}) or []
     approved = [a for a in agents if a.get("address", "").lower() == signer.lower()]
-    print(f"hyperliquid  rôle de la clé : {role}")
-    print(f"hyperliquid  agent approuvé pour le compte : {approved or '❌ NON'}")
+    print(f"hyperliquid  key role: {role}")
+    print(f"hyperliquid  agent approved for the account: {approved or '❌ NO'}")
 
 
 async def test(orchester: Orchester, venue: str, symbol: str, options: dict):
@@ -49,19 +49,19 @@ async def test(orchester: Orchester, venue: str, symbol: str, options: dict):
     size = inst.round_size(max(inst.min_notional, 10.0) * 1.2 / price)
     order = Order(symbol, Side.BUY, size, price, TIF.ALO, False, "0x" + secrets.token_hex(16))
 
-    print(f"{venue:12} carnet {bbo.bid} / {bbo.ask} -> achat {size} @ {price} (~{size * price:.2f} $)")
+    print(f"{venue:12} book {bbo.bid} / {bbo.ask} -> buy {size} @ {price} (~${size * price:.2f})")
     result = (await ex.place([order]))[0]
-    print(f"{venue:12} {'✅' if result.ok else '❌'} place : {result.status or ''} oid={result.oid} {result.error or ''}")
+    print(f"{venue:12} {'✅' if result.ok else '❌'} place: {result.status or ''} oid={result.oid} {result.error or ''}")
     if not result.ok:
         return
 
     await asyncio.sleep(2)
     oid = result.oid or next((o.oid for o in await ex.open_orders(symbol) if o.client == order.client), None)
     if not oid:
-        print(f"{venue:12} ⚠️ ordre introuvable pour l'annuler : vérifie à la main")
+        print(f"{venue:12} ⚠️ order not found to cancel it: check by hand")
         return
     cancelled = (await ex.cancel([Cancel(symbol, oid, order.client)]))[0]
-    print(f"{venue:12} {'✅' if cancelled.ok else '❌'} cancel : {cancelled.status or ''} {cancelled.error or ''}")
+    print(f"{venue:12} {'✅' if cancelled.ok else '❌'} cancel: {cancelled.status or ''} {cancelled.error or ''}")
 
 
 async def main():

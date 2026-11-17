@@ -1,0 +1,55 @@
+[
+    {
+        "order": {
+        "coin": "rrrrr:PTEST",
+        "side": "A",
+        "limitPx": "2.26",
+        "sz": "4.464",
+        "oid": 47163670810,
+        "timestamp": 1769358974988,
+        "origSz": "4.464",
+        "reduceOnly": true
+        },
+        "status": "minTradeNtlRejected",
+        "statusTimestamp": 1769358974988
+    },
+    {
+        "order": {
+        "coin": "rrrrr:PTEST",
+        "side": "B",
+        "limitPx": "2.236",
+        "sz": "6.042",
+        "oid": 47163914142,
+        "timestamp": 1769359217074,
+        "origSz": "6.042"
+        },
+        "status": "open",
+        "statusTimestamp": 1769359217074
+    },
+    {
+        "order": {
+        "coin": "rrrrr:PTEST",
+        "side": "B",
+        "limitPx": "2.236",
+        "sz": "6.042",
+        "oid": 47163914142,
+        "timestamp": 1769359217074,
+        "origSz": "6.042"
+        },
+        "status": "canceled",
+        "statusTimestamp": 1769359221580
+    },
+    {
+        "order": {
+        "coin": "rrrrr:PTEST",
+        "side": "B",
+        "limitPx": "2.241",
+        "sz": "0.0",
+        "oid": 47164176953,
+        "timestamp": 1769359524714,
+        "origSz": "5.739"
+        },
+        "status": "filled",
+        "statusTimestamp": 1769359559998
+    }
+]

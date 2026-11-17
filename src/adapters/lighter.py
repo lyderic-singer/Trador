@@ -825,7 +825,7 @@ class Lighter(Exchange):
             await ws.unsubscribe(channel)
             self.stats = {k: holder[k] for k in ("daily_volume", "weekly_volume", "monthly_volume", "total_volume") if k in holder}
         out = Volume(self.name, label=f"account {self.account_index}")
-        for window, key in (("24h", "daily_volume"), ("7j", "weekly_volume"), ("30j", "monthly_volume")):
+        for window, key in (("24h", "daily_volume"), ("7d", "weekly_volume"), ("30d", "monthly_volume")):
             out.volume[window] = number(self.stats.get(key)) or 0.0
             out.maker[window], out.fills[window], out.fees[window] = 0.0, 0, 0.0
         out.total = number(self.stats.get("total_volume"))

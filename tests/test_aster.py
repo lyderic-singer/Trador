@@ -600,16 +600,20 @@ def test_sockets_report_like_the_others():
     scenario(AsterUserSocket("wss://x", Messenger(None), None))
 
 
-def test_launcher_variants():
+def test_launcher_variants(monkeypatch):
     import main
-    from strategies.arbitrage import Arbitrage
-    from strategies.fundings import Fundings
-    from tests.test_main import Orchester
-    assert main.EXCHANGES["arbitrage_aster"] == ("hyperliquid", "aster") and main.EXCHANGES["volume_aster"] == ("aster",)
-    assert main.EXCHANGES["mm_aster"] == ("aster", "hyperliquid") and "hip4_aster" not in main.EXCHANGES
+    built = []
+    monkeypatch.setattr(main, "Enveloppe", lambda exchange, market, parameters: built.append((exchange, market, parameters)))
+
+    class Orchester:
+        def __init__(self):
+            self.asked = []
+
+        def exchange(self, name, **options):
+            self.asked.append((name, options))
+            return name
+
+    assert main.EXCHANGES["enveloppe_aster"] == ("aster",) and main.EXCHANGES["enveloppe_lighter"] == ("lighter",)
     o = Orchester()
-    s = main.variant(o, "arbitrage_aster")
-    assert isinstance(s, Arbitrage) and o.asked == [("aster", main.ASTER), ("hyperliquid", main.HL_ARBITRAGE)]
-    assert (s.p.JOURNAL, s.p.STATE) == ("data/arbitrage_aster", "data/arbitrage_aster/state.json")
-    f = main.variant(Orchester(), "fundings_aster")
-    assert isinstance(f, Fundings) and f.p.STATE == "data/fundings_aster/state.json"
+    main.build(o, "enveloppe_aster")
+    assert o.asked == [("aster", main.ASTER)] and built[0][:2] == ("aster", "SPY-USD") and built[0][2].COOLDOWN == 1.0

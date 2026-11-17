@@ -1,75 +1,79 @@
 # Enveloppe
 
-## Idée
+Example strategy of the public version of Trador: it shows how a strategy uses the framework, and runs unchanged on
+every venue.
 
-Market making « en enveloppe » autour d'une moyenne mobile exponentielle (EMA) du mid.
-On pose une grille d'ordres limites post-only (ALO) de part et d'autre de l'EMA, puis on la recentre quand l'EMA bouge.
-Le pari : le prix oscille autour de sa moyenne, les ordres éloignés se font remplir dans les excès et la position
-revient vers zéro quand le prix revient à la moyenne.
+## Idea
 
-La stratégie ne connaît qu'un `Exchange` : elle tourne telle quelle sur Hyperliquid ou Arcus.
+"Envelope" market making around an exponential moving average (EMA) of the mid. A grid of post-only (ALO) limit orders
+is placed on both sides of the EMA, then re-centred when the EMA moves. The bet: the price oscillates around its
+average, the far orders get filled on the excesses and the position comes back to zero when the price returns to the
+average.
+
+The strategy only knows an `Exchange`:
 
 ```python
 Enveloppe(orchester.exchange("hyperliquid", **HL), "mkts:US500")
 Enveloppe(orchester.exchange("arcus", **ARCUS), "SPY-USD", Parameters(COOLDOWN=1.0))
+Enveloppe(orchester.exchange("lighter"), "SPY-USD", Parameters(COOLDOWN=1.0))
 ```
 
-## La grille
+## The grid
 
-- Centre : `EMA(close)` calculée sur `WINDOW` bougies de `TIMEFRAME`, prolongée en temps réel par le mid.
-- Premier niveau à `OFFSET × pas` de l'EMA, puis `LEVELS` niveaux par côté.
-- Largeur totale d'un côté ≈ `SPREAD × EMA`.
-- `ALPHA` espace les niveaux de façon géométrique : `ALPHA = 1` grille régulière, `ALPHA > 1` niveaux de plus en plus espacés.
+- Centre: `EMA(close)` over `WINDOW` candles of `TIMEFRAME`, extended in real time by the mid.
+- First level at `OFFSET × step` from the EMA, then `LEVELS` levels per side.
+- Total width of one side ≈ `SPREAD × EMA`.
+- `ALPHA` spaces the levels geometrically: `ALPHA = 1` regular grid, `ALPHA > 1` levels further and further apart.
 
-## Les tailles
+## Sizes
 
-- Capacité d'un côté = `CAP × (equity × levier ∓ position)`, convertie en unités au mid.
-  On ne peut jamais dépasser `CAP` du pouvoir d'achat, position comprise.
-- Répartition géométrique : le dernier niveau (le plus éloigné) est `SKEW` fois plus gros que le premier.
-  On charge davantage là où le retour à la moyenne est le plus probable.
-- Un ordre sous `MIN_VALUE` dollars (ou sous le minimum de l'exchange) n'est pas envoyé.
+- Capacity of one side = `CAP × (equity × leverage ∓ position)`, converted into units at the mid. The grid never uses
+  more than `CAP` of the buying power, position included.
+- Geometric distribution: the last (furthest) level is `SKEW` times bigger than the first. More size where mean
+  reversion is most likely.
+- An order under `MIN_VALUE` dollars (or under the exchange minimum) is not sent.
 
-## Le cycle (toutes les `POLL_DELAY` secondes)
+## The cycle (every `POLL_DELAY` seconds)
 
-1. Lecture des ordres ouverts, de la position et du marché.
-2. Si un placement vient d'avoir lieu → on **modifie** pour réaligner tailles et prix.
-3. Sinon, s'il manque des niveaux du côté actif → on **place** les niveaux manquants (en complétant le budget restant).
-4. Sinon, si l'EMA a bougé de moins de `THRESHOLD` depuis la dernière modification → on **passe**.
-5. Sinon → on **modifie** toute la grille autour de la nouvelle EMA.
+1. Read open orders, position and market.
+2. If an order was just placed → **modify** to realign sizes and prices.
+3. Otherwise, if levels are missing on the active side → **place** the missing levels (within the remaining budget).
+4. Otherwise, if the EMA moved by less than `THRESHOLD` since the last modify → **skip**.
+5. Otherwise → **modify** the whole grid around the new EMA.
 
-Les ordres modifiés ne traversent jamais le carnet : un bid reste sous `mid × (1 − frais maker)`, un ask au-dessus de `mid × (1 + frais maker)`.
+Modified orders never cross the book: a bid stays under `mid × (1 − maker fee)`, an ask above `mid × (1 + maker fee)`.
 
-## Mode `INV`
+## `INV` mode
 
-Avec `INV = True`, on ne travaille qu'un seul côté à la fois :
-- mid au-dessus de l'EMA → on gère les **bids** (on attend que le prix redescende),
-- mid sous l'EMA → on gère les **asks**.
+With `INV = True`, only one side is worked at a time:
+- mid above the EMA → manage the **bids** (wait for the price to come down),
+- mid below the EMA → manage the **asks**.
 
-On évite ainsi d'accumuler dans le sens de la tendance courte.
+This avoids accumulating in the direction of the short-term trend.
 
-## Paramètres (`parameters.py`)
+## Parameters (`parameters.py`)
 
-| Paramètre | Défaut | Rôle |
+| Parameter | Default | Role |
 |---|---|---|
-| `MAKER_FEES` | `None` | frais maker utilisés pour le garde-fou de prix ; `None` = valeur de l'exchange |
-| `SPREAD` | `0.005` | largeur d'un côté de la grille (0,5 % de l'EMA) |
-| `OFFSET` | `0.0001` | décalage du premier niveau par rapport à l'EMA, en fraction du pas |
-| `ALPHA` | `1` | facteur géométrique d'espacement des niveaux |
-| `SKEW` | `2` | taille du dernier niveau / taille du premier |
-| `LEVELS` | `24` | nombre d'ordres par côté |
-| `CAP` | `0.85` | part maximale du pouvoir d'achat utilisée |
-| `MIN_VALUE` | `10.5` | notionnel minimal d'un ordre en $ |
-| `POLL_DELAY` | `10.1` | secondes entre deux cycles |
-| `THRESHOLD` | `0.0001` | variation relative d'EMA qui déclenche un recentrage |
-| `TIMEFRAME` | `"5m"` | unité des bougies pour l'EMA |
-| `WINDOW` | `5` | période de l'EMA |
-| `INV` | `True` | un seul côté actif, contre la tendance courte |
-| `COOLDOWN` | `10.0` | secondes minimum entre deux requêtes à l'exchange (rate limit HL ; peut baisser sur Arcus) |
-| `CLEANUP` | `False` | annule les ordres de l'instrument à l'arrêt de la stratégie |
+| `MAKER_FEES` | `None` | maker fee used by the price guard; `None` = the exchange's value |
+| `SPREAD` | `0.005` | width of one side of the grid (0.5 % of the EMA) |
+| `OFFSET` | `0.0001` | offset of the first level from the EMA, as a fraction of the step |
+| `ALPHA` | `1` | geometric spacing factor of the levels |
+| `SKEW` | `2` | size of the last level / size of the first |
+| `LEVELS` | `24` | number of orders per side |
+| `CAP` | `0.85` | maximum share of the buying power used |
+| `MIN_VALUE` | `10.5` | minimum notional of an order in $ |
+| `POLL_DELAY` | `10.1` | seconds between two cycles |
+| `THRESHOLD` | `0.0001` | relative EMA move that triggers a re-centre |
+| `TIMEFRAME` | `"5m"` | candle unit for the EMA |
+| `WINDOW` | `5` | EMA period |
+| `INV` | `True` | one active side only, against the short-term trend |
+| `COOLDOWN` | `10.0` | minimum seconds between two requests to the exchange (HL rate limit; can be lower on Arcus) |
+| `CLEANUP` | `False` | cancel the instrument's orders when the strategy stops |
 
-## Risques
+## Risks
 
-- **Tendance forte** : la grille accumule contre le mouvement jusqu'à `CAP`. Aucun stop-loss n'est intégré.
-- **Gap / ouverture de marché** (actions, indices) : plusieurs niveaux peuvent être remplis d'un coup.
-- **Arcus hors séance** : bandes de prix et marge initiale plus élevée quand le sous-jacent est fermé.
-- **Latence** : un cycle de 10 s laisse les ordres décalés pendant les mouvements rapides.
+- **Strong trend**: the grid accumulates against the move up to `CAP`. There is no stop-loss.
+- **Gaps / market open** (equities, indices): several levels can fill at once.
+- **Arcus out of session**: price bands and a higher initial margin while the underlying market is closed.
+- **Latency**: a 10 s cycle leaves orders stale during fast moves.

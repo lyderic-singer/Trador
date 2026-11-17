@@ -264,7 +264,7 @@ def test_ioc_unknown_outcome_is_not_a_failure(monkeypatch):
             return None
         sim.push_order = mute
         r, = await lighter.place([Order("SPY", Side.SELL, 0.05, 699.00, TIF.IOC)])
-        # ok with nothing filled: strategies.hedging counts it as "unknown, filled until its fills come"
+        # ok with nothing filled: a hedging caller counts it as "unknown, filled until its fills come"
         assert r.ok and r.filled == 0 and r.status == "accepted" and not lighter.waiters
         sim.push_order = original
         # a network error: raised, never turned into "refused" (the order may be in)
@@ -585,7 +585,7 @@ def test_market_data(monkeypatch):
         pay, = await lighter.funding_payments(0)
         assert (pay.symbol, pay.usd, pay.rate) == ("SPY", -0.42, pytest.approx(0.00001))
         volume = await lighter.volume()
-        assert volume.volume == {"24h": 1000.5, "7j": 7000.0, "30j": 30000.0} and volume.total == 123456.0
+        assert volume.volume == {"24h": 1000.5, "7d": 7000.0, "30d": 30000.0} and volume.total == 123456.0
         await lighter.stop()
     run(go())
 

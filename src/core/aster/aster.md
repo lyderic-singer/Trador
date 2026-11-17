@@ -1,70 +1,70 @@
 # Aster
 
-Moteur `core/aster` + adapter `adapters/aster.py`, API futures **v3** (« Pro API »).
-Doc officielle : https://asterdex.github.io/aster-api-website/futures-v3/general-info/
-Les stratégies ne voient que l'interface `Exchange` ; tout ce qui suit est géré dans l'intégration.
+Engine `core/aster` + adapter `adapters/aster.py`, futures API **v3** ("Pro API").
+Official docs: https://asterdex.github.io/aster-api-website/futures-v3/general-info/
+Strategies only see the `Exchange` interface; everything below is handled in the integration.
 
-## Mise en route
+## Getting started
 
-1. Créer un **API wallet** (« agent ») en mode **Pro API** sur https://www.asterdex.com/en/api-wallet ; le wallet
-   principal doit avoir déposé au moins une fois. Passer le compte en **One-way Mode** (le client refuse de démarrer en
-   Hedge Mode : les stratégies tiennent une position nette par marché).
-2. **`.env`** :
-   | Variable | Rôle |
+1. Create an **API wallet** ("agent") in **Pro API** mode on https://www.asterdex.com/en/api-wallet; the main wallet
+   must have deposited at least once. Switch the account to **One-way Mode** (the client refuses to start in Hedge
+   Mode: strategies hold one net position per market).
+2. **`.env`**:
+   | Variable | Role |
    |---|---|
-   | `ASTER_MAINNET_PRIVATE_KEY` | clé privée de l'API wallet (l'agent), jamais celle du wallet principal |
-   | `ASTER_MAINNET_ADDRESS` | wallet principal (affichage ; envoyé comme `user` seulement si `ASTER_MAINNET_SEND_USER=1`) |
-   | `ASTER_MAINNET_SIGNER` | optionnel : adresse de l'agent, contrôlée contre la clé |
-   | `ASTER_MAINNET_API_URL`, `ASTER_MAINNET_WS_URL` | optionnel : autres hôtes (défaut `fapi.asterdex.com` / `fstream.asterdex.com`) |
-   Aucune dépendance nouvelle (signature EIP-712 avec `eth-account`, déjà utilisé pour Hyperliquid).
-3. **Vérifier en réel** avant toute stratégie : `uv run python -m tools.check_exchange aster SPY --order --ioc --switch`
-   (aucune position prise).
-4. **Lancer** : `STRATEGY=<stratégie>_aster` (voir `src/main.py`), Aster y remplace Arcus.
+   | `ASTER_MAINNET_PRIVATE_KEY` | private key of the API wallet (the agent), never the main wallet's |
+   | `ASTER_MAINNET_ADDRESS` | main wallet (display; sent as `user` only if `ASTER_MAINNET_SEND_USER=1`) |
+   | `ASTER_MAINNET_SIGNER` | optional: agent address, checked against the key |
+   | `ASTER_MAINNET_API_URL`, `ASTER_MAINNET_WS_URL` | optional: other hosts (default `fapi.asterdex.com` / `fstream.asterdex.com`) |
+   No new dependency (EIP-712 signing with `eth-account`, already used for Hyperliquid).
+3. **Check live** before any strategy: `uv run python -m tools.check_exchange aster SPY --order --ioc --switch` (no
+   position taken).
+4. **Run**: `STRATEGY=enveloppe_aster` (see `src/main.py`).
 
-## Signature
+## Signing
 
-Les paramètres de la requête, puis `nonce` (microsecondes) et `signer` (adresse de l'agent), sont url-encodés dans cet
-ordre ; cette chaîne est le champ `msg` d'un message EIP-712 (domaine `AsterSignTransaction`, version 1, chainId 1666
-en mainnet / 714 en testnet, type `Message{string msg}`) signé par la clé de l'agent. `signature` est ajoutée à la même
-chaîne, envoyée telle quelle (query d'un GET / DELETE, corps d'un POST / PUT). L'exchange garde les 100 derniers
-nonces d'un agent, refuse un doublon et tout nonce à plus de 60 s de son horloge : l'horloge est comparée au démarrage
-puis toutes les 10 minutes, et les nonces corrigés au-delà de 2 s d'écart.
+The request parameters, then `nonce` (microseconds) and `signer` (agent address), are url-encoded in this order; that
+string is the `msg` field of an EIP-712 message (domain `AsterSignTransaction`, version 1, chainId 1666 on mainnet /
+714 on testnet, type `Message{string msg}`) signed by the agent key. `signature` is appended to the same string, sent
+as is (query of a GET / DELETE, body of a POST / PUT). The exchange keeps the last 100 nonces of an agent, refuses a
+duplicate and any nonce more than 60 s away from its clock: the clock is compared at startup then every 10 minutes,
+and nonces are corrected beyond a 2 s offset.
 
-## Différences avec Hyperliquid / Arcus, et ce qu'en fait l'intégration
+## Differences with Hyperliquid / Arcus, and how the integration handles them
 
-| Sujet | Aster | Géré comment |
+| Topic | Aster | Handled how |
 |---|---|---|
-| Envoi d'ordres | **HTTPS seulement** (pas d'ordres par websocket) ; 5 ordres, 5 modifies ou 10 cancels (un seul marché) par requête | une liste est coupée en lots envoyés en parallèle ; un ordre seul part seul |
-| Réponse à un ordre | synchrone ; `newOrderRespType=RESULT` rend l'état final d'un IOC | `Result` porte taille remplie et prix moyen, comme Hyperliquid |
-| Post-only | time in force `GTX` ; s'il croiserait, l'ordre revient `EXPIRED` | `Result.ok = False` (« post only would cross ») et `OrderUpdate` `rejected` |
-| IOC non exécuté | `EXPIRED` avec 0 exécuté | échec « IOC could not match », jamais un ordre ouvert |
-| Issue inconnue | 503 et timeouts : l'ordre a pu passer | exception levée (jamais « refusé ») : la couverture le compte rempli jusqu'aux fills |
-| Client id | chaîne de 1 à 36 caractères | l'id hexadécimal des stratégies (34 caractères) passe tel quel |
-| Modify | garde l'id mais **perd toujours la priorité de file**, même pour une baisse de taille ; prend la quantité **totale** | l'adapter ajoute le déjà-rempli à la taille restante demandée ; ordres LIMIT seulement |
-| Ordre disparu | codes -2011 / -2013 | préfixe `NOT_FOUND` pour que les trackers l'oublient |
-| Limites de prix | filtre `PERCENT_PRICE` : achat ≤ mark × up, vente ≥ mark × down | contrôlé avant envoi (refus local), sans brider le côté légal |
-| Minimums | `LOT_SIZE.minQty` et `MIN_NOTIONAL` (5 $) | `Instrument.min_size` / `min_notional` |
-| Funding | payé toutes les **4 ou 8 heures** selon le marché, pas chaque heure | taux rendus **par heure** (taux de la période / heures de la période) pour comparer les venues ; le paiement réel reste par période : une position ouverte et refermée entre deux paiements ne touche rien |
-| Marchés fermés | pas d'indicateur de séance | `Instrument.closed` / `Funding.closed` toujours `False` (même remarque que Lighter) |
-| Frais | par compte et par marché (`commissionRate`) | lus pour chaque marché suivi et utilisés à la place de ceux configurés (défaut 1 / 3,5 pb) ; un fill payé dans un autre actif que USDT / USD1 / USDC a `fee = None` |
-| Compte | `ACCOUNT_UPDATE` ne porte que ce qui change | relu en REST après chaque évènement du flux (groupés sur 150 ms) et toutes les `poll` s (10) |
-| Flux privé | `listenKey` (60 min, prolongée toutes les 30) ; connexions coupées à 24 h | nouvelle clé à chaque reconnexion ; fills manqués relus en REST (`userTrades`) sur les marchés suivis |
-| Dead man's switch | `countdownCancelAll`, **par marché** | `schedule_cancel` l'arme sur chaque marché suivi ou tradé |
-| Budget d'actions | limites par minute (2 400 de poids par IP, 1 200 ordres par compte), pas de réserve cumulée | `budget()` = `None` ; un 429 est levé avec son `Retry-After` (le Gateway suspend les envois) ; 418 = IP bannie pour avoir insisté |
-| Marge | cross par défaut, isolée par marché ; mode multi-actifs possible | `set_leverage(symbol, x, cross)` règle le type de marge puis le levier ; l'équité est `totalMarginBalance`, comptée en dollars |
-| Volume `/vol` | pas d'endpoint de volume du compte (`userTrades` est par marché, par tranches de 7 jours) | « volume not available » |
-| Marchés | perpétuels `BTCUSDT`, `SPYUSDT`… | trouvés par symbole, par base (`SPY`, quote USDT en premier) ou par le nom d'une autre venue (`SPY-USD`) |
+| Sending orders | **HTTPS only** (no orders over the websocket); 5 orders, 5 modifies or 10 cancels (one market) per request | a list is split into batches sent in parallel; a single order goes alone |
+| Order answer | synchronous; `newOrderRespType=RESULT` returns the final state of an IOC | `Result` carries filled size and average price, like Hyperliquid |
+| Post-only | time in force `GTX`; if it would cross, the order comes back `EXPIRED` | `Result.ok = False` ("post only would cross") and `OrderUpdate` `rejected` |
+| Unexecuted IOC | `EXPIRED` with 0 executed | failure "IOC could not match", never an open order |
+| Unknown outcome | 503 and timeouts: the order may have gone through | exception raised (never "refused"): a hedging caller counts it filled until the fills come |
+| Client id | string of 1 to 36 characters | the strategies' hexadecimal id (34 characters) goes through as is |
+| Modify | keeps the id but **always loses queue priority**, even for a size decrease; takes the **total** quantity | the adapter adds the already filled size to the requested remaining size; LIMIT orders only |
+| Vanished order | codes -2011 / -2013 | `NOT_FOUND` prefix so that trackers forget it |
+| Price limits | `PERCENT_PRICE` filter: buy ≤ mark × up, sell ≥ mark × down | checked before sending (local refusal), without restricting the legal side |
+| Minimums | `LOT_SIZE.minQty` and `MIN_NOTIONAL` ($5) | `Instrument.min_size` / `min_notional` |
+| Funding | paid every **4 or 8 hours** depending on the market, not every hour | rates returned **per hour** (period rate / hours in the period) to compare venues; the real payment stays per period: a position opened and closed between two payments receives nothing |
+| Closed markets | no session flag | `Instrument.closed` / `Funding.closed` always `False` (same remark as Lighter) |
+| Fees | per account and per market (`commissionRate`) | read for every followed market and used instead of the configured ones (default 1 / 3.5 bp); a fill paid in an asset other than USDT / USD1 / USDC has `fee = None` |
+| Account | `ACCOUNT_UPDATE` only carries what changes | read again over REST after every stream event (grouped over 150 ms) and every `poll` s (10) |
+| Private stream | `listenKey` (60 min, extended every 30); connections cut at 24 h | new key on every reconnection; missed fills read again over REST (`userTrades`) on the followed markets |
+| Dead man's switch | `countdownCancelAll`, **per market** | `schedule_cancel` arms it on every followed or traded market |
+| Action budget | per-minute limits (2,400 weight per IP, 1,200 orders per account), no cumulative reserve | `budget()` = `None`; a 429 is raised with its `Retry-After` (the Gateway pauses sending); 418 = IP banned for insisting |
+| Margin | cross by default, isolated per market; multi-asset mode possible | `set_leverage(symbol, x, cross)` sets the margin type then the leverage; equity is `totalMarginBalance`, counted in dollars |
+| `/vol` volume | no account volume endpoint (`userTrades` is per market, in 7-day slices) | "volume not available" |
+| Markets | perpetuals `BTCUSDT`, `SPYUSDT`... | found by symbol, by base (`SPY`, USDT quote first) or by another venue's name (`SPY-USD`) |
 
-## Ce qui n'a PAS pu être vérifié en réel
+## What could NOT be verified live
 
-Développé sans accès réseau à l'exchange : tout est testé contre un simulateur écrit depuis la doc
-(`tests/aster_sim.py`). À contrôler avec `tools.check_exchange` puis sur un petit compte :
+Developed without network access to the exchange: everything is tested against a simulator written from the docs
+(`tests/aster_sim.py`). To check with `tools.check_exchange`, then on a small account:
 
-- **la signature** : conforme à l'exemple de la doc (ordre des champs, `msg`, domaine) et vérifiée par recouvrement de
-  l'adresse, mais jamais présentée à l'exchange. La doc liste `user` parmi les paramètres sans l'envoyer dans son
-  exemple : il n'est pas envoyé par défaut (`ASTER_MAINNET_SEND_USER=1` pour l'ajouter si l'exchange répond -1022) ;
-- l'hôte (`fapi.asterdex.com` ; l'exemple de la doc utilise `fapi3.asterdex.com`) et l'URL websocket `…/ws` avec
-  souscription à chaud ;
-- que la réponse `RESULT` d'un IOC est bien finale (sinon : `ok` avec 0 rempli, résolu par les fills) ;
-- le contenu exact de `/account` (présence de tous les marchés avec leur levier) et de `leverageBrackets` ;
-- les frais par défaut (1 / 3,5 pb) : remplacés par ceux du compte dès qu'un marché est suivi.
+- **the signature**: follows the docs example (field order, `msg`, domain) and is verified by recovering the address,
+  but never presented to the exchange. The docs list `user` among the parameters without sending it in their example:
+  it is not sent by default (`ASTER_MAINNET_SEND_USER=1` to add it if the exchange answers -1022);
+- the host (`fapi.asterdex.com`; the docs example uses `fapi3.asterdex.com`) and the websocket URL `…/ws` with live
+  subscription;
+- that the `RESULT` answer of an IOC is final (otherwise: `ok` with 0 filled, resolved by the fills);
+- the exact content of `/account` (presence of every market with its leverage) and of `leverageBrackets`;
+- the default fees (1 / 3.5 bp): replaced by the account's as soon as a market is followed.

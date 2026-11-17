@@ -2,10 +2,10 @@
 
 On each `Orchester.add_strategy`, `describe()` builds a record:
 
-    strategy   the STRATEGY key of main.py ("fundings", "hip4", ...), the class, its VERSION / BUILD if the module has one
+    strategy   the STRATEGY key of main.py ("enveloppe_hl", ...), the class, its VERSION / BUILD if the module has one
     code       project version (pyproject.toml), git commit / branch / uncommitted changes, python
-    parameters every field of the strategy's Parameters dataclass (`strategy.base` for hip4, `strategy.p` otherwise),
-               nested dataclasses and lists included, plus the preset class (hip4: strategies.hip4.presets.equilibre...)
+    parameters every field of the strategy's Parameters dataclass (`strategy.base` when a strategy keeps the parameters it was
+               built with apart from the active set, `strategy.p` otherwise), nested dataclasses and lists included
     exchanges  the options given to `orchester.exchange(...)` (fees, builder code)
 
 `changes()` compares it with the previous launch of the same strategy (data/runs/<strategy>.json), parameter by
@@ -93,8 +93,8 @@ def jsonable(x: Any, depth: int = 0) -> Any:
 
 
 def parameters_of(strategy) -> Any:
-    """the parameters the strategy was BUILT with: hip4 keeps them in `base` (`p` is the weekday / weekend set
-    derived from it), every other strategy in `p`"""
+    """the parameters the strategy was BUILT with: a strategy that derives an active set from them keeps them
+    in `base`, every other strategy in `p`"""
     for name in ("base", "p", "parameters", "params"):
         value = getattr(strategy, name, None)
         if dataclasses.is_dataclass(value) and not isinstance(value, type):
@@ -178,7 +178,7 @@ def changes(previous: dict | None, current: dict) -> list[str]:
         head = "" if section == "parameters" else "exchanges."
         for path in sorted(set(old) | set(new)):
             if path not in new:
-                out.append(f"- {head}{path} (était {short(old[path])})")
+                out.append(f"- {head}{path} (was {short(old[path])})")
             elif path not in old:
                 out.append(f"+ {head}{path} = {short(new[path])}")
             elif old[path] != new[path]:
@@ -189,12 +189,12 @@ def changes(previous: dict | None, current: dict) -> list[str]:
 def headline(record: dict) -> str:
     g = record.get("git") or {}
     sv = record.get("strategy_version") or {}
-    parts = [f"▶️ Lancement {record['strategy']}"]
+    parts = [f"▶️ Launch {record['strategy']}"]
     if sv.get("version"):
         parts.append(sv["version"])
     parts.append(f"trador {record.get('version', '?')}")
     if g:
-        parts.append(f"git {g.get('commit')}@{g.get('branch')}" + (" (modifs non commitées)" if g.get("dirty") else ""))
+        parts.append(f"git {g.get('commit')}@{g.get('branch')}" + (" (uncommitted changes)" if g.get("dirty") else ""))
     else:
         parts.append("git ?")
     if record.get("mainnet") is not None:
@@ -239,15 +239,15 @@ async def log_run(logger, strategy, label: str | None = None, mainnet: bool | No
     diff = changes(previous, record)
     head = headline(record)
     if previous is None:
-        summary = "première exécution enregistrée pour cette stratégie (référence pour les prochains lancements)"
+        summary = "first recorded run of this strategy (reference for the next launches)"
     elif diff:
         since = previous.get("date", "?")
-        summary = f"{len(diff)} changement(s) depuis le lancement du {since} :\n" + "\n".join(
+        summary = f"{len(diff)} change(s) since the launch of {since}:\n" + "\n".join(
             f"  {line}" for line in diff[:SHOWN])
         if len(diff) > SHOWN:
-            summary += f"\n  … {len(diff) - SHOWN} autres (data/runs/history.jsonl)"
+            summary += f"\n  … {len(diff) - SHOWN} more (data/runs/history.jsonl)"
     else:
-        summary = f"aucun changement de code ni de paramètre depuis le lancement du {previous.get('date', '?')}"
+        summary = f"no code or parameter change since the launch of {previous.get('date', '?')}"
     await logger.info(f"{head}\n{summary}", send_tg=notify)
     # everything, one line each, grep-friendly: "RUN parameters {...}"
     await logger.info("RUN parameters " + json.dumps(record["parameters"], ensure_ascii=False, sort_keys=True),

@@ -54,7 +54,7 @@ class Exchange(ABC):
         return ""
 
     async def volume(self) -> Volume | None:
-        """volume traded on the account over 24h / 7j / 30j and since inception (/vol), None when unsupported"""
+        """volume traded on the account over 24h / 7d / 30d and since inception (/vol), None when unsupported"""
         return None
 
     async def book(self, symbol: str) -> BBO | None:

@@ -10,16 +10,16 @@ load_dotenv()
 
 # shown by /help, in this order
 COMMANDS = {
-    "help": "cette aide",
-    "ping": "vérifie que le bot répond",
-    "pf": "valeur du portefeuille par exchange, détail et principales positions",
-    "vol": "volume traité 24h / 7j / 30j / total sur chaque exchange (maker, fills, frais)",
-    "stats": "rapport des stratégies en cours (CEMM : edge réalisé, budget · labo : configs rentables ou non)",
-    "address": "adresses des comptes utilisés",
-    "perpinventory": "valeur du compte perp Hyperliquid (dex principal)",
-    "spotinventory": "soldes spot Hyperliquid",
-    "stop": "arrête les stratégies (le bot et Telegram restent en ligne)",
-    "kill": "arrête tout et quitte le programme",
+    "help": "this help",
+    "ping": "check that the bot answers",
+    "pf": "portfolio value per exchange, breakdown and main positions",
+    "vol": "traded volume 24h / 7d / 30d / total on each exchange (maker share, fills, fees)",
+    "stats": "report of the running strategies (those that provide one)",
+    "address": "addresses of the accounts in use",
+    "perpinventory": "Hyperliquid perp account value (main dex)",
+    "spotinventory": "Hyperliquid spot balances",
+    "stop": "stop the strategies (the bot and Telegram stay online)",
+    "kill": "stop everything and exit",
 }
 LIMIT = 4000  # Telegram refuses messages over 4096 characters
 
@@ -56,8 +56,8 @@ def short(x: float) -> str:
 
 
 def format_volume(volumes) -> str:
-    windows = ("24h", "7j", "30j")
-    lines = ["📊 Volume (fenêtres glissantes)"]
+    windows = ("24h", "7d", "30d")
+    lines = ["📊 Volume (rolling windows)"]
     totals = {w: 0.0 for w in windows}
     total_all, partial = 0.0, False
     for v in volumes:
@@ -72,15 +72,15 @@ def format_volume(volumes) -> str:
             totals[w] += vol
             maker = v.maker.get(w, 0.0)
             share = f"maker {maker / vol:.0%} · " if vol else ""
-            lines.append(f"  {w:<4} {short(vol):>9}   {share}{v.fills.get(w, 0)} fills · frais {money(v.fees.get(w, 0.0))}")
+            lines.append(f"  {w:<4} {short(vol):>9}   {share}{v.fills.get(w, 0)} fills · fees {money(v.fees.get(w, 0.0))}")
         if v.total is not None:
             total_all += v.total
-            lines.append(f"  total {'≈' if v.estimated else ''}{short(v.total)}" + (" (estimé depuis le pool d'actions)" if v.estimated else ""))
+            lines.append(f"  total {'≈' if v.estimated else ''}{short(v.total)}" + (" (estimated from the action pool)" if v.estimated else ""))
         else:
             partial = True
             lines.append("  total n/d")
         if v.truncated:
-            lines.append("  ⚠️ fenêtre incomplète : l'exchange ne renvoie pas tous les fills (au moins ce volume)")
+            lines.append("  ⚠️ incomplete window: the exchange does not return every fill (at least this volume)")
         if v.error:
             lines.append(f"  ⚠️ {v.error}")
     if len(volumes) > 1:

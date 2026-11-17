@@ -1,0 +1,23 @@
+{
+    "status": "ok",
+    "response": {
+        "type": "order",
+        "data": {
+            "statuses": [
+                {"resting": {"oid": 47850680969}},
+                {"resting": {"oid": 47850680970}},
+                {"resting": {"oid": 47850680971}},
+                {"resting": {"oid": 47850680972}},
+                {"resting": {"oid": 47850680973}},
+                {"resting": {"oid": 47850680974}},
+                {"resting": {"oid": 47850680975}},
+                {"resting": {"oid": 47850680976}},
+                {"resting": {"oid": 47850680977}},
+                {"resting": {"oid": 47850680978}},
+                {"resting": {"oid": 47850680979}},
+                {"error": "Post only order would have immediately matched, bbo was 75628@75750. asset=570003"},
+                {"error": "Post only order would have immediately matched, bbo was 75628@75750. asset=570003"}
+                ]
+            }
+    }
+}

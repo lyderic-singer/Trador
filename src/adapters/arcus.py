@@ -458,7 +458,7 @@ class Arcus(Exchange):
         return None
 
     async def volume(self) -> Volume:
-        """24h / 7j / 30j summed from /v1/fills; the total is derived from the order pool (1 unit per $0.10 filled)"""
+        """24h / 7d / 30d summed from /v1/fills; the total is derived from the order pool (1 unit per $0.10 filled)"""
         if self.volumes and time.time() - self.volumes[0] < 120:
             return self.volumes[1]
         now = time.time()
@@ -487,12 +487,12 @@ class Arcus(Exchange):
                              (r.get("role") or "").upper() == "MAKER", self.fee_of(r) or 0.0))
             except (KeyError, TypeError, ValueError):
                 continue
-        out = Volume.of(self.name, rows, now, f"sous-compte {self.index}")
+        out = Volume.of(self.name, rows, now, f"sub-account {self.index}")
         out.truncated = truncated
         try:
             pool = (await self.client.info.rate_limit(self.address, self.index)).get("order") or {}
             if pool.get("cap") is not None:
-                out.total = max((int(pool["cap"]) - POOL_START) * UNIT, out.volume.get("30j", 0.0))
+                out.total = max((int(pool["cap"]) - POOL_START) * UNIT, out.volume.get("30d", 0.0))
                 out.estimated = True
         except Exception as e:
             out.error = f"rateLimit: {e}"
