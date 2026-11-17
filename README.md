@@ -10,9 +10,15 @@ adapters translate that into standard models (`Order`, `Fill`, `Position`, `Acco
 the adapters. Around that: a Telegram control bot, a launch journal that diffs parameters between runs, and an offline
 test suite that runs the real engines against in-memory exchange simulators.
 
-> **Public version.** The production strategies (market making, funding, arbitrage, HIP-4 outcomes...), their hedge
-> engine and their research tools are private and not part of this repository. One complete example strategy,
-> **Enveloppe**, is included to show how the framework is used.
+> [!IMPORTANT]
+> **Showcase repository, not a usable product.** This is a snapshot of a private trading system, published to
+> present its architecture and code quality. It is **not maintained** and **not kept in sync** with the private
+> version, which keeps evolving: exchange APIs change, so integrations here may already be out of date.
+>
+> - **The strategies are missing.** The production strategies (market making, funding, arbitrage, HIP-4
+>   outcomes...), their hedge engine, their parameters and their research tools are private. Only one simple example
+>   strategy, **Enveloppe**, is included to show how the framework is used; it is not a profitable strategy.
+> - **No support, no guarantees.** Issues and pull requests are not monitored. Do not run this with real funds.
 
 ## Highlights
 
@@ -51,6 +57,8 @@ More in [`documentation/ARCHITECTURE.md`](documentation/ARCHITECTURE.md), and pe
 [`src/core/lighter/lighter.md`](src/core/lighter/lighter.md) and [`src/core/aster/aster.md`](src/core/aster/aster.md).
 
 ## Quick start
+
+For reading and running the tests. Starting the example strategy needs exchange keys and sends real orders.
 
 [uv](https://docs.astral.sh/uv/) manages Python, the virtual environment and the locked dependencies.
 
@@ -150,4 +158,5 @@ See [`src/strategies/enveloppe/enveloppe.md`](src/strategies/enveloppe/enveloppe
 
 ## Disclaimer
 
-Educational project. Trading with leverage can lose more than the deposited margin; nothing here is financial advice.
+Educational showcase, provided as is, without warranty. Trading with leverage can lose more than the deposited
+margin; nothing here is financial advice. The author takes no responsibility for any use of this code.
