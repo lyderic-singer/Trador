@@ -1,5 +1,7 @@
 # Trador
 
+[![tests](https://github.com/lyderic-singer/Trador/actions/workflows/tests.yml/badge.svg)](https://github.com/lyderic-singer/Trador/actions/workflows/tests.yml)
+
 Asynchronous trading framework in Python for perpetual DEXs: **Hyperliquid**, **Arcus**, **Lighter** and **Aster**
 behind one common `Exchange` interface. A strategy written once runs unchanged on every venue.
 
